@@ -1,0 +1,16 @@
+# Never track secrets or machine-local state.
+.mcp.json
+settings.local.json
+*.local.json
+.env
+.env.*
+!.env.example
+
+# Python bytecode from the skill scripts.
+__pycache__/
+*.pyc
+
+# Backups created by install.sh
+.config-backup-*/
+
+.DS_Store
