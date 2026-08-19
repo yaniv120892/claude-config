@@ -61,35 +61,24 @@ glab mr diff <IID> --repo <repo>   # GitLab
 
 ## Step 2 — Extract ALL comments I posted
 
-From the discussions JSON, keep every note where `author.username == 'yaniv.daye'`, regardless of resolved state. For each, capture:
+The `list` command above already returns exactly this: every inline thread whose
+first note is yours, resolved or not, with the authenticated user resolved for
+you. Do not re-parse raw discussion JSON — the shapes differ per forge and the
+script has already normalised them.
 
-```python
-import json, sys
-discussions = json.load(sys.stdin)
-my_comments = []
-for d in discussions:
-    for note in d.get('notes', []):
-        if note['author']['username'] == 'yaniv.daye' and not note.get('system'):
-            resolver = None
-            if d.get('resolved') and d.get('notes'):
-                # GitLab puts resolved_by on the discussion, not the note; GitHub has no REST resolved flag
-                resolver = d.get('resolved_by', {}).get('username') if d.get('resolved_by') else None
-            my_comments.append({
-                'discussion_id': d['id'],
-                'resolvable': d.get('resolvable', False),
-                'resolved': d.get('resolved', False),
-                'resolved_by_me': resolver == 'yaniv.daye',
-                'resolved_by': resolver,
-                'body': note['body'],
-            })
-            break  # one entry per discussion thread
+Each thread carries `thread_id`, `body`, `file_path`, `line`, `resolved`, and
+`resolved_by`. Triage on the last two:
 
-for c in my_comments:
-    flag = '✅ resolved by me' if c['resolved_by_me'] else (f'⚠️ resolved by {c["resolved_by"]}' if c['resolved'] else '🔴 open')
-    print(c['discussion_id'], '|', flag, '|', c['body'][:100])
-```
+| `resolved` | `resolved_by` | Read it as |
+| --- | --- | --- |
+| `false` | `null` | 🔴 open — verify against the diff |
+| `true` | you | ✅ you already closed it |
+| `true` | someone else | ⚠️ **suspicious** — the author may have self-closed it without fixing the code. Always verify these against the diff. |
 
-**Important:** A discussion resolved by someone other than me (`resolved_by != 'yaniv.daye'`) must be treated as **suspicious** — the developer may have self-closed it without actually fixing the code. Always verify these against the diff.
+**Forge limitation:** GitHub's REST API exposes neither flag, so on GitHub every
+thread comes back `resolved: false, resolved_by: null` and the ⚠️ case cannot be
+detected — verify every thread against the diff there rather than trusting the
+resolved state.
 
 ## Step 3 — Verify each comment against the latest diff
 

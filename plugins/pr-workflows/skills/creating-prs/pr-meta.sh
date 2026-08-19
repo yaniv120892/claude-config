@@ -40,17 +40,17 @@ import forge
 
 number, repo_slug = sys.argv[1], (sys.argv[2] or None)
 try:
-    forge_name = forge.detect_forge()
-    forge.require_cli(forge_name)
-    cr = forge.view_change_request(number, forge_name, repo_slug)
+    forge_name = forge.resolve()
+    change_request = forge.view_change_request(number, forge_name, repo_slug)
+    base_sha = forge.resolve_base_sha(change_request)
 except forge.ForgeError as error:
     print(f"error: {error}", file=sys.stderr)
     raise SystemExit(1)
 
 print(f"FORGE: {forge_name}")
-print(f"PROJECT_ID: {cr['project_id'] or ''}")
-print(f"BASE_SHA: {cr['base_sha'] or ''}")
-print(f"HEAD_SHA: {cr['head_sha'] or ''}")
-print(f"SOURCE_BRANCH: {cr['source_branch']}")
-print(f"TARGET_BRANCH: {cr['target_branch']}")
+print(f"PROJECT_ID: {change_request['project_id'] or ''}")
+print(f"BASE_SHA: {base_sha or ''}")
+print(f"HEAD_SHA: {change_request['head_sha'] or ''}")
+print(f"SOURCE_BRANCH: {change_request['source_branch']}")
+print(f"TARGET_BRANCH: {change_request['target_branch']}")
 PY

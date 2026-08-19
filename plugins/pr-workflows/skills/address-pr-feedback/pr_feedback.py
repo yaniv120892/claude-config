@@ -21,9 +21,7 @@ Usage:
 import argparse
 import json
 import os
-import subprocess
 import sys
-from typing import Any
 
 # Inside an installed plugin this is set for us; when the script is run straight
 # from a clone, fall back to walking up to the plugin root.
@@ -44,8 +42,7 @@ def main() -> int:
     arguments = parse_arguments()
 
     try:
-        forge_name = arguments.forge or forge.detect_forge()
-        forge.require_cli(forge_name)
+        forge_name = forge.resolve(arguments.forge)
 
         if arguments.command == "list":
             return run_list(arguments.pr, forge_name, arguments.repo)
@@ -78,32 +75,13 @@ def run_list(number: str, forge_name: str, repo_slug: str | None) -> int:
     Returns:
         Process exit code: 0 on success.
     """
-    current_username = resolve_current_username(forge_name)
+    current_username = forge.current_username(forge_name)
     threads = forge.list_review_threads(number, forge_name, repo_slug)
     incoming = [
         thread for thread in threads if thread["author"] != current_username
     ]
     print(json.dumps({"me": current_username, "threads": incoming}, indent=2))
     return 0
-
-
-def resolve_current_username(forge_name: str) -> str:
-    """Look up the authenticated user, so their own threads can be filtered out.
-
-    Args:
-        forge_name: Either `forge.GITHUB` or `forge.GITLAB`.
-
-    Returns:
-        The authenticated username.
-
-    Raises:
-        forge.ForgeError: If the user cannot be resolved.
-    """
-    if forge_name == forge.GITHUB:
-        user: Any = forge.api(forge.GITHUB, "user")
-        return user["login"]
-    user = forge.api(forge.GITLAB, "user")
-    return user["username"]
 
 
 def read_reply_body(arguments: argparse.Namespace) -> str:
@@ -145,11 +123,7 @@ def parse_arguments() -> argparse.Namespace:
 
     for command_name in ("list", "reply", "resolve"):
         subparser = subparsers.add_parser(command_name)
-        subparser.add_argument("--pr", required=True, help="PR number or MR IID")
-        subparser.add_argument("--repo", default=None, help="Repo slug")
-        subparser.add_argument(
-            "--forge", default=None, choices=[forge.GITHUB, forge.GITLAB]
-        )
+        forge.add_change_request_arguments(subparser)
         if command_name in ("reply", "resolve"):
             subparser.add_argument("--thread", required=True, help="Thread id")
         if command_name == "reply":

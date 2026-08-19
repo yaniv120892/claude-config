@@ -17,9 +17,27 @@ import os, sys
 sys.path.insert(0, os.path.join(os.environ["CLAUDE_PLUGIN_ROOT"], "lib"))
 import forge
 
-forge_name = forge.detect_forge()          # "github" | "gitlab"
+forge_name = forge.resolve()               # detect + assert the CLI is usable
 change_request = forge.view_change_request("42", forge_name)
 ```
+
+`resolve(override)` is what every entry point should call: it picks the forge and
+confirms the CLI is installed and authenticated in one step. Pass a `--forge`
+value to override detection.
+
+Other normalised helpers, so a script never re-derives them:
+
+| Helper | Gives you |
+| --- | --- |
+| `forge.current_username(forge_name)` | The authenticated login, under whichever key the forge uses |
+| `forge.resolve_base_sha(change_request)` | The base SHA, computed locally on GitHub only when read |
+| `forge.list_review_threads(...)` | Threads with `resolved` / `resolved_by` normalised |
+| `forge.origin_url()` | The origin remote, read once per process |
+
+**Self-hosted instances:** detection reads the origin remote, so a host that does
+not contain `github` or `gitlab` cannot be classified. Set `CLAUDE_FORGE=github`
+or `CLAUDE_FORGE=gitlab` for those. Nothing else hardcodes a hostname — API calls
+go through `gh api` / `glab api`, which use each CLI's own configured host.
 
 ## Vocabulary
 

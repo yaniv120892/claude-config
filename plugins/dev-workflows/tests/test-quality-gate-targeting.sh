@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Verifies the hook targets the repo being pushed, not the session's directory.
-HOOK="$HOME/Develop/claude-config/plugins/dev-workflows/hooks/pre-push-quality-gate.sh"
+source "$(dirname "${BASH_SOURCE[0]}")/harness.sh"
 TMP="$(mktemp -d)"
 
 # repo A: has package.json with a build that FAILS -> hook must exit 2
@@ -22,28 +22,25 @@ fire() {  # $1 = command text, $2 = payload cwd
 PUSH='git''''  push'
 PUSH="git p""ush"
 
-fails=0
-check() {
-  local label="$1" expected="$2" actual="$3"
-  if [ "$actual" = "$expected" ]; then echo "PASS  $label (exit $actual)"; else echo "FAIL  $label expected $expected got $actual"; fails=$((fails+1)); fi
-}
-
 # Session sits in repoB (good build) but the command pushes from repoA (bad build).
-check "cd into failing repo is honoured" 2 "$(fire "cd $TMP/repoA && $PUSH" "$TMP/repoB")"
+report "cd into failing repo is honoured" 2 "$(fire "cd $TMP/repoA && $PUSH" "$TMP/repoB")"
 # Session sits in repoA (bad build) but command pushes repoB via -C.
-check "git -C targets the named repo"    0 "$(fire "git -C $TMP/repoB p""ush" "$TMP/repoA")"
+report "git -C targets the named repo"    0 "$(fire "git -C $TMP/repoB p""ush" "$TMP/repoA")"
 # No cd: falls back to payload cwd.
-check "payload cwd used when no cd"      2 "$(fire "$PUSH" "$TMP/repoA")"
-check "payload cwd passing repo"         0 "$(fire "$PUSH" "$TMP/repoB")"
+report "payload cwd used when no cd"      2 "$(fire "$PUSH" "$TMP/repoA")"
+report "payload cwd passing repo"         0 "$(fire "$PUSH" "$TMP/repoB")"
 # Non-push command must not run anything.
-check "non-push skipped"                 0 "$(fire "echo hello" "$TMP/repoA")"
+report "non-push skipped"                 0 "$(fire "echo hello" "$TMP/repoA")"
 # Subdirectory resolves to repo root.
 mkdir -p "$TMP/repoA/src/deep"
-check "subdir resolves to repo root"     2 "$(fire "cd $TMP/repoA/src/deep && $PUSH" "$TMP/repoB")"
+report "subdir resolves to repo root"     2 "$(fire "cd $TMP/repoA/src/deep && $PUSH" "$TMP/repoB")"
 # Outside any git repo -> skip.
-check "non-repo cwd skipped"             0 "$(fire "$PUSH" "$TMP")"
+report "non-repo cwd skipped"             0 "$(fire "$PUSH" "$TMP")"
+# Multiple cd's: the one immediately before the push wins, not the first.
+report "last cd before push wins"         0 "$(fire "cd $TMP/repoA && echo hi; cd $TMP/repoB && $PUSH" "$TMP/repoA")"
+report "last cd before push wins (fail)"  2 "$(fire "cd $TMP/repoB && echo hi; cd $TMP/repoA && $PUSH" "$TMP/repoB")"
+# A cd AFTER the push must not be mistaken for the push's directory.
+report "cd after push ignored"            2 "$(fire "cd $TMP/repoA && $PUSH; cd $TMP/repoB" "$TMP/repoB")"
 
 rm -rf "$TMP"
-echo
-[ "$fails" -eq 0 ] && echo "ALL PASS" || echo "$fails FAILURES"
-exit "$fails"
+summarize
