@@ -1,0 +1,9 @@
+{
+  "name": "cmux",
+  "description": "Drive the cmux terminal multiplexer from Claude: window and pane topology, workspace-scoped automation, the browser surface, and notifications or progress badges in the sidebar.",
+  "version": "1.0.0",
+  "author": { "name": "Yaniv Daye" },
+  "homepage": "https://github.com/yaniv120892/claude-config",
+  "repository": "https://github.com/yaniv120892/claude-config",
+  "keywords": ["cmux", "terminal", "automation"]
+}

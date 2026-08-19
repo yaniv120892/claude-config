@@ -13,13 +13,12 @@
 #   ./install.sh --target ~/.claude-personal
 #   ./install.sh --dry-run
 #
-# Anything already present is backed up to ~/.claude-config-backups/<timestamp>/
-# before being replaced.
+# This installs only the parts a plugin cannot carry: the always-loaded global
+# rules, the path-scoped rules/, settings, keybindings, and the statusline.
+# Skills, commands, and hooks ship as PLUGINS from this same repo — see README.
 #
-# NOTE: this links the WHOLE skills/ directory. On a machine that also has
-# skills not tracked here (employer-specific ones), they are moved to the backup
-# directory rather than deleted — move them back afterwards, or keep them in a
-# separate profile.
+# Anything already present is backed up to ~/.claude-config-backups/<timestamp>/
+# before being replaced. Existing skills are left completely alone.
 
 set -euo pipefail
 
@@ -93,14 +92,10 @@ run mkdir -p "$SHARED_HOME"
 link "$REPO_DIR/shared-rules.md"    "$SHARED_HOME/shared-rules.md"
 link "$REPO_DIR/rules"              "$SHARED_HOME/rules"
 link "$REPO_DIR/rules-reference.md" "$SHARED_HOME/rules-reference.md"
-link "$REPO_DIR/references"         "$SHARED_HOME/references"
-link "$REPO_DIR/lib"                "$SHARED_HOME/lib"
-link "$REPO_DIR/hooks"              "$SHARED_HOME/hooks"
 link "$REPO_DIR/statusline-command.sh" "$SHARED_HOME/statusline-command.sh"
 
-# Profile-scoped pieces.
-link "$REPO_DIR/skills"                       "$TARGET/skills"
-link "$REPO_DIR/commands"                     "$TARGET/commands"
+# Profile-scoped pieces. Skills, commands, and hooks are intentionally absent —
+# they are installed as plugins, which keeps existing skills untouched.
 link "$REPO_DIR/keybindings.json"             "$TARGET/keybindings.json"
 link "$REPO_DIR/profiles/$PROFILE/CLAUDE.md"  "$TARGET/CLAUDE.md"
 
@@ -119,6 +114,13 @@ fi
 
 say ""
 say "Done. Verify with:  ls -la $TARGET"
+say ""
+say "Now install the plugins (skills, commands, hooks):"
+say "  /plugin marketplace add $REPO_DIR"
+say "  /plugin install pr-workflows@yaniv-claude-config"
+say "  /plugin install dev-workflows@yaniv-claude-config"
+say "  /plugin install cmux@yaniv-claude-config"
+say ""
 say "Secrets are NOT in this repo — export them from your shell profile."
 [ -d "$BACKUP_DIR" ] && say "Replaced files were moved to $BACKUP_DIR"
 exit 0
