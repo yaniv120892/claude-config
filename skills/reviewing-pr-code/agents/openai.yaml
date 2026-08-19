@@ -1,0 +1,4 @@
+interface:
+  display_name: "PR Code Review"
+  short_description: "Review PRs for quality, risk, and standards"
+  default_prompt: "Use $reviewing-pr-code to review this PR for correctness, quality, performance, security, and project standards."

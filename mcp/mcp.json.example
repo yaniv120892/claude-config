@@ -1,0 +1,14 @@
+{
+  "_comment": "Copy to $CLAUDE_CONFIG_DIR/.mcp.json and fill in. NEVER commit a filled-in copy — tokens belong in the environment, not in a tracked file.",
+  "mcpServers": {
+    "example-issue-tracker": {
+      "command": "npx",
+      "args": ["-y", "<mcp-server-package>"],
+      "env": {
+        "SITE_URL": "https://<your-site>.atlassian.net",
+        "USER_EMAIL": "${ATLASSIAN_USER_EMAIL}",
+        "API_TOKEN": "${ATLASSIAN_API_TOKEN}"
+      }
+    }
+  }
+}
