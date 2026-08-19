@@ -31,17 +31,13 @@ The shared helper normalises both forges to one state word:
 python3 ../verify-resolve-pr-comments/pr_review_comments.py ci --pr <NUMBER> [--repo <slug>]
 ```
 
-It prints `{"state": "success|failed|running|unknown", "web_url": ...}`.
+It prints `{"state": "success|failed|running|unknown", "web_url": ...}` — one
+state word whichever forge you are on. Prefer it over `gh pr checks` /
+`glab ci list`, which return different shapes and make the rest of this skill
+branch on the forge.
 
-Or query the forge directly:
-
-```bash
-gh pr checks <NUMBER>                       # GitHub
-glab ci list --repo "<repo-path>" | head -20  # GitLab
-```
-
-On GitLab, find the most recent pipeline for the change request's ref
-(`refs/merge-requests/<N>/merge`) and record its state and pipeline ID.
+Drop to the forge's own CLI only when you need detail the normalised state does
+not carry, such as which specific job failed (Step 3 does exactly that).
 
 ## Step 2 — Branch on state
 

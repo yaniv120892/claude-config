@@ -48,9 +48,8 @@ def main() -> int:
     since_date = (date.today() - timedelta(days=arguments.since_days)).isoformat()
 
     try:
-        forge_name = arguments.forge or forge.detect_forge()
-        forge.require_cli(forge_name)
-        author = arguments.author or resolve_author(forge_name)
+        forge_name = forge.resolve(arguments.forge)
+        author = arguments.author or forge.current_username(forge_name)
     except forge.ForgeError as error:
         print(f"error: {error}", file=sys.stderr)
         return 1
@@ -95,19 +94,6 @@ def main() -> int:
     )
     print(f"Wrote {output_path}")
     return 0
-
-
-def resolve_author(forge_name: str) -> str:
-    """Resolve the authenticated username to filter change requests by.
-
-    Args:
-        forge_name: Either `forge.GITHUB` or `forge.GITLAB`.
-
-    Returns:
-        The authenticated username.
-    """
-    user: Any = forge.api(forge_name, "user")
-    return user["login"] if forge_name == forge.GITHUB else user["username"]
 
 
 def collect_change_requests(

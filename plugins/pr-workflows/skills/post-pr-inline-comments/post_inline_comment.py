@@ -35,13 +35,8 @@ def main() -> int:
     """
     arguments = parse_arguments()
 
-    if arguments.new_line is None and arguments.old_line is None:
-        print("error: at least one of --new-line or --old-line is required", file=sys.stderr)
-        return 1
-
     try:
-        forge_name = arguments.forge or forge.detect_forge()
-        forge.require_cli(forge_name)
+        forge_name = forge.resolve(arguments.forge)
         note_id = forge.post_inline_comment(
             number=arguments.pr,
             file_path=arguments.file,
@@ -71,18 +66,11 @@ def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Post an inline diff comment on a pull or merge request."
     )
-    parser.add_argument("--pr", required=True, help="Pull request number or merge request IID")
+    forge.add_change_request_arguments(parser)
     parser.add_argument("--file", required=True, help="File path as it appears in the diff")
     parser.add_argument("--new-line", type=int, default=None, help="New-side line number")
     parser.add_argument("--old-line", type=int, default=None, help="Old-side line number")
     parser.add_argument("--body", required=True, help="Comment text")
-    parser.add_argument("--repo", default=None, help="Repo slug; defaults to the origin remote")
-    parser.add_argument(
-        "--forge",
-        default=None,
-        choices=[forge.GITHUB, forge.GITLAB],
-        help="Override forge detection",
-    )
     return parser.parse_args()
 
 

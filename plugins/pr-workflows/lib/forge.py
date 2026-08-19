@@ -21,7 +21,10 @@ Scripts here resolve CLAUDE_PLUGIN_ROOT with a walk-up fallback, so they also
 work when run directly from a clone.
 """
 
+import argparse
+import hashlib
 import json
+import os
 import subprocess
 import sys
 from typing import Any
@@ -32,9 +35,50 @@ GITLAB = "gitlab"
 
 _FORGE_CLI = {GITHUB: "gh", GITLAB: "glab"}
 
+# Self-hosted instances are not named github.com/gitlab.com, so the host alone
+# cannot always identify the forge. Set CLAUDE_FORGE=github|gitlab to say which
+# one an enterprise remote is.
+_FORGE_OVERRIDE_VARIABLE = "CLAUDE_FORGE"
+
+# `git remote get-url` is read by both forge detection and slug resolution; cache
+# it so one logical operation does not spawn git twice for the same answer.
+_remote_url_cache: dict[str, str] = {}
+
 
 class ForgeError(RuntimeError):
     """Raised when a forge CLI is missing, unauthenticated, or returns an error."""
+
+
+def origin_url(repo_directory: str | None = None) -> str:
+    """Read the repository's `origin` remote, once per directory per process.
+
+    Args:
+        repo_directory: Repository to inspect; defaults to the current directory.
+
+    Returns:
+        The remote URL, stripped.
+
+    Raises:
+        ForgeError: If the remote cannot be read.
+    """
+    cache_key = repo_directory or ""
+    if cache_key in _remote_url_cache:
+        return _remote_url_cache[cache_key]
+
+    git_command = ["git"]
+    if repo_directory is not None:
+        git_command += ["-C", repo_directory]
+    git_command += ["remote", "get-url", "origin"]
+
+    try:
+        completed_process = subprocess.run(
+            git_command, capture_output=True, text=True, check=True
+        )
+    except (FileNotFoundError, subprocess.CalledProcessError) as error:
+        raise ForgeError(f"could not read the origin remote: {error}") from error
+
+    _remote_url_cache[cache_key] = completed_process.stdout.strip()
+    return _remote_url_cache[cache_key]
 
 
 def detect_forge(repo_directory: str | None = None) -> str:
@@ -49,24 +93,77 @@ def detect_forge(repo_directory: str | None = None) -> str:
     Raises:
         ForgeError: If there is no origin remote, or its host is not recognised.
     """
-    git_command = ["git"]
-    if repo_directory is not None:
-        git_command += ["-C", repo_directory]
-    git_command += ["remote", "get-url", "origin"]
-
-    try:
-        completed_process = subprocess.run(
-            git_command, capture_output=True, text=True, check=True
+    override = os.environ.get(_FORGE_OVERRIDE_VARIABLE, "").strip().lower()
+    if override in _FORGE_CLI:
+        return override
+    if override:
+        raise ForgeError(
+            f"{_FORGE_OVERRIDE_VARIABLE}={override} is not one of {sorted(_FORGE_CLI)}"
         )
-    except (FileNotFoundError, subprocess.CalledProcessError) as error:
-        raise ForgeError(f"could not read the origin remote: {error}") from error
 
-    remote_url = completed_process.stdout.strip().lower()
-    if "github.com" in remote_url:
+    remote_url = origin_url(repo_directory).lower()
+    if "github" in remote_url:
         return GITHUB
     if "gitlab" in remote_url:
         return GITLAB
-    raise ForgeError(f"unrecognised forge for origin remote: {remote_url}")
+    raise ForgeError(
+        f"unrecognised forge for origin remote: {remote_url} — "
+        f"set {_FORGE_OVERRIDE_VARIABLE}=github|gitlab for a self-hosted instance"
+    )
+
+
+def resolve(override: str | None = None, repo_directory: str | None = None) -> str:
+    """Pick the forge and confirm its CLI is usable, in one call.
+
+    Every entry point needs both steps, in this order, before doing anything else.
+
+    Args:
+        override: Explicit forge name from a `--forge` flag, if the user gave one.
+        repo_directory: Repository to inspect; defaults to the current directory.
+
+    Returns:
+        Either `GITHUB` or `GITLAB`.
+
+    Raises:
+        ForgeError: If the forge cannot be determined or its CLI is unusable.
+    """
+    forge_name = override or detect_forge(repo_directory)
+    require_cli(forge_name)
+    return forge_name
+
+
+def current_username(forge_name: str) -> str:
+    """Return the authenticated user's login, under whichever key the forge uses.
+
+    Args:
+        forge_name: Either `GITHUB` or `GITLAB`.
+
+    Returns:
+        The authenticated username.
+
+    Raises:
+        ForgeError: If the user cannot be resolved.
+    """
+    user: Any = api(forge_name, "user")
+    return user["login"] if forge_name == GITHUB else user["username"]
+
+
+def add_change_request_arguments(parser: argparse.ArgumentParser) -> None:
+    """Add the `--pr`, `--repo`, and `--forge` flags every entry point takes.
+
+    Args:
+        parser: The parser or subparser to add them to.
+    """
+    parser.add_argument("--pr", required=True, help="PR number or MR IID")
+    parser.add_argument(
+        "--repo", default=None, help="Repo slug; defaults to the origin remote"
+    )
+    parser.add_argument(
+        "--forge",
+        default=None,
+        choices=[GITHUB, GITLAB],
+        help="Override forge detection",
+    )
 
 
 def require_cli(forge_name: str) -> str:
@@ -102,19 +199,20 @@ def api(
     path: str,
     method: str = "GET",
     fields: dict[str, Any] | None = None,
-    repo_slug: str | None = None,
 ) -> Any:
     """Call the forge's REST API through its CLI, which handles authentication.
 
     Routing every request through `gh api` / `glab api` avoids reading tokens out
-    of CLI config files, which is brittle and leaks credentials into scripts.
+    of CLI config files, which is brittle and leaks credentials into scripts. It
+    also means the CLI's own configured host is used, so self-hosted instances
+    work without this module knowing their hostname.
 
     Args:
         forge_name: Either `GITHUB` or `GITLAB`.
-        path: API path relative to the forge's API root, already URL-encoded.
+        path: API path relative to the forge's API root, already URL-encoded and
+            carrying the repository slug where the endpoint needs one.
         method: HTTP method.
         fields: JSON body sent for non-GET requests.
-        repo_slug: Optional `owner/repo` (GitHub) or `group/subgroup/repo` (GitLab).
 
     Returns:
         The decoded JSON response, or the raw text when it is not JSON.
@@ -124,8 +222,6 @@ def api(
     """
     cli_name = _FORGE_CLI[forge_name]
     command = [cli_name, "api", path, "--method", method.upper()]
-    if repo_slug is not None and forge_name == GITHUB:
-        command += ["--hostname", "github.com"]
 
     input_payload = None
     if fields is not None:
@@ -163,12 +259,14 @@ def view_change_request(
     Returns:
         A dict with `number`, `title`, `author`, `state`, `source_branch`,
         `target_branch`, `base_sha`, `head_sha`, `web_url`, and `project_id`
-        (GitLab only, needed for its discussions API).
+        (GitLab only, needed for its discussions API). On GitHub `base_sha` is
+        None — it costs an extra git call, so `resolve_base_sha` computes it only
+        for the callers that actually read it.
 
     Raises:
         ForgeError: If the change request cannot be read.
     """
-    cli_name = require_cli(forge_name)
+    cli_name = _FORGE_CLI[forge_name]
 
     if forge_name == GITHUB:
         command = [
@@ -186,7 +284,7 @@ def view_change_request(
             "state": raw["state"],
             "source_branch": raw["headRefName"],
             "target_branch": raw["baseRefName"],
-            "base_sha": _merge_base(raw["baseRefName"], raw["headRefOid"]),
+            "base_sha": None,
             "head_sha": raw["headRefOid"],
             "web_url": raw["url"],
             "project_id": None,
@@ -237,6 +335,25 @@ def _run_json(command: list[str], cli_name: str) -> dict[str, Any]:
         return json.loads(completed_process.stdout)
     except json.JSONDecodeError as error:
         raise ForgeError(f"could not parse {cli_name} output: {error}") from error
+
+
+def resolve_base_sha(change_request: dict[str, Any]) -> str | None:
+    """Return the change request's base SHA, computing it on GitHub if needed.
+
+    GitLab reports the base SHA in the change request itself. GitHub does not, so
+    it has to be derived locally with `git merge-base`, which means the repository
+    must be fetched for the answer to be current. Only callers that actually read
+    the value pay for that.
+
+    Args:
+        change_request: A dict from `view_change_request`.
+
+    Returns:
+        The base SHA, or None when it cannot be resolved.
+    """
+    if change_request.get("base_sha"):
+        return change_request["base_sha"]
+    return _merge_base(change_request["target_branch"], change_request["head_sha"])
 
 
 def _merge_base(target_branch: str, head_sha: str) -> str | None:
@@ -321,11 +438,12 @@ def post_inline_comment(
         "old_line": old_line,
         "new_line": new_line,
     }
+    base_sha = resolve_base_sha(change_request)
     payload = {
         "body": body,
         "position": {
-            "base_sha": change_request["base_sha"],
-            "start_sha": change_request["base_sha"],
+            "base_sha": base_sha,
+            "start_sha": base_sha,
             "head_sha": change_request["head_sha"],
             "position_type": "text",
             "old_path": file_path,
@@ -355,8 +473,6 @@ def compute_gitlab_line_code(file_path: str, old_line: int, new_line: int) -> st
     Returns:
         The line code `SHA1(file_path)_{old_line}_{new_line}`.
     """
-    import hashlib
-
     file_path_hash = hashlib.sha1(file_path.encode()).hexdigest()
     return f"{file_path_hash}_{old_line}_{new_line}"
 
@@ -390,7 +506,10 @@ def list_review_threads(
 
     Returns:
         A list of dicts with `thread_id`, `author`, `body`, `file_path`, `line`,
-        and `resolved`.
+        `resolved`, and `resolved_by`. `resolved_by` names who resolved the
+        thread, which lets a reviewer tell a genuine fix from an author closing
+        their own feedback; GitHub's REST API exposes neither flag, so both are
+        False/None there.
 
     Raises:
         ForgeError: If the threads cannot be read.
@@ -406,6 +525,7 @@ def list_review_threads(
                 "file_path": comment.get("path"),
                 "line": comment.get("line") or comment.get("original_line"),
                 "resolved": False,
+                "resolved_by": None,
             }
             for comment in comments
         ]
@@ -422,6 +542,7 @@ def list_review_threads(
             continue
         first_note = notes[0]
         position = first_note.get("position") or {}
+        resolved_by = first_note.get("resolved_by") or {}
         threads.append(
             {
                 "thread_id": discussion["id"],
@@ -430,6 +551,7 @@ def list_review_threads(
                 "file_path": position.get("new_path") or position.get("old_path"),
                 "line": position.get("new_line") or position.get("old_line"),
                 "resolved": bool(first_note.get("resolved")),
+                "resolved_by": resolved_by.get("username"),
             }
         )
     return threads
@@ -458,12 +580,7 @@ def resolve_thread(
             "mutation($threadId:ID!){resolveReviewThread(input:{threadId:$threadId})"
             "{thread{isResolved}}}"
         )
-        subprocess.run(
-            ["gh", "api", "graphql", "-f", f"query={mutation}", "-F", f"threadId={node_id}"],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
+        _github_graphql(mutation, {"threadId": node_id})
         return
 
     change_request = view_change_request(number, GITLAB, repo_slug)
@@ -599,19 +716,9 @@ def _github_thread_node_id(
         "name:$repo){pullRequest(number:$number){reviewThreads(first:100){nodes{id "
         "comments(first:1){nodes{databaseId}}}}}}}"
     )
-    completed_process = subprocess.run(
-        [
-            "gh", "api", "graphql",
-            "-f", f"query={query}",
-            "-F", f"owner={owner}",
-            "-F", f"repo={repository}",
-            "-F", f"number={number}",
-        ],
-        capture_output=True,
-        text=True,
-        check=True,
+    payload = _github_graphql(
+        query, {"owner": owner, "repo": repository, "number": number}
     )
-    payload = json.loads(completed_process.stdout)
     threads = payload["data"]["repository"]["pullRequest"]["reviewThreads"]["nodes"]
     for thread in threads:
         comments = thread["comments"]["nodes"]
@@ -620,11 +727,51 @@ def _github_thread_node_id(
     raise ForgeError(f"no review thread found for comment {comment_id}")
 
 
+def _github_graphql(query: str, variables: dict[str, Any]) -> Any:
+    """Run a GitHub GraphQL query, which REST cannot express (thread resolution).
+
+    Args:
+        query: The GraphQL document.
+        variables: Variables passed as `-F name=value`.
+
+    Returns:
+        The decoded response.
+
+    Raises:
+        ForgeError: If the call fails or returns GraphQL errors.
+    """
+    command = ["gh", "api", "graphql", "-f", f"query={query}"]
+    for name, value in variables.items():
+        command += ["-F", f"{name}={value}"]
+
+    try:
+        completed_process = subprocess.run(
+            command, capture_output=True, text=True, check=True
+        )
+    except FileNotFoundError as error:
+        raise ForgeError("gh CLI not found") from error
+    except subprocess.CalledProcessError as error:
+        raise ForgeError(f"gh api graphql failed: {error.stderr.strip()}") from error
+
+    try:
+        payload = json.loads(completed_process.stdout)
+    except json.JSONDecodeError as error:
+        raise ForgeError(f"could not parse gh graphql output: {error}") from error
+
+    # GraphQL reports failures in the body with a 200, so check=True misses them.
+    if payload.get("errors"):
+        raise ForgeError(f"gh api graphql returned errors: {payload['errors']}")
+    return payload
+
+
 def _current_repo_slug(forge_name: str) -> str:
     """Resolve the current repository's slug from its origin remote.
 
+    The slug is everything after the host, so this works for a self-hosted
+    instance and for GitLab's nested subgroups without knowing any hostname.
+
     Args:
-        forge_name: Either `GITHUB` or `GITLAB`.
+        forge_name: Either `GITHUB` or `GITLAB`, kept for call-site symmetry.
 
     Returns:
         `owner/repo` on GitHub, `group/subgroup/repo` on GitLab.
@@ -632,24 +779,20 @@ def _current_repo_slug(forge_name: str) -> str:
     Raises:
         ForgeError: If the remote cannot be parsed.
     """
-    try:
-        completed_process = subprocess.run(
-            ["git", "remote", "get-url", "origin"],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-    except (FileNotFoundError, subprocess.CalledProcessError) as error:
-        raise ForgeError("could not read the origin remote") from error
+    remote_url = origin_url().removesuffix(".git")
 
-    remote_url = completed_process.stdout.strip()
-    remote_url = remote_url.removesuffix(".git")
-    if remote_url.startswith("git@"):
+    # scp-style: git@host:group/repo
+    if "@" in remote_url and "://" not in remote_url:
         _, _, path = remote_url.partition(":")
-        return path
-    for host_marker in ("github.com/", "gitlab.com/"):
-        if host_marker in remote_url:
-            return remote_url.split(host_marker, 1)[1]
+        return path.strip("/")
+
+    # URL form: scheme://[user@]host[:port]/group/repo
+    _, separator, after_scheme = remote_url.partition("://")
+    if separator:
+        _, _, path = after_scheme.partition("/")
+        if path:
+            return path.strip("/")
+
     raise ForgeError(f"could not derive a repo slug from {remote_url}")
 
 
