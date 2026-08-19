@@ -1,0 +1,26 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "yaniv-claude-config",
+  "description": "Personal Claude Code marketplace: project-agnostic workflow plugins that travel between machines.",
+  "owner": { "name": "Yaniv Daye" },
+  "plugins": [
+    {
+      "name": "pr-workflows",
+      "description": "Forge-agnostic pull/merge request workflow — create, review, comment inline, verify CI, resolve threads, fix conflicts. Works on GitHub and GitLab.",
+      "category": "engineering",
+      "source": "./plugins/pr-workflows"
+    },
+    {
+      "name": "dev-workflows",
+      "description": "Planning, TDD, subagent-driven execution, worktree isolation, and a pre-push quality gate.",
+      "category": "engineering",
+      "source": "./plugins/dev-workflows"
+    },
+    {
+      "name": "cmux",
+      "description": "Control the cmux terminal multiplexer — topology, workspaces, browser surface, notifications.",
+      "category": "productivity",
+      "source": "./plugins/cmux"
+    }
+  ]
+}

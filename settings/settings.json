@@ -29,20 +29,17 @@
     "command": "bash ~/.claude/statusline-command.sh",
     "padding": 0
   },
-  "hooks": {
-    "PreToolUse": [
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "\"$HOME/.claude/hooks/pre-push-quality-gate.sh\"",
-            "if": "Bash(git push:*)",
-            "timeout": 300,
-            "statusMessage": "Running pre-push checks (build, lint, prettier, test)..."
-          }
-        ]
+  "extraKnownMarketplaces": {
+    "yaniv-claude-config": {
+      "source": {
+        "source": "github",
+        "repo": "yaniv120892/claude-config"
       }
-    ]
+    }
+  },
+  "enabledPlugins": {
+    "pr-workflows@yaniv-claude-config": true,
+    "dev-workflows@yaniv-claude-config": true,
+    "cmux@yaniv-claude-config": true
   }
 }

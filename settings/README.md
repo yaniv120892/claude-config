@@ -1,8 +1,17 @@
 # Settings
 
 `settings.json` is the profile-neutral baseline: permissions, model, effort,
-statusline, and the pre-push quality-gate hook. It contains **no secrets** and no
-employer-specific servers or plugins.
+statusline, and the marketplace/plugin wiring. It contains **no secrets** and no
+employer-specific servers.
+
+The pre-push quality-gate hook is **not** here — it ships with the
+`dev-workflows` plugin, so it installs and updates with the plugin rather than
+being duplicated into every profile's settings. Declaring it in both would run it
+twice per `git` push.
+
+`enabledPlugins` is how a profile opts in or out. The work profile might disable
+`cmux`, for instance, by flipping its value to `false` — that replaces the old
+`skillOverrides` list, which had to name each skill individually.
 
 ## What is deliberately not here
 

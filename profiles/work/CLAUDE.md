@@ -11,4 +11,4 @@ Fill these in per employer; keep anything confidential out of this repo.
   like `chore`.
 - Subagent prompts reference sibling repos under `~/Develop/` — always anchor a
   subagent to the target repo path and have it read that repo's CLAUDE.md first.
-- The forge CLI here is `glab`; see `~/.claude/references/forge-cli.md`.
+- The forge CLI here is `glab`; see the `pr-workflows` plugin (`references/forge-cli.md`).

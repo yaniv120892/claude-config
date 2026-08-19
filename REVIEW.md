@@ -148,6 +148,63 @@ this repo and deleting the line does not un-leak them.
 
 ---
 
+## Packaging: plugins, not a dotfiles blob
+
+The config splits cleanly in two, and only one half can be a plugin.
+
+A plugin ships `skills/`, `commands/`, `agents/`, `hooks/`, and `.mcp.json`,
+declared by `.claude-plugin/plugin.json` and listed in a repo-root
+`.claude-plugin/marketplace.json`. Verified against the installed plugins on this
+machine — `superpowers` ships `skills/` + `hooks/`, and its top-level `CLAUDE.md`
+is contributor documentation for that repo, **not** instructions injected into
+sessions.
+
+A plugin cannot provide always-loaded global instructions, `paths:`-scoped
+`rules/*.md`, `settings.json`, `keybindings.json`, or a statusline command. Those
+stay symlinked by `install.sh`.
+
+So: **29 skills, 1 command, and 1 hook became three plugins**; the rules and
+settings remain a small dotfiles install.
+
+| Plugin | Skills | Why grouped |
+| --- | --- | --- |
+| `pr-workflows` | 13 | Share `lib/forge.py` and `references/forge-cli.md`; useless without each other |
+| `dev-workflows` | 11 | Planning/TDD/worktree discipline plus the pre-push hook |
+| `cmux` | 5 | Only useful if you run cmux — the obvious thing to disable per profile |
+
+What the split bought:
+
+- **Installing no longer clobbers anything.** The previous installer symlinked the
+  whole `skills/` directory, which would have moved the work profile's remaining
+  skills into a backup directory. Plugin skills live in the plugin cache instead.
+- **`enabledPlugins` replaces `skillOverrides`.** The work profile previously
+  disabled 18 skills by name, five of them the `cmux` set. That is now one flag.
+- **`${CLAUDE_PLUGIN_ROOT}` replaces a guess.** The scripts had resolved
+  `lib/forge.py` through `CLAUDE_CONFIG_DIR`, which is not what that variable is
+  for. They now use the sanctioned plugin variable, with a walk-up fallback so
+  running a script straight from a clone still works. Both paths tested.
+- **Versioned updates** via `/plugin update` instead of `git pull` plus hoping the
+  symlinks still point somewhere sensible.
+
+### A live bug the packaging work exposed
+
+Writing the plugin's `hooks.json` **triggered the pre-push quality gate**, which
+ran a full `npm run build` in an unrelated directory and blocked the command. The
+hook greps the raw command text for `git[[:space:]]+push`, so it fires on anything
+that merely *mentions* the phrase — a heredoc writing this very config, an `echo`,
+a `grep` pattern.
+
+The matcher now requires a real invocation: `git push` at the start of the command
+or immediately after a separator, allowing flags and flag-with-value forms
+(`git -C <dir> push`, `sudo git push`). `plugins/dev-workflows/tests/test-quality-gate-matcher.sh`
+covers 11 cases, all passing.
+
+⚠️ **The installed copy at `~/.claude/hooks/pre-push-quality-gate.sh` still has the
+old matcher.** It is left untouched deliberately — running `install.sh` and the
+plugin install replaces it. Until then, the false positives continue.
+
+---
+
 ## Worth considering (not applied)
 
 1. **`reviewing-pr-code` vs the built-in `/code-review`.** They overlap heavily now
@@ -156,14 +213,15 @@ this repo and deleting the line does not un-leak them.
    thinning yours to just the parts the built-in lacks.
 2. **`skillOverrides` had 18 skills switched off** in the work profile — including
    all five `cmux-*` ones. If they have been off for months, that is evidence for
-   deleting rather than porting them. They are here; the off-switch is not.
+   deleting rather than porting them. The `cmux` plugin now makes that one toggle
+   instead of five entries.
 3. **The two profiles had drifted apart** only in plugins and MCP, never in skills.
    That is a good sign, but it happened by manual copying. Now that both symlink
    the same directory, drift is structurally impossible.
 4. **`finalize-pr` and `pr-second-review` both delegate to a Sonnet subagent** with
    near-identical "anti-recursion guard" preambles. That pattern is repeated in
    seven skills — a candidate for a single shared reference the way `forge-cli.md`
-   now serves the forge commands.
+   now serves the forge commands. Easier now that they are co-located in one plugin.
 5. **No `agents/` directory exists** in either profile. Every agent in use is
    built-in. If you find yourself repeating a subagent prompt, that is the signal
    to add one here.

@@ -7,8 +7,8 @@ Full rationale and worked examples for every rule, plus the situational ones kep
 the always-loaded set, are in `~/.claude/rules-reference.md` — read it when a rule's
 application is unclear or before codifying a new one. Pass the path; never paste it in.
 
-Forge commands (GitHub `gh` vs GitLab `glab`) are mapped in
-`~/.claude/references/forge-cli.md`. Read it instead of guessing flags.
+Forge commands (GitHub `gh` vs GitLab `glab`) are mapped in the `pr-workflows`
+plugin's `references/forge-cli.md`. Read it instead of guessing flags.
 
 ## Developer Context
 

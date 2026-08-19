@@ -1,80 +1,84 @@
 # claude-config
 
-Portable Claude Code configuration — rules, skills, commands, hooks, and settings.
-Clone it on a new machine, run `./install.sh`, and the setup is back.
+Portable Claude Code configuration that travels between machines. This repo is
+**both a plugin marketplace and a small dotfiles install**, because Claude Code
+splits configuration into two halves that install differently.
 
-Everything here is **project-agnostic**. Nothing is tied to a particular employer,
-forge, or issue tracker, and **no secrets are tracked** — see [Secrets](#secrets).
+Everything here is **project-agnostic** — nothing is tied to a particular
+employer, forge, or issue tracker — and **no secrets are tracked**.
 
-## Install
+## The two halves
+
+| Half | Ships as | Why |
+| --- | --- | --- |
+| Skills, commands, hooks | **Plugins** (3) | Plugins are the supported mechanism: versioned, per-profile toggles, `/plugin update`, namespaced, and installing one never touches your existing skills |
+| Global rules, settings, keybindings, statusline | **Symlinks** via `install.sh` | Plugins cannot provide always-loaded `CLAUDE.md` instructions, `paths:`-scoped `rules/*.md`, `settings.json`, or a statusline |
+
+## Install on a new machine
 
 ```sh
-git clone git@github.com:<you>/claude-config.git ~/Develop/claude-config
+git clone git@github.com:yaniv120892/claude-config.git ~/Develop/claude-config
 cd ~/Develop/claude-config
-./install.sh --dry-run          # see exactly what would change
-./install.sh                    # personal profile → ~/.claude
+
+# Half 1 — rules, settings, keybindings, statusline
+./install.sh --dry-run      # see exactly what would change
+./install.sh                # personal profile → ~/.claude
+
+# Half 2 — skills, commands, hooks
+claude
+/plugin marketplace add yaniv120892/claude-config
+/plugin install pr-workflows@yaniv-claude-config
+/plugin install dev-workflows@yaniv-claude-config
+/plugin install cmux@yaniv-claude-config
 ```
 
-Other profiles and targets:
-
-```sh
-./install.sh --profile work                          # work profile → ~/.claude
-./install.sh --target ~/.claude-personal             # a second profile dir
-```
-
-Files are **symlinked**, so editing one here takes effect immediately and
+`install.sh` symlinks, so editing a file here takes effect immediately and
 `git status` is the single source of truth for what you've changed. The exception
 is `settings.json`, which is copied once and never overwritten, because Claude
-Code writes machine-local state into it.
+Code writes machine-local state into it. Anything replaced is moved to
+`~/.claude-config-backups/<timestamp>/` first.
 
-Anything replaced is moved to `~/.claude-config-backups/<timestamp>/` first.
+Add `--profile work` or `--target ~/.claude-personal` for a second profile.
 
-> ⚠️ `install.sh` links the **whole** `skills/` directory. On a machine that also
-> has skills not tracked here (employer-specific ones), those are moved into the
-> backup directory rather than deleted. Move them back afterwards, or keep them in
-> a separate profile directory.
+## The plugins
 
-## Two profiles
+| Plugin | Skills | What it does |
+| --- | --- | --- |
+| `pr-workflows` | 13 | Forge-agnostic change-request workflow: create, review, inline comments, CI verification, thread resolution, conflict fixing, feedback harvesting. Ships `/pr-review`, `lib/forge.py`, and `references/forge-cli.md` |
+| `dev-workflows` | 11 | Brainstorming, plan writing and execution, TDD, subagent-driven development, worktree isolation, Docker-based service runs. Ships the pre-push quality-gate hook |
+| `cmux` | 5 | cmux terminal multiplexer control: topology, workspaces, browser surface, notifications |
 
-Claude Code picks its config directory from `CLAUDE_CONFIG_DIR`, so you can run
-separate personal and work setups on one machine:
+Enable or disable a whole plugin per profile through `enabledPlugins` in
+`settings.json` — that replaces maintaining a `skillOverrides` list of individual
+skill names.
+
+### Forge-agnostic by construction
+
+The PR skills detect GitHub or GitLab from the origin remote and drive `gh` or
+`glab` accordingly. Their scripts share `lib/forge.py`, which normalises the
+parts the forges genuinely disagree on — inline-comment position payloads, thread
+resolution (REST on GitLab, GraphQL on GitHub), and merge-base resolution — and
+routes every API call through `gh api` / `glab api` so **no script ever reads a
+token**.
 
 ```sh
-alias claude-work='CLAUDE_CONFIG_DIR=~/.claude claude'
-alias claude-personal='CLAUDE_CONFIG_DIR=~/.claude-personal claude'
+# smoke-test the forge layer from inside any repo
+python3 ~/.claude/plugins/.../pr-workflows/lib/forge.py
+# → forge=github cli=gh repo=owner/name
 ```
 
-Both profiles share `shared-rules.md`, `rules/`, `references/`, and `lib/`, which
-always install under `~/.claude` because `CLAUDE.md` imports them by absolute path
-(`@~/.claude/shared-rules.md`). Only `CLAUDE.md`, `skills/`, `commands/`,
-`keybindings.json`, and `settings.json` are profile-scoped.
+Scripts resolve `${CLAUDE_PLUGIN_ROOT}` when installed and fall back to walking up
+to the plugin root when run straight from a clone, so both work.
 
-## Layout
-
-| Path | Installs to | What it is |
-| --- | --- | --- |
-| `shared-rules.md` | `~/.claude/shared-rules.md` | Always-loaded global rules |
-| `rules/*.md` | `~/.claude/rules/` | Path-scoped rules — load only when a matching file is read |
-| `rules-reference.md` | `~/.claude/rules-reference.md` | Long-form rationale; read on demand, never inlined |
-| `references/forge-cli.md` | `~/.claude/references/` | GitHub ↔ GitLab command mapping |
-| `lib/forge.py` | `~/.claude/lib/` | Forge-agnostic PR/MR helper used by the skill scripts |
-| `skills/` | `<profile>/skills/` | 29 skills |
-| `commands/` | `<profile>/commands/` | Slash commands |
-| `hooks/` | `~/.claude/hooks/` | `pre-push-quality-gate.sh` |
-| `profiles/<name>/CLAUDE.md` | `<profile>/CLAUDE.md` | Profile context, imports the shared rules |
-| `settings/settings.json` | `<profile>/settings.json` | Baseline settings (copied, not linked) |
-| `mcp/mcp.json.example` | — | Template for `.mcp.json` |
-| `statusline-command.sh` | `~/.claude/` | Status line: dir, branch, model, context % |
-
-## Rules
+## Rules (the non-plugin half)
 
 `shared-rules.md` loads on every prompt and holds only what is universal:
-developer context, the memory/rule-codification protocol, file-path convention,
+developer context, the rule-codification protocol, file-path convention,
 conventional commits, and subagent conventions.
 
-Everything else is **path-scoped** — each file in `rules/` has a `paths:` frontmatter
-list and loads only when Claude reads a matching file, so a large rule set costs
-nothing on unrelated prompts.
+Everything else is **path-scoped** — each file in `rules/` has a `paths:`
+frontmatter list and loads only when Claude reads a matching file, so a large
+rule set costs nothing on unrelated prompts.
 
 | File | Loads on | Covers |
 | --- | --- | --- |
@@ -86,21 +90,35 @@ nothing on unrelated prompts.
 
 Verify what actually loaded in a session with `/context`.
 
-## Skills
+## Layout
 
-Read `REVIEW.md` for what each skill is, why it survived, and what was dropped.
+```
+.claude-plugin/marketplace.json   the marketplace manifest
+plugins/<name>/                   one directory per plugin
+  .claude-plugin/plugin.json      plugin manifest
+  skills/ commands/ hooks/ lib/ references/
+shared-rules.md                   → ~/.claude/shared-rules.md
+rules/*.md                        → ~/.claude/rules/
+rules-reference.md                → ~/.claude/rules-reference.md
+profiles/<name>/CLAUDE.md         → <profile>/CLAUDE.md
+settings/settings.json            → <profile>/settings.json (copied)
+keybindings.json statusline-command.sh
+install.sh                        installs the non-plugin half only
+```
 
-The PR/MR skills are **forge-agnostic**: they detect GitHub or GitLab from the
-origin remote and use `gh` or `glab` accordingly. Their scripts share
-`lib/forge.py`, which normalises the parts the two forges genuinely disagree on —
-inline-comment position payloads, thread resolution (REST on GitLab, GraphQL on
-GitHub), and merge-base resolution.
+## Two profiles
+
+Claude Code picks its config directory from `CLAUDE_CONFIG_DIR`:
 
 ```sh
-# smoke-test the forge layer from inside any repo
-python3 ~/.claude/lib/forge.py
-# → forge=github cli=gh repo=owner/name
+alias claude-work='CLAUDE_CONFIG_DIR=~/.claude claude'
+alias claude-personal='CLAUDE_CONFIG_DIR=~/.claude-personal claude'
 ```
+
+Both profiles share `shared-rules.md`, `rules/`, and `rules-reference.md`, which
+always install under `~/.claude` because `CLAUDE.md` imports them by absolute path
+(`@~/.claude/shared-rules.md`). Only `CLAUDE.md`, `keybindings.json`, and
+`settings.json` are profile-scoped — plus whichever plugins each profile enables.
 
 ## Secrets
 
@@ -119,12 +137,12 @@ an env var without the value landing in a file. See `mcp/mcp.json.example`.
 
 If a secret ever does get committed, rotate it — deleting the line is not enough.
 
-## Adding a rule
+## Adding things
 
-Follow the protocol in `shared-rules.md`: decide the scope first.
+**A skill, command, or hook** → the matching plugin under `plugins/`, then bump
+that plugin's `version` in its `plugin.json` so `/plugin update` picks it up.
 
-- Applies to every session → `shared-rules.md`
-- Applies to a language or file type → the matching `rules/*.md` (needs `paths:`)
-- Applies to one project → that repo's `.claude/rules/` (also needs `paths:`)
-
-Add the long-form version with worked examples to `rules-reference.md` either way.
+**A rule** → decide scope first, per the protocol in `shared-rules.md`:
+every session → `shared-rules.md`; a language or file type → `rules/*.md` (needs
+`paths:`); one project → that repo's `.claude/rules/`. Add the long-form version
+with worked examples to `rules-reference.md` either way.
