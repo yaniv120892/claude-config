@@ -98,3 +98,14 @@ same field silently skips it, and every test of the guarded path still passes
 > only writer — a generic update usually accepts the same field.
 > Avoid: A guard in one controller action, or a service method that only the "primary" entry
 > point calls, while a generic update spreads the same field straight into the write.
+
+**Every New Env Var Has a Default** — a var that throws when unset makes deploying the code and
+configuring it a single atomic step nobody can sequence; the first request after deploy 500s
+> Pattern: Read new vars through the optional accessor so unset resolves to a defined value
+> (`optionalEnv(name)` → `''`), and pass an explicit fallback when the useful default is not
+> empty (`optionalEnv('X_TIMEOUT_MS', '5000')`). Pick a default that makes the feature inert,
+> not broken. List the var in `.env.example` with its default so "unset" is a documented state.
+> Avoid: `requireEnv('NEW_FLAG')` on a request path; a feature that 500s because an optional
+> integration URL has not been pasted into the dashboard yet.
+> Exception: config the process genuinely cannot run without (DB URL, JWT secret) is required —
+> but assert it at boot next to the others, never on first use.
