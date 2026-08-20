@@ -65,6 +65,18 @@ so a large rule set is paid for on every prompt whether or not it's relevant
 > Avoid: Inventing an issue key for a project with no tracker, or blocking a commit
 > on a ticket that does not exist.
 
+**Always Squash on Merge** — one PR is one commit on the base branch, so history reads
+as a list of shipped changes rather than a transcript of how each one was arrived at
+> Pattern: Squash-merge every PR you own, deleting the branch. The squash message
+> defaults to the PR title, so write that title as a conventional commit — it, not any
+> commit on the branch, becomes the permanent history. Forge command mapping is in the
+> `pr-workflows` plugin's `references/forge-cli.md`.
+> Avoid: Merge commits or rebase-merges, which replay a branch's working history onto
+> the base branch. Clicking a repo's default merge button without checking which
+> strategy it runs.
+> Exception: Never squash-merge a branch someone else is still committing to — it
+> rewrites what they branched from.
+
 ## Subagents
 
 **Run Subagents From the Repo They Modify** — each repo's CLAUDE.md, rules, and scripts must be
