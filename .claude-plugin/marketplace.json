@@ -12,7 +12,7 @@
     },
     {
       "name": "dev-workflows",
-      "description": "Planning, TDD, subagent-driven execution, worktree isolation, and a pre-push quality gate.",
+      "description": "Planning, TDD, subagent-driven execution, worktree isolation, a pre-push quality gate, and /ship — the end-to-end feature delivery pipeline.",
       "category": "engineering",
       "source": "./plugins/dev-workflows"
     },

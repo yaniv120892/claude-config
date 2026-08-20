@@ -60,6 +60,14 @@ Format: `➜  dir git:(branch) ✗ [Model Name] ctx:42%`
 > Avoid: Relative paths (`./docs/foo.md`), bare filenames (`foo.md`), or paths that only make sense given unstated context about the current working directory.
 > Example: `/Users/yaniv/Documents/project/docs/foo.md` — not `docs/foo.md` or `foo.md`.
 
+## Commits and Merging
+
+**Always Squash on Merge** — The base branch should read as a list of shipped changes, one line per PR, not as a transcript of how each change was arrived at. An agent-driven PR is especially noisy: it accumulates a test-first commit, an implementation commit, a `/simplify` commit, a review-fixes commit, and a docs commit, none of which mean anything to someone reading `git log` six months later. Squashing also makes `git revert <sha>` undo an entire feature rather than one arbitrary slice of it, and makes `git bisect` land on shippable states instead of half-built ones.
+> Pattern: Squash-merge every PR you own and delete the branch. The squash message defaults to the PR title, so write that title as a conventional commit (`<type>(<scope>): <description>`) — that title, not any commit on the branch, becomes the permanent base-branch history, so the type and scope have to be right there. The forge command mapping (`gh` vs `glab`) is in the `pr-workflows` plugin's `references/forge-cli.md`; read it rather than guessing flags.
+> Avoid: Merge commits, which preserve every intermediate step and add a merge commit on top. Rebase-merges, which replay each commit onto the base branch individually — same noise, no merge commit. Clicking a repo's default merge button without checking which strategy it is configured for.
+> Exception: Never squash-merge a branch someone else is still committing to — squashing rewrites what they branched from. This is about your own finished PRs.
+> Note: Within a branch, commit as often as is useful. Granular commits are how you work; they are not what the base branch keeps. The squash is what reconciles those two, which is why a noisy working history is not a reason to avoid committing often.
+
 ## Coding Preferences
 
 **Array Type Syntax** — Consistent, concise type annotations
