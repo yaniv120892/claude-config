@@ -120,6 +120,12 @@ always install under `~/.claude` because `CLAUDE.md` imports them by absolute pa
 (`@~/.claude/shared-rules.md`). Only `CLAUDE.md`, `keybindings.json`, and
 `settings.json` are profile-scoped — plus whichever plugins each profile enables.
 
+The work profile carries no employer details. `profiles/work/CLAUDE.md` imports
+`~/.claude/work-context.local.md`, which this repo never tracks — put the real
+email, issue-key prefix, and repo names there. Without it the profile still
+installs and reads as placeholders, so the repo stays publishable and a fresh
+machine is one file away from being fully configured.
+
 ## Secrets
 
 **Nothing secret is tracked here, and nothing secret should ever be added.**
