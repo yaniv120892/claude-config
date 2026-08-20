@@ -1,8 +1,14 @@
 @~/.claude/shared-rules.md
+@~/.claude/work-context.local.md
 
 # Work Context
 
-Fill these in per employer; keep anything confidential out of this repo.
+Employer-specific values — the real email, the real issue-key prefix, the actual
+repo names — go in `~/.claude/work-context.local.md`, which this file imports and
+this repo never tracks. That keeps confidential details off GitHub while letting
+`install.sh` symlink this file like every other profile. The import is harmless
+when the local file is absent, so a fresh machine still installs cleanly; create
+it from the placeholders below.
 
 - Work email: <you@company.com>
 - Commit scopes follow the issue-tracker key format (e.g. `ABC-123`). Check which
