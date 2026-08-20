@@ -142,7 +142,7 @@ Return: what you built, the test counts, the proof type, and anything the plan g
 
 That skill covers `/code-review`, `/simplify`, rules alignment, the quality gate, and commit/push. In addition, before you push:
 
-- **Strip redundant comments.** Delete any comment that restates what the line already says, narrates the change (`// added this`, `// fixed`), or repeats a name. Keep comments that explain *why* — a non-obvious constraint, a workaround, a decision someone would otherwise undo. When in doubt about a `why` comment, keep it.
+- **Strip redundant comments. REQUIRED SUB-SKILL:** `prune-comments`, scoped to this branch's diff. It goes further than deleting noise — where a comment is propping up a bad name, the fix is the rename, not the deletion. Do not widen it beyond the diff.
 - **Re-check against the plan.** Anything in `plan.md`'s `## Out of scope` that crept in gets removed.
 - **Update the repo's `CLAUDE.md`.** You read it at the start of this phase. Re-read the final diff against it and fix anything it now states wrongly — architecture notes, invariants, commands, routes, crons, models. Record the rule the code now follows, not the story of the change; git log holds that. If this branch merged the base branch, check the file against the merged tree rather than your own diff alone — a doc goes stale from commits your PR never touched. Fix what is cheaply and factually wrong; anything larger goes in your report for the handoff instead of growing this PR. If the repo has no `CLAUDE.md`, or nothing the file claims has changed, say so in your report and move on — do not create one, and do not pad it with a summary of this PR.
 - Confirm `.claude/ship/` is not staged.
