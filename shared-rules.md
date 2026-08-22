@@ -77,6 +77,18 @@ as a list of shipped changes rather than a transcript of how each one was arrive
 > Exception: Never squash-merge a branch someone else is still committing to — it
 > rewrites what they branched from.
 
+**Ship `claude-config` Changes; Never Leave Them Uncommitted** — `~/.claude` is symlinked
+into that repo, so an edit is live on this machine and absent everywhere else until pushed
+> Pattern: Any change under `~/Develop/claude-config` — statusline, rules, settings,
+> keybindings, plugins — gets a branch, a PR, a squash-merge to `main`, and a local
+> fast-forward so the symlink target matches `origin`. This is standing authorization:
+> do it without asking, in the same session that made the change.
+> Avoid: Committing straight to `main`; force-pushing; leaving the edit dirty in the
+> working tree; sweeping unrelated dirty files in — `git stash push <paths>` those first.
+> Corollary: A skill, command, or agent created directly in `~/.claude/skills`,
+> `~/.claude/commands`, or `~/.claude/agents` is local-only — `install.sh` leaves those
+> alone by design. To ship one, move it into `plugins/<plugin>/` in the repo.
+
 ## Subagents
 
 **Run Subagents From the Repo They Modify** — each repo's CLAUDE.md, rules, and scripts must be
