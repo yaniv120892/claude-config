@@ -3,6 +3,19 @@ input=$(cat)
 cwd=$(echo "$input" | jq -r '.workspace.current_dir // .cwd')
 dir=$(basename "$cwd")
 
+# Location: repo name, plus the worktree/subdir name when it differs
+git_common=$(git -C "$cwd" --no-optional-locks rev-parse --path-format=absolute --git-common-dir 2>/dev/null)
+if [ -n "$git_common" ]; then
+  repo=$(basename "$(dirname "$git_common")")
+else
+  repo=""
+fi
+if [ -n "$repo" ] && [ "$repo" != "$dir" ]; then
+  loc_info=$(printf "\033[0;36m%s\033[0;90m/\033[1;36m%s\033[0m" "$repo" "$dir")
+else
+  loc_info=$(printf "\033[0;36m%s\033[0m" "$dir")
+fi
+
 # Git info
 git_branch=$(git -C "$cwd" --no-optional-locks branch --show-current 2>/dev/null)
 if [ -n "$git_branch" ]; then
@@ -40,4 +53,4 @@ else
   ctx_info=""
 fi
 
-printf "\033[1;32m➜\033[0m  \033[0;36m%s\033[0m%s%s%s" "$dir" "$git_info" "$model_info" "$ctx_info"
+printf "\033[1;32m➜\033[0m  %s%s%s%s" "$loc_info" "$git_info" "$model_info" "$ctx_info"
