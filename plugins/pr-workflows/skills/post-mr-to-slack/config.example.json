@@ -1,0 +1,22 @@
+{
+  "_comment": "Copy to ~/.claude/post-mr-to-slack.config.json and fill in. That path is machine-local and never committed — this repo ships only the shape. The skill WRITES BACK to it as it learns new developers, channels, and repo emoji.",
+
+  "emailDomain": "your-company.com",
+
+  "channels": {
+    "team-prs": "C000000000",
+    "prs-and-bugs": "C111111111"
+  },
+
+  "developers": {
+    "some.username": {
+      "name": "Full Name",
+      "slackUserId": "U000000000",
+      "channels": ["team-prs"]
+    }
+  },
+
+  "repos": {
+    "payments-api": { "emoji": ":credit_card:", "aliases": ["payments"] }
+  }
+}

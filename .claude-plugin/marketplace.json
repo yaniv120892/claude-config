@@ -17,6 +17,18 @@
       "source": "./plugins/dev-workflows"
     },
     {
+      "name": "issue-tracker",
+      "description": "Jira ticket creation and status transitions, with site, project keys and status aliases in a machine-local config so it moves between employers.",
+      "category": "engineering",
+      "source": "./plugins/issue-tracker"
+    },
+    {
+      "name": "infra-workflows",
+      "description": "Add env vars to a service's Helm values across GitOps registries, and provision AWS SSM SecureString parameters per environment with an account guard.",
+      "category": "engineering",
+      "source": "./plugins/infra-workflows"
+    },
+    {
       "name": "cmux",
       "description": "Control the cmux terminal multiplexer — topology, workspaces, browser surface, notifications.",
       "category": "productivity",

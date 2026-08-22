@@ -1,0 +1,45 @@
+{
+  "_comment": "Copy to ~/.claude/infra-workflows.config.json and fill in. That path is machine-local and never committed — this repo ships only the shape. Ordering matters in helm.registries: the first entry that contains the service wins, so put the preferred (non-legacy) repo first.",
+
+  "helm": {
+    "registries": [
+      {
+        "name": "eks-services-gitops",
+        "path": "~/Develop/Devops/eks-services-gitops",
+        "valuesPattern": "apps/{service}/values/values.{env}.{cluster}.yaml",
+        "clusters": { "dev": "company-dev", "prod": "company-prod" },
+        "defaultBranch": "master",
+        "legacy": false
+      },
+      {
+        "name": "legacy-registry",
+        "path": "~/Develop/Devops/legacy-registry",
+        "valuesPattern": "helm-values/{env}/{service}.yaml",
+        "defaultBranch": "master",
+        "legacy": true
+      }
+    ],
+    "environments": ["dev", "prod"],
+    "envLocalSyncCommand": null
+  },
+
+  "ssm": {
+    "region": "eu-central-1",
+    "pathPrefix": "/{domain}/{env}/{service}/",
+    "domain": "content",
+    "environments": {
+      "dev": {
+        "accountId": "000000000000",
+        "auth": "sso",
+        "profile": "your-dev-sso-profile",
+        "kmsKey": "alias/your-dev-key"
+      },
+      "prod": {
+        "accountId": "111111111111",
+        "auth": "temporary-sts",
+        "profile": null,
+        "kmsKey": "alias/your-prod-key"
+      }
+    }
+  }
+}

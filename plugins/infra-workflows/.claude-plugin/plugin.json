@@ -1,0 +1,9 @@
+{
+  "name": "infra-workflows",
+  "description": "Employer-agnostic service configuration plumbing: add an environment variable to a service's Helm values across a GitOps repo and open the PRs, and provision AWS SSM Parameter Store SecureStrings per environment from an env file with an account guard and an explicit --confirm gate. Repo paths, AWS accounts, KMS keys, and path conventions come from a machine-local config file.",
+  "version": "1.0.0",
+  "author": { "name": "Yaniv Daye" },
+  "homepage": "https://github.com/yaniv120892/claude-config",
+  "repository": "https://github.com/yaniv120892/claude-config",
+  "keywords": ["helm", "gitops", "aws", "ssm", "parameter-store", "env-vars", "infra"]
+}
