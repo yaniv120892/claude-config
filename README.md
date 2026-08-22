@@ -29,6 +29,8 @@ claude
 /plugin marketplace add yaniv120892/claude-config
 /plugin install pr-workflows@yaniv-claude-config
 /plugin install dev-workflows@yaniv-claude-config
+/plugin install issue-tracker@yaniv-claude-config
+/plugin install infra-workflows@yaniv-claude-config
 /plugin install cmux@yaniv-claude-config
 ```
 
@@ -44,9 +46,16 @@ Add `--profile work` or `--target ~/.claude-personal` for a second profile.
 
 | Plugin | Skills | What it does |
 | --- | --- | --- |
-| `pr-workflows` | 13 | Forge-agnostic change-request workflow: create, review, inline comments, CI verification, thread resolution, conflict fixing, feedback harvesting. Ships `/pr-review`, `lib/forge.py`, and `references/forge-cli.md` |
-| `dev-workflows` | 11 | Brainstorming, plan writing and execution, TDD, subagent-driven development, worktree isolation, Docker-based service runs. Ships the pre-push quality-gate hook |
+| `pr-workflows` | 14 | Forge-agnostic change-request workflow: create, review, inline comments, CI verification, thread resolution, conflict fixing, feedback harvesting, posting an MR to Slack. Ships `/pr-review`, `lib/forge.py`, and `references/forge-cli.md` |
+| `dev-workflows` | 15 | Brainstorming, plan writing and execution, TDD, subagent-driven development, worktree isolation, Docker-based service runs, drip-feed recurring maintenance, and `syncing-claude-config`. Ships the pre-push quality-gate hook |
+| `issue-tracker` | 2 | Jira ticket creation and status transitions, with a cached per-project transition map |
+| `infra-workflows` | 2 | Helm env vars across GitOps registries, and AWS SSM SecureString provisioning with an account guard. Ships `provision_ssm.sh` |
 | `cmux` | 5 | cmux terminal multiplexer control: topology, workspaces, browser surface, notifications |
+
+Plugins that touch an employer's systems read their site-specific values — accounts,
+project keys, Slack channels, repo paths — from a machine-local
+`~/.claude/<plugin>.config.json`. Each ships a `config.example.json` showing the shape,
+and never the values. Moving to a new employer is a config swap, not a skill rewrite.
 
 Enable or disable a whole plugin per profile through `enabledPlugins` in
 `settings.json` — that replaces maintaining a `skillOverrides` list of individual

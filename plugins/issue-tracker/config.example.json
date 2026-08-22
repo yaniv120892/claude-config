@@ -1,0 +1,29 @@
+{
+  "_comment": "Copy to ~/.claude/issue-tracker.config.json and fill in. That path is machine-local and never committed — this repo ships only the shape. Every employer-specific value lives here, so the skills themselves stay portable.",
+
+  "site": "your-company.atlassian.net",
+  "defaultCloudId": "00000000-0000-0000-0000-000000000000",
+  "defaultProject": "ABC",
+  "defaultAssigneeAccountId": null,
+
+  "issueTypes": ["Story", "Bug", "Task"],
+
+  "statusAliases": {
+    "dev": "deployed to dev",
+    "deploy to dev": "deployed to dev",
+    "in dev": "deployed to dev",
+    "qa": "in QA",
+    "wip": "in progress",
+    "done": "done"
+  },
+
+  "projects": {
+    "ABC": {
+      "cloudId": "00000000-0000-0000-0000-000000000000",
+      "transitions": {
+        "in progress": { "id": "21" },
+        "done": { "id": "31" }
+      }
+    }
+  }
+}
