@@ -169,3 +169,68 @@ The gates where a run sits waiting for *you*: scoping answers, plan approval, re
 - Stack: my recommendation is zero-dependency Node (single `server.js` + one HTML page, `npx`-runnable, nothing to build or update). Alternative: Vite+React if you'd rather have a component framework for a richer UI. Preference?
 
 > 
+
+---
+
+## Answers (round 1, given in chat 2026-08-25)
+
+1. **D** — everything on the board: /ship runs + open PRs + Linear tasks + plain sessions
+2. **B** — ambient detection for non-/ship flows
+3. **Local only.** Remote claude.ai/code session support → ticket [YAN-61](https://linear.app/yaniv-daye-personal/issue/YAN-61)
+4. **Linear** (workspace `yaniv-daye-personal`), behind a generic provider interface so the tracker is swappable
+5. → follow-up F1
+6. **A** — local web app
+7. Mockups published as an artifact for comparison (kanban vs card grid vs dense table)
+8. → follow-up F2
+9. **B** — open-helpers only. Richer actions → ticket [YAN-62](https://linear.app/yaniv-daye-personal/issue/YAN-62)
+10. **A** — archive run state so history survives post-merge worktree cleanup
+11. → follow-up F3
+12. **A** — passive "needs you" highlighting, no push notifications
+13. Public repo. Name + stack + persistence → follow-up F4 and chat recommendation
+
+---
+
+## Follow-ups
+
+### F1. (was #5) Which folders on your machine contain your code?
+
+The tool finds work by scanning the filesystem — it needs to know where to
+look. For example, if all your repos live under `~/Develop`, it scans
+`~/Develop` recursively and finds every git repo, worktree, and `/ship` run
+inside. Just list the folder path(s) that hold your repos (and, if you know
+worktrees ever get created somewhere else — e.g. by cmux — that path too).
+
+> 
+
+### F2. (was #8) What the click-through detail view shows
+
+When you click a card, a detail panel opens. My proposed default shows, in
+order: the original request verbatim → pipeline timeline with each phase's
+report → tabs for plan.md / scope.md / proof-of-work.md rendered → PR checks &
+review state → git info (branch, ahead/behind, last commits). Question: is
+that default fine, or is there anything you'd drop or want first?
+
+> 
+
+### F3. (was #11) Timestamps: OK to make a tiny change to /ship?
+
+Today `/ship` records which phases completed but not *when*, so the board
+can't say "implementation took 40 min" or "stuck at QA since 14:00" — it can
+only approximate from file modification times.
+
+**Options:**
+- A: I make a one-line change to the /ship skill so each completed phase is
+  recorded with a timestamp → accurate timeline on the board (recommended)
+- B: Don't touch /ship — the board approximates from file mtimes
+
+> 
+
+### F4. (was #13) Name — pick one (or counter-propose)
+
+**Options:**
+- A: `shipyard` — where ships are built; extends your /ship naming; my favorite
+- B: `harbor` — every ship currently in port, at a glance
+- C: `drydock` — ships under maintenance/construction
+- D: `flightdeck` / `tower` — air-traffic-control flavor instead of nautical
+
+> 
