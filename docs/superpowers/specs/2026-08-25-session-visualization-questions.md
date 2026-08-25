@@ -234,3 +234,13 @@ only approximate from file modification times.
 - D: `flightdeck` / `tower` — air-traffic-control flavor instead of nautical
 
 > 
+
+---
+
+## Follow-up answers (round 2, given in chat 2026-08-25)
+
+- **F1:** First run of the tool bootstraps its config — start with sensible default scan roots, let the user confirm/edit, persist the config
+- **F2:** Proposed detail-view default approved as-is
+- **F3:** **A** — add per-phase timestamps to /ship, delivered as a PR to claude-config
+- **F4:** **A** — the tool is named **shipyard**
+- **Layout:** Option B (card grid grouped by attention) as recommended; dense-table toggle deferred
