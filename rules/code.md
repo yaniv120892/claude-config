@@ -44,6 +44,20 @@ Language-agnostic. TypeScript specifics are in `typescript.md`, Python in `pytho
 > Avoid: `cfg`, `ctx`, `mgr`, `svc`, `evt`, `res`, `req`, `msg`, `acc`; single letters outside
 > loop indices (`i`, `j`) and sort comparators (`a`, `b`).
 
+**Name Opaque Tokens Once, In the Module That Owns Them** — a literal the compiler cannot
+check (`'P2025'`, `'yyyy-MM-dd'`, a header name, a model id) means something only to a reader
+who has memorized the protocol, and a typo in a pasted copy compiles clean and fails at runtime
+> Pattern: Define the token as a named constant in the module that owns the protocol
+> (`PRISMA_ERROR_CODES.RECORD_NOT_FOUND`, `DAY_FORMAT`) and import it everywhere else — the
+> name carries the meaning, the value carries the wire format, and the comment the raw literal
+> would have needed disappears. Repetition makes this mandatory; even a single use earns a
+> name when the token is opaque enough to need explaining. Tests that pin the protocol itself
+> keep the raw literal — asserting against the constant would let the value drift unnoticed.
+> Avoid: The same raw token pasted across call sites; also the opposite failure — wrapping
+> compiler-checked literals (union members like `'APPROVED'`, enum values, CSS/`sx` keywords)
+> in constants, where the type system already rejects typos and a constant only adds
+> indirection.
+
 **Public-First Method Ordering** — top-down readability
 > Pattern: Public/exported members at the top, private helpers at the bottom.
 
