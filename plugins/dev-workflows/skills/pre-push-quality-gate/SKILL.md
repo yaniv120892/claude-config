@@ -94,6 +94,11 @@ cat package.json | grep -A 20 '"scripts"'
 
 If the script genuinely doesn't exist in the project, note it explicitly — don't silently skip.
 
+The hook does this for you: it reads `package.json` and prints
+`no npm script for: <names>` for any gate it could not run. That line is the
+only difference between a gate that passed and a gate that was never there —
+`npm run <name> --if-present` exits 0 for both.
+
 ## Common Mistakes
 
 | Mistake | Fix |

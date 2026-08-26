@@ -89,14 +89,38 @@ fi
 # type error in a test file compiles clean and exits 0. Run the project-wide
 # check separately, as CI does. `format:check` is the non-rewriting sibling of a
 # `format` script, which is usually `prettier --write` and so can never fail.
-if npm run build --if-present \
-  && npm run lint --if-present \
-  && npm run typecheck --if-present \
-  && npm run prettier --if-present \
-  && npm run format:check --if-present \
-  && npm run test --if-present; then
-  exit 0
-fi
+#
+# `npm run <name> --if-present` exits 0 for a script the repo does not define,
+# so a gate nobody wired up passes by never running — indistinguishable, from
+# the exit code alone, from one that ran clean. Read the names once and say
+# which were skipped rather than banking a pass nobody earned.
+scripts=$(node -e '
+  try {
+    process.stdout.write(Object.keys(require(process.cwd() + "/package.json").scripts || {}).join(" "));
+  } catch { }
+' 2>/dev/null)
 
-echo "Pre-push checks failed (build/lint/typecheck/prettier/test). Fix them before pushing." >&2
-exit 2
+# A "|" entry is one gate satisfied by either name, so a repo with only
+# format:check is covered rather than nagged about a prettier script it does
+# not need. Order matters: a broken build makes every later gate downstream noise.
+missing=""
+for gate in build lint typecheck "prettier|format:check" test; do
+  satisfied=""
+  IFS="|" read -ra names <<< "$gate"
+  for name in "${names[@]}"; do
+    case " $scripts " in
+      *" $name "*) ;;
+      *) continue ;;
+    esac
+    satisfied=yes
+    if ! npm run "$name"; then
+      echo "Pre-push checks failed at '$name'. Fix it before pushing." >&2
+      exit 2
+    fi
+  done
+  [ -z "$satisfied" ] && missing="$missing ${gate//|/ or }"
+done
+
+[ -n "$missing" ] && echo "Pre-push gate: this repo has no npm script for:$missing — those checks did not run." >&2
+
+exit 0
