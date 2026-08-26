@@ -153,9 +153,10 @@ apply only the entry that is genuinely yours.
 
 ## Step 5 — Verify
 
-Run the repo's real gates from its `package.json` — typecheck, build, test, lint
-(**REQUIRED SUB-SKILL:** pre-push-quality-gate). In a worktree, `node_modules` may live in
-the main checkout; follow that skill's worktree notes.
+Run the repo's real gates from its `package.json`
+(**REQUIRED SUB-SKILL:** pre-push-quality-gate — it owns the step list). Its base-sync
+step is already satisfied here: resolving the conflict is that merge. In a worktree,
+`node_modules` may live in the main checkout; follow that skill's worktree notes.
 
 - A conflict resolution that compiles can still be semantically wrong. Prefer running the
   affected tests over trusting the diff.

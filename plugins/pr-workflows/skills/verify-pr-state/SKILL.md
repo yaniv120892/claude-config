@@ -114,6 +114,6 @@ After auto-merge is enabled:
 ## Notes
 
 - Never force-push. Never skip hooks. Never use `--no-verify`.
-- When fixing lint/prettier failures: run the pre-push-quality-gate checklist (prettier → lint → build) before committing the fix.
+- When fixing lint/prettier failures: run the `pre-push-quality-gate` checklist before committing the fix — that skill owns the step list.
 - The worktree for this repo is under `.claude/worktrees/` — all fixes should be committed from there.
 - If two consecutive pipeline runs fail on the same job and the fix isn't obvious from the log, escalate to the user rather than looping endlessly.

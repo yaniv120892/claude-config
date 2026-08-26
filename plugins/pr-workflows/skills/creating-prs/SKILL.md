@@ -31,7 +31,7 @@ git remote get-url origin   # github.com → gh,  gitlab → glab
 ```
 BEFORE creating any change request:
 
-1. QUALITY GATE: Run pre-push-quality-gate (build/test/prettier/lint)
+1. QUALITY GATE: Run pre-push-quality-gate (syncs with the base, then every check)
 2. VERIFY GIT STATE: clean tree, fresh target, branch up to date
 3. RESOLVE TICKET: if the project tracks issues, confirm the reference
 4. IDENTIFY: Is this environment-specific? (dev-only or dev+prod?)
