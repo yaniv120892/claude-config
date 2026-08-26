@@ -65,7 +65,7 @@ Everything durable goes in the worktree at `.claude/ship/`:
 
 `phase` is one of: `scope` → `plan` → `plan-approved` → `implement` → `polish` → `qa` → `ready-to-merge` → `merged` → `verified`.
 
-Append one line to `history` per completed phase. `request` is written once at Phase 0 and is **immutable** — it is the independent source of truth the QA agent is judged against.
+Append one entry to `history` per completed phase, as an object: `{"phase": "<the completed phase>", "at": "<UTC ISO-8601 timestamp>", "note": "<one line, optional>"}`. `request` is written once at Phase 0 and is **immutable** — it is the independent source of truth the QA agent is judged against.
 
 ## Per-repo configuration
 
