@@ -64,8 +64,8 @@ rather than taking either the reviewer's premise or your own first instinct at f
 
 One change at a time. Add or update a test that covers each fix (these are usually edge cases the
 reviewer found — a test documents the fix and prevents regression). Then run the repo's OWN quality
-gate before pushing — **REQUIRED:** `pre-push-quality-gate` (build, test, prettier, lint from this
-repo's `package.json`; never another repo's). Confirm only your changed files are clean — pre-existing
+gate before pushing — **REQUIRED:** `pre-push-quality-gate` — every step it lists, from this
+repo's `package.json`; never another repo's. Confirm only your changed files are clean — pre-existing
 lint warnings in untouched files are not yours to fix here.
 
 ## Step 4a — Flag generic fixes for rule codification
