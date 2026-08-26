@@ -23,7 +23,7 @@ fire_with_scripts() {
 
 # Every gate present and passing.
 ALL_PASS='{"build":"exit 0","lint":"exit 0","prettier":"exit 0","typecheck":"exit 0","test":"exit 0"}'
-report "all five gates pass" 0 "$(fire_with_scripts "$ALL_PASS")"
+report "all gates pass" 0 "$(fire_with_scripts "$ALL_PASS")"
 
 # typecheck is now a gate: a failing one must block the push. Before this was
 # wired up, a repo could fail tsc and still push green.
@@ -36,11 +36,22 @@ grep -q "failed at 'typecheck'" "$TMP/err" && named=yes || named=no
 report "failure names the gate" yes "$named"
 
 # A repo missing a script still pushes, but the skip is announced. This is the
-# case that used to be silent: no `prettier` script meant no format check ran.
-NO_PRETTIER='{"build":"exit 0","lint":"exit 0","typecheck":"exit 0","test":"exit 0"}'
-report "missing script does not block" 0 "$(fire_with_scripts "$NO_PRETTIER")"
-grep -q "no npm script for: prettier" "$TMP/err" && warned=yes || warned=no
+# case that used to be silent: no formatting script meant no format check ran.
+NO_FORMAT='{"build":"exit 0","lint":"exit 0","typecheck":"exit 0","test":"exit 0"}'
+report "missing script does not block" 0 "$(fire_with_scripts "$NO_FORMAT")"
+grep -q "no npm script for: prettier or format:check" "$TMP/err" && warned=yes || warned=no
 report "missing script is reported" yes "$warned"
+
+# format:check alone satisfies the formatting gate — a repo that named its
+# script that way must not be nagged about a `prettier` script it does not need.
+FORMAT_CHECK_ONLY='{"build":"exit 0","lint":"exit 0","typecheck":"exit 0","format:check":"exit 0","test":"exit 0"}'
+report "format:check alone satisfies it" 0 "$(fire_with_scripts "$FORMAT_CHECK_ONLY")"
+grep -q "no npm script for" "$TMP/err" && nagged=yes || nagged=no
+report "format:check is not reported missing" no "$nagged"
+
+# ...and a failing format:check still blocks.
+FORMAT_CHECK_FAILS='{"build":"exit 0","lint":"exit 0","typecheck":"exit 0","format:check":"exit 1","test":"exit 0"}'
+report "failing format:check blocks" 2 "$(fire_with_scripts "$FORMAT_CHECK_FAILS")"
 
 # Short-circuit: a failing build must stop before test runs.
 BUILD_FAILS='{"build":"exit 1","lint":"exit 0","prettier":"exit 0","typecheck":"exit 0","test":"echo RAN_TEST"}'

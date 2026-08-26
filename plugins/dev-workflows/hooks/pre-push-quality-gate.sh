@@ -64,31 +64,61 @@ cd "$repository_root" || exit 0
 [ -f .skip-quality-gate ] && exit 0
 [ -f nx.json ] && exit 0
 
+# CI builds the merge of this branch with its base, not this tree. A branch that
+# has fallen behind can pass every check here and still fail CI against an API
+# that changed upstream, so this runs first: it is cheap, and being behind
+# invalidates every check that follows.
+#
+# It reports rather than merges — a hook that mutates the working tree mid-push,
+# possibly into a conflict, is worse than the failure it prevents.
+base_branch=$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null)
+base_branch=${base_branch#origin/}
+[ -z "$base_branch" ] && base_branch=main
+if git rev-parse --verify --quiet "refs/remotes/origin/$base_branch" >/dev/null; then
+  git fetch --quiet origin "$base_branch" 2>/dev/null
+  commits_behind=$(git rev-list --count "HEAD..origin/$base_branch" 2>/dev/null || echo 0)
+  if [ "$commits_behind" -gt 0 ]; then
+    echo "Branch is $commits_behind commit(s) behind origin/$base_branch." >&2
+    echo "CI builds the merge, not this tree — these checks would validate code that will never exist." >&2
+    echo "Run: git merge --no-edit origin/$base_branch   (then push again to re-run the gate)" >&2
+    exit 2
+  fi
+fi
+
+# `build` is not a typecheck: a Next.js build type-checks the app graph, so a
+# type error in a test file compiles clean and exits 0. Run the project-wide
+# check separately, as CI does. `format:check` is the non-rewriting sibling of a
+# `format` script, which is usually `prettier --write` and so can never fail.
+#
 # `npm run <name> --if-present` exits 0 for a script the repo does not define,
 # so a gate nobody wired up passes by never running — indistinguishable, from
-# the exit code alone, from one that ran and was clean. Read the script names
-# once and report what was skipped instead of banking a pass nobody earned.
+# the exit code alone, from one that ran clean. Read the names once and say
+# which were skipped rather than banking a pass nobody earned.
 scripts=$(node -e '
   try {
     process.stdout.write(Object.keys(require(process.cwd() + "/package.json").scripts || {}).join(" "));
   } catch { }
 ' 2>/dev/null)
 
-# typecheck earns its place next to test: vitest and jest transpile without
-# checking types, so a signature that no longer holds ships green.
+# A "|" entry is one gate satisfied by either name, so a repo with only
+# format:check is covered rather than nagged about a prettier script it does
+# not need. Order matters: a broken build makes every later gate downstream noise.
 missing=""
-for gate in build lint prettier typecheck test; do
-  case " $scripts " in
-    *" $gate "*) ;;
-    *) missing="$missing $gate"; continue ;;
-  esac
-
-  # Stop at the first failure rather than running the rest: a broken build
-  # makes lint and test output downstream noise.
-  if ! npm run "$gate"; then
-    echo "Pre-push checks failed at '$gate'. Fix it before pushing." >&2
-    exit 2
-  fi
+for gate in build lint typecheck "prettier|format:check" test; do
+  satisfied=""
+  IFS="|" read -ra names <<< "$gate"
+  for name in "${names[@]}"; do
+    case " $scripts " in
+      *" $name "*) ;;
+      *) continue ;;
+    esac
+    satisfied=yes
+    if ! npm run "$name"; then
+      echo "Pre-push checks failed at '$name'. Fix it before pushing." >&2
+      exit 2
+    fi
+  done
+  [ -z "$satisfied" ] && missing="$missing ${gate//|/ or }"
 done
 
 [ -n "$missing" ] && echo "Pre-push gate: this repo has no npm script for:$missing — those checks did not run." >&2

@@ -65,7 +65,7 @@ Re-read the findings against `~/.claude/shared-rules.md` (and the repo's `.claud
 
 ## Step 5 — Quality gate
 
-**REQUIRED SUB-SKILL:** Use pre-push-quality-gate — run build, test, prettier, and lint from `package.json` before any commit/push. Inside a worktree, run scripts per that skill's worktree notes (`node_modules` may live in the main repo).
+**REQUIRED SUB-SKILL:** Use pre-push-quality-gate — run every step it lists, from `package.json`, before any commit/push. Inside a worktree, run scripts per that skill's worktree notes (`node_modules` may live in the main repo).
 
 ## Step 6 — Commit & push
 
@@ -79,7 +79,7 @@ If a fresh PR is needed rather than an update, **REQUIRED SUB-SKILL:** Use creat
 
 ## Red flags — do not declare done if
 
-- You pushed without the quality gate passing (build/test/prettier/lint green).
+- You pushed without the quality gate passing — every step of it, green.
 - You applied `/review` or `/simplify` suggestions without checking them against the global rules.
 - You used `chore` for a change that needs to deploy.
 - (Sync flow) You merged main but didn't rebuild before re-reviewing.
