@@ -14,3 +14,8 @@ __pycache__/
 .config-backup-*/
 
 .DS_Store
+
+# Superpowers working artifacts (brainstorm questions, specs, plans) and
+# SDD orchestration scratch — session-local, never repo content.
+docs/superpowers/
+.superpowers/
