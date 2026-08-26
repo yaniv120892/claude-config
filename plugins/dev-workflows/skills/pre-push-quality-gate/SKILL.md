@@ -1,15 +1,15 @@
 ---
 name: pre-push-quality-gate
-description: Use when about to push code or create a commit — enforces running build, test, prettier, and lint from package.json scripts before any push or commit is allowed to proceed
+description: Use when about to push code or create a commit — enforces running build, lint, prettier, typecheck, and test from package.json scripts before any push or commit is allowed to proceed
 ---
 
 # Pre-Push Quality Gate
 
 ## Overview
 
-**All four quality checks must pass before pushing code.** Skipping any check risks breaking CI, introducing formatting drift, or shipping broken builds.
+**All five quality checks must pass before pushing code.** Skipping any check risks breaking CI, introducing formatting drift, or shipping broken builds.
 
-**Core principle:** The gate is binary — all four pass or you don't push.
+**Core principle:** The gate is binary — all five pass or you don't push.
 
 ## When to Use
 
@@ -19,23 +19,18 @@ description: Use when about to push code or create a commit — enforces running
 
 ## The Gate (MANDATORY)
 
-Run all four commands from `package.json` scripts in this order:
+Run all five commands from `package.json` scripts in this order. Build first: a
+broken build makes every later gate's output downstream noise.
 
 ```bash
-# 1. Format check
-npm run prettier
-
-# 2. Lint
-npm run lint
-
-# 3. Build
 npm run build
-
-# 4. Tests
+npm run lint
+npm run prettier
+npm run typecheck
 npm run test
 ```
 
-**All four must exit with code 0. If any fails — stop, fix, re-run from step 1.**
+**All five must exit with code 0. If any fails — stop, fix, re-run from the top.**
 
 ## Handling Missing Scripts
 
@@ -49,7 +44,8 @@ cat package.json | grep -A 20 '"scripts"'
 |---|---|
 | `prettier` | Check for `format`, `fmt`, `prettier:check` |
 | `lint` | Check for `eslint`, `tslint`, `check` |
-| `build` | Check for `compile`, `tsc`, `bundle` |
+| `build` | Check for `compile`, `bundle` |
+| `typecheck` | Check for `tsc`, `types`, `check-types` |
 | `test` | Check for `test:unit`, `spec`, `jest`, `vitest` |
 
 If the script genuinely doesn't exist in the project, note it explicitly — don't silently skip.
@@ -58,10 +54,11 @@ If the script genuinely doesn't exist in the project, note it explicitly — don
 
 | Mistake | Fix |
 |---|---|
-| Running only tests before push | All four gates required — tests alone don't catch build errors or formatting drift |
+| Running only tests before push | All five gates required — tests alone don't catch build errors or formatting drift |
 | Skipping prettier "because it's cosmetic" | Formatting failures block CI; run it |
 | Running lint after build fails | Fix build first — lint errors may be downstream noise |
 | Assuming tests cover lint/build | They don't. Each gate catches different failure modes |
+| Assuming tests cover types | Vitest and Jest transpile without checking; only `typecheck` sees a broken signature |
 | `--no-verify` to bypass hooks | Never. Fix the underlying issue |
 
 ## Red Flags — STOP
@@ -71,8 +68,9 @@ If the script genuinely doesn't exist in the project, note it explicitly — don
 - "Prettier is just style, it doesn't matter"
 - "Build takes too long, I'll skip it this once"
 - "CI will catch it"
+- "The tests pass, so the types must be fine"
 
-**All of these mean:** Run the gate. Don't push until all four pass.
+**All of these mean:** Run the gate. Don't push until all five pass.
 
 ## Why Each Gate Matters
 
@@ -80,5 +78,6 @@ If the script genuinely doesn't exist in the project, note it explicitly — don
 |---|---|
 | `prettier` | Formatting drift that fails CI format checks |
 | `lint` | Code quality issues, unused vars, type violations |
-| `build` | Compilation errors, missing imports, broken types |
+| `build` | Compilation errors, missing imports, bundler failures |
+| `typecheck` | Signatures that no longer hold — the test runner transpiles without checking them |
 | `test` | Regressions, broken logic, failing assertions |

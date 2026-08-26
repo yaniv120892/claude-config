@@ -64,12 +64,33 @@ cd "$repository_root" || exit 0
 [ -f .skip-quality-gate ] && exit 0
 [ -f nx.json ] && exit 0
 
-if npm run build --if-present \
-  && npm run lint --if-present \
-  && npm run prettier --if-present \
-  && npm run test --if-present; then
-  exit 0
-fi
+# `npm run <name> --if-present` exits 0 for a script the repo does not define,
+# so a gate nobody wired up passes by never running — indistinguishable, from
+# the exit code alone, from one that ran and was clean. Read the script names
+# once and report what was skipped instead of banking a pass nobody earned.
+scripts=$(node -e '
+  try {
+    process.stdout.write(Object.keys(require(process.cwd() + "/package.json").scripts || {}).join(" "));
+  } catch { }
+' 2>/dev/null)
 
-echo "Pre-push checks failed (build/lint/prettier/test). Fix them before pushing." >&2
-exit 2
+# typecheck earns its place next to test: vitest and jest transpile without
+# checking types, so a signature that no longer holds ships green.
+missing=""
+for gate in build lint prettier typecheck test; do
+  case " $scripts " in
+    *" $gate "*) ;;
+    *) missing="$missing $gate"; continue ;;
+  esac
+
+  # Stop at the first failure rather than running the rest: a broken build
+  # makes lint and test output downstream noise.
+  if ! npm run "$gate"; then
+    echo "Pre-push checks failed at '$gate'. Fix it before pushing." >&2
+    exit 2
+  fi
+done
+
+[ -n "$missing" ] && echo "Pre-push gate: this repo has no npm script for:$missing — those checks did not run." >&2
+
+exit 0
