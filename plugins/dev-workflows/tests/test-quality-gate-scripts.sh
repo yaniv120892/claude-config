@@ -53,6 +53,14 @@ report "format:check is not reported missing" no "$nagged"
 FORMAT_CHECK_FAILS='{"build":"exit 0","lint":"exit 0","typecheck":"exit 0","format:check":"exit 1","test":"exit 0"}'
 report "failing format:check blocks" 2 "$(fire_with_scripts "$FORMAT_CHECK_FAILS")"
 
+# Order: when a cheap gate and an expensive one would both fail, the cheap one
+# is what gets reported — nobody should wait through a build to be told about a
+# lint error. This is the whole reason the order is what it is.
+BOTH_FAIL='{"prettier":"exit 0","lint":"exit 1","typecheck":"exit 0","build":"exit 1","test":"exit 0"}'
+fire_with_scripts "$BOTH_FAIL" >/dev/null
+grep -q "failed at 'lint'" "$TMP/err" && cheapest=yes || cheapest=no
+report "cheapest failing gate is reported" yes "$cheapest"
+
 # Short-circuit: a failing build must stop before test runs.
 BUILD_FAILS='{"build":"exit 1","lint":"exit 0","prettier":"exit 0","typecheck":"exit 0","test":"echo RAN_TEST"}'
 fire_with_scripts "$BUILD_FAILS" >/dev/null
