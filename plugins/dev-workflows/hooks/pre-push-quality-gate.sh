@@ -102,9 +102,14 @@ scripts=$(node -e '
 
 # A "|" entry is one gate satisfied by either name, so a repo with only
 # format:check is covered rather than nagged about a prettier script it does
-# not need. Order matters: a broken build makes every later gate downstream noise.
+# not need.
+#
+# Cheapest first, because only the first failure is ever reported: build is the
+# slowest step by far, and running it first charges the most wall-clock for the
+# least information. Most build failures are type errors anyway, which tsc
+# reports better and sooner — build is here to catch what it cannot see.
 missing=""
-for gate in build lint typecheck "prettier|format:check" test; do
+for gate in "prettier|format:check" lint typecheck build test; do
   satisfied=""
   IFS="|" read -ra names <<< "$gate"
   for name in "${names[@]}"; do
