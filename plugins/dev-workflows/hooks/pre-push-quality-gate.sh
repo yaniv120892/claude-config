@@ -64,12 +64,39 @@ cd "$repository_root" || exit 0
 [ -f .skip-quality-gate ] && exit 0
 [ -f nx.json ] && exit 0
 
+# CI builds the merge of this branch with its base, not this tree. A branch that
+# has fallen behind can pass every check here and still fail CI against an API
+# that changed upstream, so this runs first: it is cheap, and being behind
+# invalidates every check that follows.
+#
+# It reports rather than merges — a hook that mutates the working tree mid-push,
+# possibly into a conflict, is worse than the failure it prevents.
+base_branch=$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null)
+base_branch=${base_branch#origin/}
+[ -z "$base_branch" ] && base_branch=main
+if git rev-parse --verify --quiet "refs/remotes/origin/$base_branch" >/dev/null; then
+  git fetch --quiet origin "$base_branch" 2>/dev/null
+  commits_behind=$(git rev-list --count "HEAD..origin/$base_branch" 2>/dev/null || echo 0)
+  if [ "$commits_behind" -gt 0 ]; then
+    echo "Branch is $commits_behind commit(s) behind origin/$base_branch." >&2
+    echo "CI builds the merge, not this tree — these checks would validate code that will never exist." >&2
+    echo "Run: git merge --no-edit origin/$base_branch   (then push again to re-run the gate)" >&2
+    exit 2
+  fi
+fi
+
+# `build` is not a typecheck: a Next.js build type-checks the app graph, so a
+# type error in a test file compiles clean and exits 0. Run the project-wide
+# check separately, as CI does. `format:check` is the non-rewriting sibling of a
+# `format` script, which is usually `prettier --write` and so can never fail.
 if npm run build --if-present \
   && npm run lint --if-present \
+  && npm run typecheck --if-present \
   && npm run prettier --if-present \
+  && npm run format:check --if-present \
   && npm run test --if-present; then
   exit 0
 fi
 
-echo "Pre-push checks failed (build/lint/prettier/test). Fix them before pushing." >&2
+echo "Pre-push checks failed (build/lint/typecheck/prettier/test). Fix them before pushing." >&2
 exit 2
