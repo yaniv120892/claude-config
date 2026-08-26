@@ -1,9 +1,19 @@
 {
   "name": "dev-workflows",
   "description": "Day-to-day development discipline: brainstorming before building, writing and executing plans, test-driven development, subagent-driven execution, git worktree isolation, running services in their real container, and a pre-push build/lint/prettier/typecheck/test quality gate. Includes /ship, which drives a feature or bug from scoping questions through to a reviewed, QA'd PR, and prune-comments, which strips comments the code can carry itself.",
-  "version": "1.3.0",
-  "author": { "name": "Yaniv Daye" },
+  "version": "1.4.0",
+  "author": {
+    "name": "Yaniv Daye"
+  },
   "homepage": "https://github.com/yaniv120892/claude-config",
   "repository": "https://github.com/yaniv120892/claude-config",
-  "keywords": ["planning", "tdd", "worktrees", "quality-gate", "workflow", "ship", "pipeline"]
+  "keywords": [
+    "planning",
+    "tdd",
+    "worktrees",
+    "quality-gate",
+    "workflow",
+    "ship",
+    "pipeline"
+  ]
 }
