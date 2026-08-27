@@ -1,7 +1,7 @@
 ---
 name: create-linear-ticket
 disable-model-invocation: true
-description: Create a Linear issue from a fixed five-section template — Why, Repro, Fix, Done when, Signals — with team, project, priority and labels resolved before writing. Use when the user wants a Linear ticket, or when filing findings from a review or audit.
+description: Create a Linear issue from a fixed five-section template — Why, Repro, Fix, Done when, Signals — with team, project, priority and labels resolved before writing.
 ---
 
 # Create Linear Ticket
@@ -11,6 +11,12 @@ File a Linear issue that a future reader can act on without asking a follow-up q
 Personal-project Linear has no triage step and no reporter to chase, so the ticket is the
 only record. Everything needed to reproduce, fix and verify goes in at creation time.
 
+## Prerequisite
+
+The Linear MCP server must be connected — every step below is an `mcp__Linear__*` call and
+there is no CLI fallback. `mcp/mcp.json.example` ships a generic issue-tracker stanza, not
+this one. If those tools are absent, say so and stop rather than filing through another path.
+
 ## Resolve before writing
 
 Never guess a team, project or label — Linear accepts names, so look them up:
@@ -19,8 +25,11 @@ Never guess a team, project or label — Linear accepts names, so look them up:
 | --- | --- | --- |
 | `team` | `mcp__Linear__list_teams` | One team → use it. More than one → ask. |
 | `project` | `mcp__Linear__list_projects` | Match the repo being worked in. No match → ask before filing outside a project. |
-| `labels` | `mcp__Linear__list_issue_labels` | Existing labels only. A label the workspace lacks is a question for the user, not a new label. |
+| `labels` | `mcp__Linear__list_issue_labels` | Existing labels only. Ask rather than create — a near-duplicate label is worse than a missing one. |
 | `priority` | Impact table below | Pass the number, not the name. |
+
+Both list calls are capped at 50 — filter with `query`/`name` or page through before
+concluding a project or label does not exist.
 
 Then create with `mcp__Linear__save_issue` — with no `id`. Report the identifier and URL.
 
@@ -28,7 +37,7 @@ Then create with `mcp__Linear__save_issue` — with no `id`. Report the identifi
 
 Set it from what happens if the ticket is never picked up, not from how interesting it is.
 
-| | When |
+| Priority | When |
 | --- | --- |
 | **1 Urgent** | Already exploitable or already costing money; or a check whose bad answer would be urgent. |
 | **2 High** | Breaks on its own as usage grows, or a real defect behind a precondition that can occur. |
@@ -42,8 +51,8 @@ Imperative, one line, names the change and not the symptom. Backtick paths and i
 
 ## Description template
 
-Five `##` sections in this order. Prose in sentences, not fragments. Aim for under 200 words
-of body; a ticket that has to be skimmed gets skimmed.
+Five `##` sections in this order, the last optional. Prose in sentences, not fragments.
+Aim for under 200 words of body; a ticket that has to be skimmed gets skimmed.
 
 ```markdown
 ## Why
@@ -79,11 +88,14 @@ heading is worse than no heading.
 - **Verification is a ticket too.** "Check whether X is true" is legitimate work when the
   answer changes the priority. Say in `Done when` what each answer leads to.
 - **Cite, don't paste.** `file.ts:42` and one line of context beats a fenced block.
-- **No estimates, no assignee** unless the user asks. Status defaults to Backlog.
-- **Never invent a label.** Not offering a fitting one is better than creating a near-duplicate.
+- **No estimates, no assignee** unless the user asks. Leave `state` unset so the team's own
+  default applies — that is Triage on some teams and Backlog on others — and report the
+  status the response actually returns.
 
 ## Batches
 
 Filing several tickets from one review: resolve team, project and labels once, then confirm
-the list — title and priority per ticket — with the user before writing any. Report as a
-table of identifier, priority and title.
+the list — title and priority per ticket — with the user before writing any.
+Agreeing the findings is not agreeing the tickets: the grouping and the priorities are
+decided here, and they are exactly what the confirmation is for. Report as a table of
+identifier, priority and title.
