@@ -1,9 +1,9 @@
 {
   "name": "issue-tracker",
-  "description": "Employer-agnostic Jira workflow: create a ticket with a validated project and issue type, and transition a ticket to a target status using a cached per-project status→transition-id map. Site, project keys, and status aliases come from a machine-local config file, so moving to a new company is a config swap rather than a skill rewrite.",
-  "version": "1.0.0",
+  "description": "Employer-agnostic Jira workflow: create a ticket with a validated project and issue type, and transition a ticket to a target status using a cached per-project status→transition-id map. Site, project keys, and status aliases come from a machine-local config file, so moving to a new company is a config swap rather than a skill rewrite. Also creates Linear issues against a fixed Why/Repro/Fix/Done-when/Signals template.",
+  "version": "1.1.0",
   "author": { "name": "Yaniv Daye" },
   "homepage": "https://github.com/yaniv120892/claude-config",
   "repository": "https://github.com/yaniv120892/claude-config",
-  "keywords": ["jira", "issue-tracker", "tickets", "workflow"]
+  "keywords": ["jira", "linear", "issue-tracker", "tickets", "workflow"]
 }

@@ -18,7 +18,7 @@
     },
     {
       "name": "issue-tracker",
-      "description": "Jira ticket creation and status transitions, with site, project keys and status aliases in a machine-local config so it moves between employers.",
+      "description": "Jira ticket creation and status transitions with site, project keys and status aliases in a machine-local config, plus templated Linear issue creation.",
       "category": "engineering",
       "source": "./plugins/issue-tracker"
     },
