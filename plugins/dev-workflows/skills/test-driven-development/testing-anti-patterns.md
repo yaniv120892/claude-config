@@ -16,6 +16,8 @@ Tests must verify real behavior, not mock behavior. Mocks are a means to isolate
 1. NEVER test mock behavior
 2. NEVER add test-only methods to production classes
 3. NEVER mock without understanding dependencies
+4. NEVER recompute an expected value the way the code computes it
+5. NEVER mock your own modules
 ```
 
 ## Anti-Pattern 1: Testing Mock Behavior
@@ -248,6 +250,122 @@ TDD cycle:
 4. THEN claim complete
 ```
 
+## Anti-Pattern 6: Tautological Expected Values
+
+**The violation:**
+```typescript
+// ❌ BAD: Expected value recomputed the way the code computes it
+test('calculateTotal sums line items', () => {
+  const items = [{ price: 10 }, { price: 5 }];
+  const expected = items.reduce((sum, i) => sum + i.price, 0);
+  expect(calculateTotal(items)).toBe(expected);
+});
+```
+
+**Why this is wrong:**
+- The test restates the implementation, so it passes by construction and can never disagree with the code
+- A shared bug in the algorithm makes both sides equally wrong - test stays green
+- **It survives an assertion-flip check** - flip the assertion and the test goes red, so it looks healthy. This one is found by reading, not by flipping
+- Snapshots derived by hand the same way the code derives them are the same disease
+
+**The fix:**
+```typescript
+// ✅ GOOD: Expected value is an independent, known-good literal
+test('calculateTotal sums line items', () => {
+  expect(calculateTotal([{ price: 10 }, { price: 5 }])).toBe(15);
+});
+```
+
+Expected values come from an independent source of truth: a known-good literal, a worked example, the spec. Never from re-running the code's own logic.
+
+### Gate Function
+
+```
+BEFORE writing any expected value:
+  Ask: "How do I know this value is correct?"
+
+  IF the answer is "I computed it the way the code computes it":
+    STOP - Derive it independently
+    Work the example by hand, or take it from the spec
+
+  IF the expected value shares logic with the implementation:
+    STOP - Replace with a literal
+
+  Assertion-flip does NOT catch this - read the derivation instead
+```
+
+## Anti-Pattern 7: Mocking Internal Collaborators
+
+**The violation:**
+```typescript
+// ❌ BAD: Mocking your own module
+vi.mock('./order-validator', () => ({
+  validateOrder: vi.fn().mockReturnValue(true)
+}));
+
+test('processes order', async () => {
+  await processOrder(order);  // Real validation never runs
+});
+```
+
+**Why this is wrong:**
+- A test that mocks an internal breaks on refactor with behavior unchanged - the exact failure this file exists to kill
+- You're pinning implementation structure, not verifying behavior
+- Real integration between your own modules goes untested
+
+**Mock at system boundaries only:**
+- Third-party APIs (payment, email, etc.)
+- Time and randomness
+- Sometimes databases and filesystem - prefer a real test DB or temp dir where cheap
+
+Never mock your own classes, modules, or internal collaborators. Anything you control, test for real.
+
+**Design boundaries for mockability:**
+```typescript
+// ✅ GOOD: Inject the dependency - easy to mock
+function processPayment(order, paymentClient) {
+  return paymentClient.charge(order.total);
+}
+
+// ❌ BAD: Constructed inside - hard to mock
+function processPayment(order) {
+  const client = new StripeClient(process.env.STRIPE_KEY);
+  return client.charge(order.total);
+}
+```
+
+Prefer SDK-style interfaces over one generic fetcher:
+```typescript
+// ✅ GOOD: One function per external operation,
+// each independently mockable with one specific return shape
+const api = {
+  getUser: (id) => fetch(`/users/${id}`),
+  createOrder: (data) => fetch('/orders', { method: 'POST', body: data }),
+};
+
+// ❌ BAD: One generic fetcher - its mock needs conditional logic
+const api = {
+  fetch: (endpoint, options) => fetch(endpoint, options),
+};
+```
+
+### Gate Function
+
+```
+BEFORE mocking anything:
+  Ask: "Is this a system boundary or my own code?"
+
+  IF it's your own module or internal collaborator:
+    STOP - Don't mock it
+    Test through the public interface with real collaborators
+
+  IF it's a boundary (third-party API, time, randomness):
+    Mock it - and inject it rather than constructing it inside
+
+  IF it's a DB or filesystem:
+    Prefer a real test DB / temp dir where cheap; mock only when not
+```
+
 ## When Mocks Become Too Complex
 
 **Warning signs:**
@@ -279,6 +397,8 @@ TDD cycle:
 | Mock without understanding | Understand dependencies first, mock minimally |
 | Incomplete mocks | Mirror real API completely |
 | Tests as afterthought | TDD - tests first |
+| Tautological expected values | Independent known-good literal, worked example, or spec |
+| Mocking internal collaborators | Mock only at system boundaries; test your own code for real |
 | Over-complex mocks | Consider integration tests |
 
 ## Red Flags
@@ -289,6 +409,10 @@ TDD cycle:
 - Test fails when you remove mock
 - Can't explain why mock is needed
 - Mocking "just to be safe"
+- Expected value built with the implementation's own algorithm (reduce, format, hash...)
+- Snapshot or expected value derived by hand the same way the code derives it
+- `vi.mock`/`jest.mock` pointing at a module in your own codebase
+- Mock setup constructs a dependency instead of injecting it
 
 ## The Bottom Line
 
