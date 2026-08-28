@@ -1,7 +1,7 @@
 ---
 name: ship
 disable-model-invocation: true
-description: Full delivery pipeline for a feature or bug — worktree, scoping questions, plan approval, TDD implementation, proof of work, simplify/review/rules polish, PR description, blind QA regression pass, stopping at "ready to merge". Use when the user types /ship. Works in any repo.
+description: Full delivery pipeline for a feature or bug — worktree, scoping questions, plan approval, TDD implementation, proof of work, mutation-based test verification, simplify/review/rules polish, PR description, blind QA regression pass, stopping at "ready to merge". Use when the user types /ship. Works in any repo.
 ---
 
 # /ship — deliver a feature or bug end to end
@@ -63,7 +63,7 @@ Everything durable goes in the worktree at `.claude/ship/`:
 }
 ```
 
-`phase` is one of: `scope` → `plan` → `plan-approved` → `implement` → `polish` → `qa` → `ready-to-merge` → `merged` → `verified`.
+`phase` is one of: `scope` → `plan` → `plan-approved` → `implement` → `verify-tests` → `polish` → `qa` → `ready-to-merge` → `merged` → `verified`.
 
 Append one entry to `history` per completed phase, as an object: `{"phase": "<the completed phase>", "at": "<UTC ISO-8601 timestamp>", "note": "<one line, optional>"}`. `request` is written once at Phase 0 and is **immutable** — it is the independent source of truth the QA agent is judged against.
 
@@ -83,16 +83,17 @@ If it does not exist, run the pipeline on defaults and mention once at the end t
 | 3 | Plan | subagent → `plan.md` | — |
 | 4 | Approve plan | **you + user** | ✋ approval required |
 | 5 | TDD implement + proof of work | subagent | — |
-| 6 | Simplify / review / rules / PR | subagent | — |
-| 7 | Blind QA regression pass | subagent | — |
-| 8 | Hand off: ready to merge | **you + user** | ✋ **stop here** |
-| 9 | Verify on dev/prod | subagent, on `/ship verify` | — |
+| 6 | Verify the tests: mutate + trace to spec | subagent | — |
+| 7 | Simplify / review / rules / PR | subagent | — |
+| 8 | Blind QA regression pass | subagent | — |
+| 9 | Hand off: ready to merge | **you + user** | ✋ **stop here** |
+| 10 | Verify on dev/prod | subagent, on `/ship verify` | — |
 
-**Phase 8 is a hard stop.** Never run `gh pr merge`, `glab mr merge`, approve a PR, or merge a branch. Present the PR link and the QA verdict and stop. Merging is the user's call, every time.
+**Phase 9 is a hard stop.** Never run `gh pr merge`, `glab mr merge`, approve a PR, or merge a branch. Present the PR link and the QA verdict and stop. Merging is the user's call, every time.
 
 **One run is one branch, one PR.** Never split a run into a stack of PRs, and never open a second PR to finish something the first one started — if the plan is too big for one PR, say so at the Phase 4 approval gate and let the user split the *request*, rather than splitting the delivery behind their back.
 
-Within that branch, each phase commits its own work as it completes: implementation commits before polish begins, polish commits its cleanups separately. That keeps a phase's changes recoverable if a later phase goes wrong, and lets `git log` on the branch show where a regression entered. None of it reaches the base branch — the squash at merge collapses the whole branch into the single commit named by the PR title, which is why that title has to be right.
+Within that branch, each phase commits its own work as it completes: implementation commits before test verification begins, test verification commits its strengthened tests separately, polish commits its cleanups separately. That keeps a phase's changes recoverable if a later phase goes wrong, and lets `git log` on the branch show where a regression entered. None of it reaches the base branch — the squash at merge collapses the whole branch into the single commit named by the PR title, which is why that title has to be right.
 
 ### Phase 0 — worktree and state
 
@@ -103,7 +104,7 @@ Derive a short kebab slug from the request. Then:
 3. Write `state.json` with the request **verbatim** and `phase: "scope"`.
 4. Add `.claude/ship/` to the worktree's `.git/info/exclude` — this is scaffolding, it must never land in the PR.
 
-### Phases 1, 3, 5, 6, 7, 9 — dispatch
+### Phases 1, 3, 5, 6, 7, 8, 10 — dispatch
 
 One template for all of them. The subagent reads its own brief; you never inline it.
 
@@ -151,12 +152,13 @@ Read `plan.md`. Present to the user, in your own text:
 
 Then ask for approval. On changes requested, re-dispatch Phase 3 with their feedback appended to `scope.md` — do not edit `plan.md` yourself. On approval set `phase: "plan-approved"` and continue.
 
-### Phase 8 — hand off (inline)
+### Phase 9 — hand off (inline)
 
 Present:
 
 - PR link and title
 - the QA verdict, verbatim — **including any failure**
+- the test-verification verdict: mutants survived vs killed, and anything still under `## Escalate`
 - what the polish phase changed after implementation
 - one line: the proof of work, and where to see it
 - explicitly: anything the run could not verify
@@ -182,7 +184,9 @@ Set `phase: "ready-to-merge"`. Stop. Tell the user that after they merge, `/ship
 ## Red flags — the run is wrong if
 
 - You read a source file. Any source file.
-- The QA agent was given `plan.md`, the implementer's report, or any description of *how* the change was built.
+- The QA agent was given `plan.md`, `reports/verify-tests.md`, the implementer's report, or any description of *how* the change was built.
+- A mutation survived into the PR diff, or the verify-tests phase reported a kill it never re-ran.
+- The verify-tests phase "passed" without naming a single mutant it applied.
 - You merged, approved, or auto-closed anything.
 - You reported "QA passed" without the QA subagent's actual verdict in front of you.
 - A phase report exceeded 20 lines and you relayed all of it.
