@@ -318,11 +318,10 @@ test('processes order', async () => {
 - Time and randomness
 - Sometimes databases and filesystem - prefer a real test DB or temp dir where cheap
 
-Never mock your own classes, modules, or internal collaborators. Anything you control, test for real.
+**Design boundaries for mockability:** inject dependencies rather than constructing them inside, and prefer per-operation SDK-style functions (`getUser`, `createOrder`) over one generic fetcher, so each mock returns one specific shape instead of needing conditional logic.
 
-**Design boundaries for mockability:**
 ```typescript
-// ✅ GOOD: Inject the dependency - easy to mock
+// ✅ GOOD: Injected - easy to mock
 function processPayment(order, paymentClient) {
   return paymentClient.charge(order.total);
 }
@@ -332,21 +331,6 @@ function processPayment(order) {
   const client = new StripeClient(process.env.STRIPE_KEY);
   return client.charge(order.total);
 }
-```
-
-Prefer SDK-style interfaces over one generic fetcher:
-```typescript
-// ✅ GOOD: One function per external operation,
-// each independently mockable with one specific return shape
-const api = {
-  getUser: (id) => fetch(`/users/${id}`),
-  createOrder: (data) => fetch('/orders', { method: 'POST', body: data }),
-};
-
-// ❌ BAD: One generic fetcher - its mock needs conditional logic
-const api = {
-  fetch: (endpoint, options) => fetch(endpoint, options),
-};
 ```
 
 ### Gate Function
