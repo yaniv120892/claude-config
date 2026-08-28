@@ -4,7 +4,7 @@ You were dispatched as one phase of a `/ship` run. Find your phase below and fol
 
 **Universal rules for every phase:**
 
-- Read the target repo's `CLAUDE.md` and `.claude/rules/` before touching anything. Use that repo's own scripts.
+- Read the target repo's `CLAUDE.md` and `.claude/rules/` before touching anything. Use that repo's own scripts. If a `CONTEXT.md` exists (follow `CONTEXT-MAP.md` to the right one in multi-context repos), use its vocabulary in names, tests, and PR text.
 - Work inside the worktree path you were given. Never touch the main checkout.
 - Write your full output to `<worktree>/.claude/ship/reports/<phase>.md`. Return **at most 20 lines**.
 - Your returned text is data for a conductor, not prose for a human. No preamble, no sign-off.
@@ -42,13 +42,55 @@ Write `<worktree>/.claude/ship/scope.md`:
 
 ## Open questions
 <2-5 ambiguities. For each: the question, the options, and which you'd default to
- and why. The conductor will ask the user only the ones that change the code.>
+ and why. Mark each one **decision** (the user's call) or **fact** (answerable by
+ more searching) — the conductor only asks the user decisions.>
 
 ## Risks
 <what could break elsewhere — this seeds the QA pass>
 ```
 
+If `scope.md` already exists (a fact-batch re-dispatch or a redo), do not rewrite it: append your answers under a `## Scout follow-ups` section and update only the sections that are now wrong — the `## Answers`, `## Reproduction`, and `## Feedback` sections other phases append are load-bearing.
+
 Do not write code. Do not write a plan. Do not create files outside `.claude/ship/`.
+
+---
+
+## reproduce
+
+**Agent type:** default (inherit) · **Purpose:** a red feedback loop, before any plan. Bug runs only.
+
+**Goal: one command that goes red on the user's exact symptom.** Reading code to build a theory before this command exists is the failure this phase prevents. Spend disproportionate effort here.
+
+Constructions to try, in roughly this order:
+
+1. Failing test at whatever seam reaches the bug — unit, integration, e2e.
+2. Curl / HTTP script against the running dev server.
+3. CLI invocation with a fixture input.
+4. Headless browser script driving the UI.
+5. Replay of a captured trace (request, payload, event log) through the path in isolation.
+6. Throwaway harness around the buggy path — minimal subset of the system, one function call.
+7. Property / fuzz loop for "sometimes wrong" — many random inputs, look for the failure mode.
+8. Bisection harness between two known states (commit, dataset, version).
+9. Differential run: same input through old vs new, diff the outputs.
+
+Non-deterministic bugs: the goal is a **higher reproduction rate**, not a clean repro — loop the trigger, add stress, narrow the timing window until it is debuggable.
+
+**Completion criterion** — one named command, already run at least once with its output captured in your report, that is:
+
+- **Red-capable**: asserts the user's exact symptom, not "runs without erroring".
+- **Deterministic**, or pinned at a high reproduction rate.
+- **Fast**: seconds, not minutes.
+- **Agent-runnable** unattended.
+
+**Minimise.** Shrink the repro to the smallest scenario that still goes red: cut one element at a time, re-run after each cut. Done when every remaining element is load-bearing.
+
+If the cause is still unclear after reproducing, record **3–5 ranked falsifiable hypotheses** in your report — format: "if X is the cause, changing Y makes it disappear". The plan phase reads them.
+
+Any instrumentation you add gets a unique `[DEBUG-<4 hex>]` tag so cleanup is one grep.
+
+If you cannot build a loop at all: first line of your return is `BLOCKED`, then what you tried and what access would unblock it (an environment, a captured artifact, permission to instrument). The conductor stops and asks the user.
+
+Output: `reports/reproduce.md` (full detail), plus a `## Reproduction` section appended to `scope.md` — the command, the minimised scenario, the hypotheses — so plan and implement read it.
 
 ---
 
@@ -66,6 +108,12 @@ Write `<worktree>/.claude/ship/plan.md`:
 
 ## Approach
 <3-6 sentences. The design decision and why, not a task list.>
+
+## Seams
+<The public interface(s) the tests exercise. Each entry: the interface, whether it
+ exists or is new, and which planned tests run against it. Prefer an existing seam
+ over a new one; use the highest seam that still pins the behavior; the ideal count
+ is one; a new seam needs one line of justification.>
 
 ## Tests to write first
 <Ordered. Each: name, what it asserts, and the observable behavior it pins down.
@@ -85,7 +133,11 @@ Write `<worktree>/.claude/ship/plan.md`:
 <what could regress, and which existing tests cover it>
 ```
 
-Rules: prefer extending an existing pattern over introducing a new one; say so explicitly when you do introduce one, with the justification. Keep the change as small as the goal allows. If the request cannot be done sensibly as asked, write the plan for what *should* happen and put the objection at the top under `## Concern` — do not silently substitute your own scope.
+Rules: on a bug run, the first entry in `## Tests to write first` is `scope.md`'s `## Reproduction` promoted to a proper test. Prefer extending an existing pattern over introducing a new one; say so explicitly when you do introduce one, with the justification. Keep the change as small as the goal allows. Respect `docs/adr/`: a plan that would contradict an ADR flags it under `## Concern` instead of silently re-litigating it. If the request cannot be done sensibly as asked, write the plan for what *should* happen and put the objection at the top under `## Concern` — do not silently substitute your own scope.
+
+If the request is a **wide mechanical refactor** — one change, a rename or a retype, whose blast radius fans across the codebase so no vertical slice lands green — do not force it into a single-shot plan. Plan it as **expand** (add the new form beside the old), **migrate** (move call sites over in batches sized by blast radius), **contract** (delete the old form once no caller remains), and put a note under `## Concern` that the run may deserve splitting into one PR per stage, for the user to decide at the gate.
+
+If your dispatch prompt carries a design-constraint line (the conductor is running plan alternatives), honor it throughout and name it at the top of the plan, and write to the `plan-<n>.md` path you were given.
 
 Return: approach in 3 lines, file count, test count, anything you flagged as a concern.
 
@@ -144,7 +196,8 @@ That skill covers `/code-review`, `/simplify`, rules alignment, the quality gate
 
 - **Strip redundant comments. REQUIRED SUB-SKILL:** `prune-comments`, scoped to this branch's diff. It goes further than deleting noise — where a comment is propping up a bad name, the fix is the rename, not the deletion. Do not widen it beyond the diff.
 - **Re-check against the plan.** Anything in `plan.md`'s `## Out of scope` that crept in gets removed.
-- **Update the repo's `CLAUDE.md`.** You read it at the start of this phase. Re-read the final diff against it and fix anything it now states wrongly — architecture notes, invariants, commands, routes, crons, models. Record the rule the code now follows, not the story of the change; git log holds that. If this branch merged the base branch, check the file against the merged tree rather than your own diff alone — a doc goes stale from commits your PR never touched. Fix what is cheaply and factually wrong; anything larger goes in your report for the handoff instead of growing this PR. If the repo has no `CLAUDE.md`, or nothing the file claims has changed, say so in your report and move on — do not create one, and do not pad it with a summary of this PR.
+- **Strip debug instrumentation.** `git grep -n "\[DEBUG-"` on the branch diff; every tagged line from the reproduce phase goes before you push.
+- **Update the repo's `CLAUDE.md`.** You read it at the start of this phase. Re-read the final diff against it and fix anything it now states wrongly — architecture notes, invariants, commands, routes, crons, models. Record the rule the code now follows, not the story of the change; git log holds that. If this branch merged the base branch, check the file against the merged tree rather than your own diff alone — a doc goes stale from commits your PR never touched. Fix what is cheaply and factually wrong; anything larger goes in your report for the handoff instead of growing this PR. If the repo has no `CLAUDE.md`, or nothing the file claims has changed, say so in your report and move on — do not create one, and do not pad it with a summary of this PR. Re-check `CONTEXT.md` the same way: fix what is cheaply and factually wrong; larger drift goes in the report.
 - Confirm `.claude/ship/` is not staged.
 
 Then open or update the PR. **REQUIRED SUB-SKILL:** `creating-prs` — it is forge-agnostic and already handles the GitHub/GitLab split. Do not branch on the forge yourself; the command mapping lives in the `pr-workflows` plugin's `references/forge-cli.md`. Push to the feature branch only.
@@ -178,6 +231,7 @@ Record `git rev-parse HEAD`: every production file must still match that commit 
 Read `plan.md`, `state.json`'s `request`, and the branch diff **once**; derive your acceptance criteria; then sweep the test files **once**, filling a single table.
 
 - **`## Tests to write first` → real tests.** Each planned test, at `file:line`. A matching *name* is not a match — read the body. One that pins down something narrower than planned is a finding.
+- **`## Seams` → where the tests sit.** Each test from the plan sits at its planned seam. A test that reaches past the seam into internals (mocks internal collaborators, or verifies through a side channel instead of the seam's own output) is a finding even when it kills mutants.
 - **`## Goal` / `## Changes` → the diff.** Both directions: planned and not shipped, shipped and not planned.
 - **`request` → the tests.** Three to six concrete criteria, written down **before you open a test file** — derive them after and you are only describing the tests back to yourself. Map each to a test that would fail if it were violated. A criterion with no such test is a gap even when the plan never listed it: this read is the only thing that catches a plan which misread the request.
 
@@ -213,7 +267,7 @@ A mutant that will not compile is not a result — discard it, spend the budget,
 
 ### 3. Tautology check
 
-On the tests from step 1's sweep, invert anything that smells: flip an assertion to its opposite and re-run. Still passing means it asserts nothing. Then work `testing-anti-patterns.md`'s `## Quick Reference` and `## Red Flags` as the checklist, plus two it does not name: snapshot or echo assertions that restate the implementation's own output, and happy-path-only where the request or plan implies an error path.
+On the tests from step 1's sweep, invert anything that smells: flip an assertion to its opposite and re-run. Still passing means it asserts nothing. Then work `testing-anti-patterns.md`'s `## Quick Reference` and `## Red Flags` as the checklist, plus the gaps it may not name: snapshot or echo assertions that restate the implementation's own output (auto-recorded snapshots included); happy-path-only tests where the request or plan implies an error path; and the one tautology that survives the assertion flip — an expected value recomputed the same way the code computes it — which you hunt by reading. Fix everything found here in step 4 like any weak test.
 
 ### 4. Fix what you found
 

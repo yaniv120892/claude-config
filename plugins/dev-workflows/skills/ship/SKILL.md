@@ -1,7 +1,8 @@
 ---
 name: ship
 disable-model-invocation: true
-description: Full delivery pipeline for a feature or bug — worktree, scoping questions, plan approval, TDD implementation, proof of work, mutation-based test verification, simplify/review/rules polish, PR description, blind QA regression pass, stopping at "ready to merge". Use when the user types /ship. Works in any repo.
+argument-hint: "<what to build or fix> | status | resume | qa | redo <phase> | verify | abort"
+description: Full delivery pipeline for a feature or bug — worktree, bug reproduction, scoping rounds, plan approval, TDD implementation, proof of work, mutation-based test verification, simplify/review/rules polish, PR description, blind QA regression pass, stopping at "ready to merge".
 ---
 
 # /ship — deliver a feature or bug end to end
@@ -11,6 +12,7 @@ description: Full delivery pipeline for a feature or bug — worktree, scoping q
 /ship status                   where the current run stands
 /ship resume                   continue after a context reset or interruption
 /ship qa                       re-run the blind QA pass only
+/ship redo <phase>             re-run a phase from its start, with optional feedback
 /ship verify                   verify the merged change on dev/prod
 /ship abort                    stop and report what exists
 ```
@@ -26,7 +28,7 @@ You hold the human approval gates. Every gate is at the *end* of the run, so if 
 **Hard rules — no exceptions:**
 
 - **Never read, grep, glob, or edit a source file.** Not once, not "just to check."
-- Files you may read: `.claude/ship/state.json`, `.claude/ship/plan.md`, `.claude/ship/reports/*.md`, `.claude/ship.json`, `.claude/ship/proof-of-work.md`.
+- Files you may read: `.claude/ship/state.json`, `.claude/ship/plan.md` (and `plan-<n>.md` candidates), `.claude/ship/reports/*.md`, `.claude/ship.json`, `.claude/ship/proof-of-work.md`.
 - Bash you may run: `git` / `gh` / `glab` metadata (status, log, remote, pr view), `mkdir`, `jq`, `cat` on the files above. Never a test run, build, grep sweep, or dev server.
 - Every phase that touches code is a subagent. If you catch yourself about to inspect the code to answer something — dispatch instead, or ask the user.
 - Relay each subagent's report as it came back. It is already capped at 20 lines. Do not expand, re-derive, or verify it yourself.
@@ -63,7 +65,7 @@ Everything durable goes in the worktree at `.claude/ship/`:
 }
 ```
 
-`phase` is one of: `scope` → `plan` → `plan-approved` → `implement` → `polish` → `verify-tests` → `qa` → `ready-to-merge` → `merged` → `verified`.
+`phase` is one of: `scope` → `reproduce` (bug runs only) → `plan` → `plan-approved` → `implement` → `polish` → `verify-tests` → `qa` → `ready-to-merge` → `merged` → `verified`.
 
 Append one entry to `history` per completed phase, as an object: `{"phase": "<the completed phase>", "at": "<UTC ISO-8601 timestamp>", "note": "<one line, optional>"}`. `request` is written once in the worktree phase and is **immutable** — it is the independent source of truth the QA agent is judged against.
 
@@ -79,15 +81,16 @@ If it does not exist, run the pipeline on defaults and mention once at the end t
 |---|---|---|---|
 | 0 | Worktree + state | you, inline | — |
 | 1 | Scout the codebase | subagent | — |
-| 2 | Scoping questions | **you + user** | ✋ answers required |
-| 3 | Plan | subagent → `plan.md` | — |
-| 4 | Approve plan | **you + user** | ✋ approval required |
-| 5 | TDD implement + proof of work | subagent | — |
-| 6 | Simplify / review / rules / PR | subagent | — |
-| 7 | Verify the tests: mutate + trace to spec | subagent | — |
-| 8 | Blind QA regression pass | subagent | — |
-| 9 | Hand off: ready to merge | **you + user** | ✋ **stop here** |
-| 10 | Verify on dev/prod | subagent, on `/ship verify` | — |
+| 2 | Reproduce the bug (bug runs only) | subagent | — |
+| 3 | Scoping questions | **you + user** | ✋ answers required |
+| 4 | Plan | subagent → `plan.md` | — |
+| 5 | Approve plan | **you + user** | ✋ approval required |
+| 6 | TDD implement + proof of work | subagent | — |
+| 7 | Simplify / review / rules / PR | subagent | — |
+| 8 | Verify the tests: mutate + trace to spec | subagent | — |
+| 9 | Blind QA regression pass | subagent | — |
+| 10 | Hand off: ready to merge | **you + user** | ✋ **stop here** |
+| 11 | Verify on dev/prod | subagent, on `/ship verify` | — |
 
 **The hand-off phase is a hard stop.** Never run `gh pr merge`, `glab mr merge`, approve a PR, or merge a branch. Present the PR link and the QA verdict and stop. Merging is the user's call, every time.
 
@@ -135,11 +138,20 @@ After it returns: relay the report, update `phase` and `history` in `state.json`
 
 If a subagent reports a blocker it cannot resolve, stop the pipeline, relay the blocker, and ask the user. Do not investigate it yourself.
 
+**Bug runs insert the reproduce phase here.** When the scout returns and `state.json`'s `type` is `"bug"`, set `phase: "reproduce"` and dispatch the reproduce subagent with the same template before any scoping questions. When it reports back, continue to the scoping questions as usual — unless its first line is `BLOCKED`, which stops the pipeline per the blocker rule above. Feature runs skip straight from scout to the scoping questions.
+
+**Plan alternatives.** When `plan.alternatives` in `ship.json` is greater than 1, dispatch that many plan subagents **in parallel**, each writing `plan-<n>.md`, each given one design constraint in its prompt: (1) minimise the interface — fewest entry points, maximum leverage each; (2) optimise for the most common caller — the default case trivial; (3) maximise flexibility — extension over concision. At the approval gate present a short comparison — approach, files touched, test count, trade-offs per candidate — plus your own recommendation. The user picks; copy the chosen file to `plan.md`; the others stay in `.claude/ship/` unused.
+
 ### Scoping questions (inline)
 
-The scout wrote `scope.md` with its findings and the ambiguities worth resolving. Read it. Ask the user the **2–4 questions that would change the implementation** via `AskUserQuestion` — not everything the scout listed. Skip a question entirely if a sensible default exists; state the default instead.
+The scout wrote `scope.md` with its findings and the open questions worth resolving, each marked **decision** or **fact**. Read it. Then grill in **rounds**:
 
-Append the answers to `scope.md`. Set `phase: "plan"`.
+- A round is up to 4 questions via `AskUserQuestion`, each with your recommended default as the first option, marked "(Recommended)". The **frontier** is every question whose prerequisites are settled — a question whose answer depends on one still open this round waits for the next round.
+- Ask only **decisions** — questions where two reasonable readings lead to different code. If a candidate question is answerable by looking at the codebase, it is a **fact**: collect the round's facts and re-dispatch the scout once with all of them, instructing it to append the answers to `scope.md`, not rewrite it. Facts are the pipeline's job, never the user's.
+- Skip a question entirely if a sensible default exists; state the default instead.
+- If an answer opens a new decision or invalidates a scout finding, ask another round. Done when no unresolved decision remains that would change the implementation — not after one round by default, and not endlessly either: most runs finish in one.
+
+Append all answers to `scope.md` under `## Answers`. Set `phase: "plan"`.
 
 ### Approve the plan (inline)
 
@@ -147,6 +159,7 @@ Read `plan.md`. Present to the user, in your own text:
 
 - the approach in 3–5 lines
 - files that will change, and roughly how
+- the seams — where the tests will live, and whether each is existing or new
 - the test list the TDD phase will write first
 - anything the plan explicitly leaves out
 
@@ -180,6 +193,10 @@ Set `phase: "ready-to-merge"`. Stop. Tell the user that after they merge, `/ship
 `/ship resume`: find the worktree, read `state.json`, and re-enter at the phase it names. A phase interrupted mid-flight re-runs from its start — phases are idempotent by design. Never guess at state; if `state.json` is missing or unreadable, say so and ask.
 
 `/ship status`: read `state.json` and `history`, report in five lines or fewer. Read nothing else.
+
+## Redo
+
+`/ship redo <phase>` re-dispatches the named phase from its start. Valid targets are the subagent phases as the enum names them (`scope`, `reproduce`, `plan`, `implement`, `polish`, `verify-tests`, `qa`) — `scope` re-runs the scout. If trailing feedback follows the phase name (`/ship redo plan the seam is wrong, use the service layer`), append it to `scope.md` under `## Feedback` first. Set `phase` back to it; the pipeline re-runs everything after it in order, gates included.
 
 ## Red flags — the run is wrong if
 
