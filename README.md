@@ -11,7 +11,7 @@ employer, forge, or issue tracker — and **no secrets are tracked**.
 
 | Half | Ships as | Why |
 | --- | --- | --- |
-| Skills, commands, hooks | **Plugins** (3) | Plugins are the supported mechanism: versioned, per-profile toggles, `/plugin update`, namespaced, and installing one never touches your existing skills |
+| Skills, commands, hooks | **Plugins** (5) | Plugins are the supported mechanism: versioned, per-profile toggles, `/plugin update`, namespaced, and installing one never touches your existing skills |
 | Global rules, settings, keybindings, statusline | **Symlinks** via `install.sh` | Plugins cannot provide always-loaded `CLAUDE.md` instructions, `paths:`-scoped `rules/*.md`, `settings.json`, or a statusline |
 
 ## Install on a new machine
@@ -48,7 +48,7 @@ Add `--profile work` or `--target ~/.claude-personal` for a second profile.
 | --- | --- | --- |
 | `pr-workflows` | 14 | Forge-agnostic change-request workflow: create, review, inline comments, CI verification, thread resolution, conflict fixing, feedback harvesting, posting an MR to Slack. Ships `/pr-review`, `lib/forge.py`, and `references/forge-cli.md` |
 | `dev-workflows` | 15 | Brainstorming, plan writing and execution, TDD, subagent-driven development, worktree isolation, Docker-based service runs, drip-feed recurring maintenance, and `syncing-claude-config`. Ships the pre-push quality-gate hook |
-| `issue-tracker` | 2 | Jira ticket creation and status transitions, with a cached per-project transition map |
+| `issue-tracker` | 3 | Jira ticket creation and status transitions, with a cached per-project transition map. Also files Linear issues against a fixed Why/Repro/Fix/Done-when/Signals template |
 | `infra-workflows` | 2 | Helm env vars across GitOps registries, and AWS SSM SecureString provisioning with an account guard. Ships `provision_ssm.sh` |
 | `cmux` | 5 | cmux terminal multiplexer control: topology, workspaces, browser surface, notifications |
 
