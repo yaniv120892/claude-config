@@ -46,8 +46,8 @@ Add `--profile work` or `--target ~/.claude-personal` for a second profile.
 
 | Plugin | Skills | What it does |
 | --- | --- | --- |
-| `pr-workflows` | 14 | Forge-agnostic change-request workflow: create, review, inline comments, CI verification, thread resolution, conflict fixing, feedback harvesting, posting an MR to Slack. Ships `/pr-review`, `lib/forge.py`, and `references/forge-cli.md` |
-| `dev-workflows` | 15 | Brainstorming, plan writing and execution, TDD, subagent-driven development, worktree isolation, Docker-based service runs, drip-feed recurring maintenance, and `syncing-claude-config`. Ships the pre-push quality-gate hook |
+| `pr-workflows` | 14 | Forge-agnostic change-request workflow: create, review (house rules plus a Fowler smell baseline), inline comments, CI verification, thread resolution, conflict fixing, feedback harvesting, posting an MR to Slack. Ships `/pr-review`, `lib/forge.py`, and `references/forge-cli.md` |
+| `dev-workflows` | 21 | `/ship` (scoping rounds through blind-QA'd PR, with a reproduce phase for bugs), brainstorming, plan writing and execution, TDD, subagent-driven development, worktree isolation, Docker-based service runs, drip-feed recurring maintenance, domain modeling (`CONTEXT.md` + ADRs), the `/flows` router, and the `wizard`/`research`/`retro`/`wait-what` helpers. Ships the pre-push quality-gate hook |
 | `issue-tracker` | 3 | Jira ticket creation and status transitions, with a cached per-project transition map. Also files Linear issues against a fixed Why/Repro/Fix/Done-when/Signals template |
 | `infra-workflows` | 2 | Helm env vars across GitOps registries, and AWS SSM SecureString provisioning with an account guard. Ships `provision_ssm.sh` |
 | `cmux` | 5 | cmux terminal multiplexer control: topology, workspaces, browser surface, notifications |
@@ -95,7 +95,7 @@ rule set costs nothing on unrelated prompts.
 | `typescript.md` | ts, tsx | Typing, `as` casts, derived types, access modifiers, type placement |
 | `python.md` | py | Type hints, Google docstrings, import order, tool-function error returns |
 | `config.md` | env, tf, tfvars, settings.json, compose, values, CI yaml | Secret handling, environment-variable wiring |
-| `authoring-docs.md` | md, mdx | How to write rules and docs |
+| `authoring-docs.md` | md, mdx | Writing rules, skills, and agent-facing docs: invariants over violation lists, positive phrasing, no-op pruning, leading words, pointer wording |
 
 Verify what actually loaded in a session with `/context`.
 
