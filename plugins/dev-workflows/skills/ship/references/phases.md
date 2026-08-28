@@ -49,6 +49,8 @@ Write `<worktree>/.claude/ship/scope.md`:
 <what could break elsewhere — this seeds the QA pass>
 ```
 
+If `scope.md` already exists (a fact-batch re-dispatch or a redo), do not rewrite it: append your answers under a `## Scout follow-ups` section and update only the sections that are now wrong — the `## Answers`, `## Reproduction`, and `## Feedback` sections other phases append are load-bearing.
+
 Do not write code. Do not write a plan. Do not create files outside `.claude/ship/`.
 
 ---
@@ -88,7 +90,7 @@ Any instrumentation you add gets a unique `[DEBUG-<4 hex>]` tag so cleanup is on
 
 If you cannot build a loop at all: first line of your return is `BLOCKED`, then what you tried and what access would unblock it (an environment, a captured artifact, permission to instrument). The conductor stops and asks the user.
 
-Output: `reports/reproduce.md` (full detail), plus a `## Reproduction` section appended to `scope.md` — the command, the minimised scenario, the hypotheses — so plan and implement read it. The plan's first entry in `## Tests to write first` must be this repro promoted to a proper test.
+Output: `reports/reproduce.md` (full detail), plus a `## Reproduction` section appended to `scope.md` — the command, the minimised scenario, the hypotheses — so plan and implement read it.
 
 ---
 
@@ -131,7 +133,7 @@ Write `<worktree>/.claude/ship/plan.md`:
 <what could regress, and which existing tests cover it>
 ```
 
-Rules: prefer extending an existing pattern over introducing a new one; say so explicitly when you do introduce one, with the justification. Keep the change as small as the goal allows. Respect `docs/adr/`: a plan that would contradict an ADR flags it under `## Concern` instead of silently re-litigating it. If the request cannot be done sensibly as asked, write the plan for what *should* happen and put the objection at the top under `## Concern` — do not silently substitute your own scope.
+Rules: on a bug run, the first entry in `## Tests to write first` is `scope.md`'s `## Reproduction` promoted to a proper test. Prefer extending an existing pattern over introducing a new one; say so explicitly when you do introduce one, with the justification. Keep the change as small as the goal allows. Respect `docs/adr/`: a plan that would contradict an ADR flags it under `## Concern` instead of silently re-litigating it. If the request cannot be done sensibly as asked, write the plan for what *should* happen and put the objection at the top under `## Concern` — do not silently substitute your own scope.
 
 If the request is a **wide mechanical refactor** — one change, a rename or a retype, whose blast radius fans across the codebase so no vertical slice lands green — do not force it into a single-shot plan. Plan it as **expand** (add the new form beside the old), **migrate** (move call sites over in batches sized by blast radius), **contract** (delete the old form once no caller remains), and put a note under `## Concern` that the run may deserve splitting into one PR per stage, for the user to decide at the gate.
 
@@ -229,7 +231,7 @@ Record `git rev-parse HEAD`: every production file must still match that commit 
 Read `plan.md`, `state.json`'s `request`, and the branch diff **once**; derive your acceptance criteria; then sweep the test files **once**, filling a single table.
 
 - **`## Tests to write first` → real tests.** Each planned test, at `file:line`. A matching *name* is not a match — read the body. One that pins down something narrower than planned is a finding.
-- **`## Seams` → where the tests sit.** Each test from the plan sits at its planned seam. A test that reaches past the seam into internals (the internal-mocking anti-pattern in `testing-anti-patterns.md`) is a finding even when it kills mutants.
+- **`## Seams` → where the tests sit.** Each test from the plan sits at its planned seam. A test that reaches past the seam into internals (mocks internal collaborators, or verifies through a side channel instead of the seam's own output) is a finding even when it kills mutants.
 - **`## Goal` / `## Changes` → the diff.** Both directions: planned and not shipped, shipped and not planned.
 - **`request` → the tests.** Three to six concrete criteria, written down **before you open a test file** — derive them after and you are only describing the tests back to yourself. Map each to a test that would fail if it were violated. A criterion with no such test is a gap even when the plan never listed it: this read is the only thing that catches a plan which misread the request.
 
@@ -265,7 +267,7 @@ A mutant that will not compile is not a result — discard it, spend the budget,
 
 ### 3. Tautology check
 
-On the tests from step 1's sweep, invert anything that smells: flip an assertion to its opposite and re-run. Still passing means it asserts nothing. Then work `testing-anti-patterns.md`'s `## Quick Reference` and `## Red Flags` as the checklist, plus the one gap it leaves: happy-path-only tests where the request or plan implies an error path. The tautological-expected-value anti-pattern in `testing-anti-patterns.md` survives the assertion flip, so hunt it by reading; fix it in step 4 like any weak test.
+On the tests from step 1's sweep, invert anything that smells: flip an assertion to its opposite and re-run. Still passing means it asserts nothing. Then work `testing-anti-patterns.md`'s `## Quick Reference` and `## Red Flags` as the checklist, plus the gaps it may not name: snapshot or echo assertions that restate the implementation's own output (auto-recorded snapshots included); happy-path-only tests where the request or plan implies an error path; and the one tautology that survives the assertion flip — an expected value recomputed the same way the code computes it — which you hunt by reading. Fix everything found here in step 4 like any weak test.
 
 ### 4. Fix what you found
 

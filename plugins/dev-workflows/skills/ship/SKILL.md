@@ -138,6 +138,8 @@ After it returns: relay the report, update `phase` and `history` in `state.json`
 
 If a subagent reports a blocker it cannot resolve, stop the pipeline, relay the blocker, and ask the user. Do not investigate it yourself.
 
+**Bug runs insert the reproduce phase here.** When the scout returns and `state.json`'s `type` is `"bug"`, set `phase: "reproduce"` and dispatch the reproduce subagent with the same template before any scoping questions. When it reports back, continue to the scoping questions as usual — unless its first line is `BLOCKED`, which stops the pipeline per the blocker rule above. Feature runs skip straight from scout to the scoping questions.
+
 **Plan alternatives.** When `plan.alternatives` in `ship.json` is greater than 1, dispatch that many plan subagents **in parallel**, each writing `plan-<n>.md`, each given one design constraint in its prompt: (1) minimise the interface — fewest entry points, maximum leverage each; (2) optimise for the most common caller — the default case trivial; (3) maximise flexibility — extension over concision. At the approval gate present a short comparison — approach, files touched, test count, trade-offs per candidate — plus your own recommendation. The user picks; copy the chosen file to `plan.md`; the others stay in `.claude/ship/` unused.
 
 ### Scoping questions (inline)
@@ -145,7 +147,7 @@ If a subagent reports a blocker it cannot resolve, stop the pipeline, relay the 
 The scout wrote `scope.md` with its findings and the open questions worth resolving, each marked **decision** or **fact**. Read it. Then grill in **rounds**:
 
 - A round is up to 4 questions via `AskUserQuestion`, each with your recommended default as the first option, marked "(Recommended)". The **frontier** is every question whose prerequisites are settled — a question whose answer depends on one still open this round waits for the next round.
-- Ask only **decisions** — questions where two reasonable readings lead to different code. If a candidate question is answerable by looking at the codebase, it is a **fact**: collect the round's facts and re-dispatch the scout once with all of them, folding the answers in. Facts are the pipeline's job, never the user's.
+- Ask only **decisions** — questions where two reasonable readings lead to different code. If a candidate question is answerable by looking at the codebase, it is a **fact**: collect the round's facts and re-dispatch the scout once with all of them, instructing it to append the answers to `scope.md`, not rewrite it. Facts are the pipeline's job, never the user's.
 - Skip a question entirely if a sensible default exists; state the default instead.
 - If an answer opens a new decision or invalidates a scout finding, ask another round. Done when no unresolved decision remains that would change the implementation — not after one round by default, and not endlessly either: most runs finish in one.
 
@@ -194,7 +196,7 @@ Set `phase: "ready-to-merge"`. Stop. Tell the user that after they merge, `/ship
 
 ## Redo
 
-`/ship redo <phase>` re-dispatches the named phase from its start. Valid targets are the subagent phases (`scout`, `reproduce`, `plan`, `implement`, `polish`, `verify-tests`, `qa`). If trailing feedback follows the phase name (`/ship redo plan the seam is wrong, use the service layer`), append it to `scope.md` under `## Feedback` first. Set `phase` back to it; the pipeline re-runs everything after it in order, gates included.
+`/ship redo <phase>` re-dispatches the named phase from its start. Valid targets are the subagent phases as the enum names them (`scope`, `reproduce`, `plan`, `implement`, `polish`, `verify-tests`, `qa`) — `scope` re-runs the scout. If trailing feedback follows the phase name (`/ship redo plan the seam is wrong, use the service layer`), append it to `scope.md` under `## Feedback` first. Set `phase` back to it; the pipeline re-runs everything after it in order, gates included.
 
 ## Red flags — the run is wrong if
 
