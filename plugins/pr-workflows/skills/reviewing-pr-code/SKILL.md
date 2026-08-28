@@ -40,6 +40,7 @@ Always read the repository instructions first: `AGENTS.md`, `CLAUDE.md`, `.codex
 2. Determine project type:
    - Express or backend API: also read `references/express-backend-review.md`.
    - Next.js or React frontend: also read `references/nextjs-frontend-review.md`.
+   - Any stack: read `references/code-smells.md` for the always-on smell baseline — its findings are judgement calls, reported distinctly from rule violations.
 3. Run or request lint. Do not run or request build/test/typecheck — CI already gates those on every PR. Spend that effort reading the actual logic instead.
 4. Review for issues first, then style. Do not spend review attention on harmless preferences when correctness or risk is unresolved.
 5. Produce the checklist output below. Mark an item `N/A` only when it is genuinely irrelevant to the diff.
