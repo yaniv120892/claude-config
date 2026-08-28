@@ -128,7 +128,7 @@ Write `<worktree>/.claude/ship/proof-of-work.md`:
 
 If the repo has a `run` skill or a Dockerfile, use it — evidence from the real app beats evidence from a unit test. If you genuinely cannot produce runtime proof, say exactly why under `## Proof it works`. Never describe a verification you did not run.
 
-Commit your work in the worktree (conventional commit, `feat`/`fix` for anything shippable). Do not push — the polish phase pushes once.
+Commit your work in the worktree (conventional commit, `feat`/`fix` for anything shippable). Do not push — polish is what opens the PR.
 
 Return: what you built, the test counts, the proof type, and anything the plan got wrong.
 
@@ -154,6 +154,116 @@ Then open or update the PR. **REQUIRED SUB-SKILL:** `creating-prs` — it is for
 **PR description: REQUIRED SUB-SKILL:** `writing-pr-description`. Write it against the **final** diff, after simplify — not the original plan. Pull the Proof of Work section from `proof-of-work.md`. If a description already exists, rewrite it rather than appending.
 
 Return: PR number and URL, quality-gate result per check, what review/simplify actually changed, how many comments you removed, and whether `CLAUDE.md` needed updating.
+
+---
+
+## verify-tests
+
+**Agent type:** default (inherit) · **Purpose:** prove the tests would actually catch a bug, and that what shipped is what was planned.
+
+You run **after** polish, on the diff that will actually merge. That is deliberate: `/code-review` and `/simplify` rewrite production code, so a mutation result taken before them describes code that no longer exists. Everything you mutate here is final.
+
+The PR is already open. You will push test-only commits to the feature branch on top of it — never retitle, reopen, or rewrite it.
+
+You may read `plan.md`, `proof-of-work.md`, `reports/implement.md`, `reports/polish.md`, and `state.json`. Your own report is on the blind QA agent's do-not-read list — see `qa-agent.md`.
+
+### 0. Baseline
+
+Run the full suite **with coverage** (`commands.test` from `ship.json`, plus that runner's coverage flag). It confirms the polished tree is green, and the coverage map it produces is what lets step 2 trust a targeted run. A red baseline makes every mutation result meaningless — it is a blocker.
+
+Record `git rev-parse HEAD`: every production file must still match that commit when you finish.
+
+### 1. Traceability — one pass, three reads
+
+Read `plan.md`, `state.json`'s `request`, and the branch diff **once**; derive your acceptance criteria; then sweep the test files **once**, filling a single table.
+
+- **`## Tests to write first` → real tests.** Each planned test, at `file:line`. A matching *name* is not a match — read the body. One that pins down something narrower than planned is a finding.
+- **`## Goal` / `## Changes` → the diff.** Both directions: planned and not shipped, shipped and not planned.
+- **`request` → the tests.** Three to six concrete criteria, written down **before you open a test file** — derive them after and you are only describing the tests back to yourself. Map each to a test that would fail if it were violated. A criterion with no such test is a gap even when the plan never listed it: this read is the only thing that catches a plan which misread the request.
+
+### 2. Mutation pass
+
+Coverage says a line ran; this says it is *guarded*. Make the production code wrong, run the tests, expect red. Green means nothing is watching that line.
+
+**Scope:** lines this branch added or changed in production source, from the diff you already read. Never mutate tests, generated code, migrations, fixtures, or config — `verifyTests.exclude` adds to that list rather than restating it.
+
+**Budget:** `verifyTests.maxMutants` (default in `references/config.md`) counts every mutation applied, discards included, which is what makes this phase's cost predictable. Spend it on the logic carrying the requested behavior, not on plumbing. At `0`, skip this step and return `BLOCKED — mutation skipped by config`.
+
+**Operators — whichever the changed line admits:**
+
+| Mutation | Example |
+|---|---|
+| condition wrong | `<` ↔ `<=`, `&&` ↔ `\|\|`, `if (x)` → `if (!x)`, force `true`/`false` |
+| number wrong | `i + 1` → `i`, `n` → `n - 1`, `+` ↔ `-` |
+| value wrong | return `null` / `0` / `[]` instead |
+| check removed | delete an early return, throw, or validation |
+| effect removed | delete a call that exists for its side effect (`await repo.save(x)`) |
+| arguments swapped | `f(a, b)` → `f(b, a)`, where types allow |
+
+**The loop, one mutant at a time:**
+
+1. Apply the mutant.
+2. Run the tests the coverage map says reach that line. Red → killed.
+3. Green → survivor. Record `file:line`, the mutation, and the test that should have caught it. The coverage map is why no full-suite re-run is needed to be sure.
+4. `git checkout -- <file>`, then `git status --porcelain` empty before the next one. Never two live mutants at once.
+
+A mutant that will not compile is not a result — discard it, spend the budget, pick another operator.
+
+**Equivalent mutants** — a log string, a redundant re-assignment, an unreachable branch — get recorded as equivalent, not tested against. "Probably equivalent" without the reasoning is how this phase turns into theatre.
+
+### 3. Tautology check
+
+On the tests from step 1's sweep, invert anything that smells: flip an assertion to its opposite and re-run. Still passing means it asserts nothing. Then work `testing-anti-patterns.md`'s `## Quick Reference` and `## Red Flags` as the checklist, plus two it does not name: snapshot or echo assertions that restate the implementation's own output, and happy-path-only where the request or plan implies an error path.
+
+### 4. Fix what you found
+
+You strengthen tests here, you do not just grade them.
+
+- Tighten the loose assertion, assert the value rather than the shape, add the missing case, write the test the uncovered criterion needs.
+- **Never weaken production code to make a mutant killable.** `testing-anti-patterns.md`'s `## The Iron Laws` bind here.
+- **Prove each fix as you found the problem:** re-apply the mutant, watch the new assertion go **red** on the targeted run, revert. A fix you did not re-mutate is unverified — report it as such.
+- **Commit each fix as you make it**, so the tree is dirty only while a mutant is live and `git status --porcelain` stays a usable alarm.
+- A survivor killable only by changing behavior the plan deliberately chose is not yours to change: `## Escalate` it and leave the code alone.
+
+### 5. Finish
+
+Full suite once, green, after the last fix, plus the repo's lint on the test files you touched — polish's quality gate has already run and will not run again.
+
+**Then prove no mutant reached the branch:** `git diff --name-only <baseline>` must list test files only. Run it — a leaked mutant is the one unrecoverable failure of this phase, and the next thing that happens is a push.
+
+Push the test commits to the feature branch. The PR updates itself; leave its title and description alone. If your work contradicts something the description claims — a test count, a "not covered" note — say so in your report and let the hand-off carry it.
+
+Write `reports/verify-tests.md`:
+
+```markdown
+## Verdict
+SOLID | STRENGTHENED | GAPS REMAIN | BLOCKED
+
+## Mutation
+<the test command used>
+
+| file:line | mutation | result (killed by <test> / survived / equivalent) |
+|---|---|---|
+
+## Traceability
+### Planned tests -> real tests
+<per plan item: the test at file:line, or MISSING>
+### Plan -> diff
+<dropped from the plan; shipped without the plan naming it>
+### Request criteria -> tests
+<per criterion: the test, or GAP>
+
+## Weak tests found
+<tautology-check findings: file:line, what it asserted, what it asserts now>
+
+## Escalate
+<survivors needing a behavior decision rather than a test>
+
+## Not reached
+<candidate targets that lost to the budget>
+```
+
+Return: verdict, survivors still alive, traceability gaps, and the report path.
 
 ---
 
