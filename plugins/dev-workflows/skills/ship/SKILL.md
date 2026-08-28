@@ -145,7 +145,7 @@ If a subagent reports a blocker it cannot resolve, stop the pipeline, relay the 
 The scout wrote `scope.md` with its findings and the open questions worth resolving, each marked **decision** or **fact**. Read it. Then grill in **rounds**:
 
 - A round is up to 4 questions via `AskUserQuestion`, each with your recommended default as the first option, marked "(Recommended)". The **frontier** is every question whose prerequisites are settled — a question whose answer depends on one still open this round waits for the next round.
-- Ask only **decisions** — questions where two reasonable readings lead to different code. If a candidate question is answerable by looking at the codebase, it is a **fact**: re-dispatch the scout with that specific question and fold the answer in. Facts are the pipeline's job, never the user's.
+- Ask only **decisions** — questions where two reasonable readings lead to different code. If a candidate question is answerable by looking at the codebase, it is a **fact**: collect the round's facts and re-dispatch the scout once with all of them, folding the answers in. Facts are the pipeline's job, never the user's.
 - Skip a question entirely if a sensible default exists; state the default instead.
 - If an answer opens a new decision or invalidates a scout finding, ask another round. Done when no unresolved decision remains that would change the implementation — not after one round by default, and not endlessly either: most runs finish in one.
 
@@ -194,7 +194,7 @@ Set `phase: "ready-to-merge"`. Stop. Tell the user that after they merge, `/ship
 
 ## Redo
 
-`/ship redo <phase>` re-dispatches the named phase from its start. Valid targets are the subagent phases (`scout`, `reproduce`, `plan`, `implement`, `polish`, `verify-tests`, `qa`). If trailing feedback follows the phase name (`/ship redo plan the seam is wrong, use the service layer`), append it to `scope.md` under `## Feedback` first. Set `phase` back to the redone phase; everything after it is stale and re-runs in order as the pipeline continues — the state machine order is authoritative. Gates re-run naturally when their phase is reached again.
+`/ship redo <phase>` re-dispatches the named phase from its start. Valid targets are the subagent phases (`scout`, `reproduce`, `plan`, `implement`, `polish`, `verify-tests`, `qa`). If trailing feedback follows the phase name (`/ship redo plan the seam is wrong, use the service layer`), append it to `scope.md` under `## Feedback` first. Set `phase` back to it; the pipeline re-runs everything after it in order, gates included.
 
 ## Red flags — the run is wrong if
 

@@ -4,7 +4,7 @@ You were dispatched as one phase of a `/ship` run. Find your phase below and fol
 
 **Universal rules for every phase:**
 
-- Read the target repo's `CLAUDE.md` and `.claude/rules/` before touching anything. Use that repo's own scripts. If a `CONTEXT.md` exists (follow `CONTEXT-MAP.md` to the right one in multi-context repos), use its vocabulary in names, tests, and PR text. Respect `docs/adr/`: a plan that would contradict an ADR flags it under `## Concern` instead of silently re-litigating it.
+- Read the target repo's `CLAUDE.md` and `.claude/rules/` before touching anything. Use that repo's own scripts. If a `CONTEXT.md` exists (follow `CONTEXT-MAP.md` to the right one in multi-context repos), use its vocabulary in names, tests, and PR text.
 - Work inside the worktree path you were given. Never touch the main checkout.
 - Write your full output to `<worktree>/.claude/ship/reports/<phase>.md`. Return **at most 20 lines**.
 - Your returned text is data for a conductor, not prose for a human. No preamble, no sign-off.
@@ -131,7 +131,7 @@ Write `<worktree>/.claude/ship/plan.md`:
 <what could regress, and which existing tests cover it>
 ```
 
-Rules: prefer extending an existing pattern over introducing a new one; say so explicitly when you do introduce one, with the justification. Keep the change as small as the goal allows. If the request cannot be done sensibly as asked, write the plan for what *should* happen and put the objection at the top under `## Concern` — do not silently substitute your own scope.
+Rules: prefer extending an existing pattern over introducing a new one; say so explicitly when you do introduce one, with the justification. Keep the change as small as the goal allows. Respect `docs/adr/`: a plan that would contradict an ADR flags it under `## Concern` instead of silently re-litigating it. If the request cannot be done sensibly as asked, write the plan for what *should* happen and put the objection at the top under `## Concern` — do not silently substitute your own scope.
 
 If the request is a **wide mechanical refactor** — one change, a rename or a retype, whose blast radius fans across the codebase so no vertical slice lands green — do not force it into a single-shot plan. Plan it as **expand** (add the new form beside the old), **migrate** (move call sites over in batches sized by blast radius), **contract** (delete the old form once no caller remains), and put a note under `## Concern` that the run may deserve splitting into one PR per stage, for the user to decide at the gate.
 
@@ -229,7 +229,7 @@ Record `git rev-parse HEAD`: every production file must still match that commit 
 Read `plan.md`, `state.json`'s `request`, and the branch diff **once**; derive your acceptance criteria; then sweep the test files **once**, filling a single table.
 
 - **`## Tests to write first` → real tests.** Each planned test, at `file:line`. A matching *name* is not a match — read the body. One that pins down something narrower than planned is a finding.
-- **`## Seams` → where the tests sit.** Each test from the plan sits at its planned seam. A test that reaches past the seam into internals — mocks internal collaborators, asserts on private state, verifies through a side channel — is a finding even when it kills mutants.
+- **`## Seams` → where the tests sit.** Each test from the plan sits at its planned seam. A test that reaches past the seam into internals (the internal-mocking anti-pattern in `testing-anti-patterns.md`) is a finding even when it kills mutants.
 - **`## Goal` / `## Changes` → the diff.** Both directions: planned and not shipped, shipped and not planned.
 - **`request` → the tests.** Three to six concrete criteria, written down **before you open a test file** — derive them after and you are only describing the tests back to yourself. Map each to a test that would fail if it were violated. A criterion with no such test is a gap even when the plan never listed it: this read is the only thing that catches a plan which misread the request.
 
@@ -265,9 +265,7 @@ A mutant that will not compile is not a result — discard it, spend the budget,
 
 ### 3. Tautology check
 
-On the tests from step 1's sweep, invert anything that smells: flip an assertion to its opposite and re-run. Still passing means it asserts nothing. Then work `testing-anti-patterns.md`'s `## Quick Reference` and `## Red Flags` as the checklist, plus two it does not name: snapshot or echo assertions that restate the implementation's own output, and happy-path-only where the request or plan implies an error path.
-
-One tautology survives the assertion flip: an expected value recomputed the way the code computes it (`expect(calc(items)).toBe(items.reduce(...))`) passes by construction, so hunt it by reading. Expected values must come from an independent source of truth — a known-good literal, a worked example, the spec. Flag and fix these in step 4 like any weak test.
+On the tests from step 1's sweep, invert anything that smells: flip an assertion to its opposite and re-run. Still passing means it asserts nothing. Then work `testing-anti-patterns.md`'s `## Quick Reference` and `## Red Flags` as the checklist, plus the one gap it leaves: happy-path-only tests where the request or plan implies an error path. The tautological-expected-value anti-pattern in `testing-anti-patterns.md` survives the assertion flip, so hunt it by reading; fix it in step 4 like any weak test.
 
 ### 4. Fix what you found
 
