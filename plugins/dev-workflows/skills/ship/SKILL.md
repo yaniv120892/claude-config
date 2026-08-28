@@ -63,7 +63,7 @@ Everything durable goes in the worktree at `.claude/ship/`:
 }
 ```
 
-`phase` is one of: `scope` → `plan` → `plan-approved` → `implement` → `verify-tests` → `polish` → `qa` → `ready-to-merge` → `merged` → `verified`.
+`phase` is one of: `scope` → `plan` → `plan-approved` → `implement` → `polish` → `verify-tests` → `qa` → `ready-to-merge` → `merged` → `verified`.
 
 Append one entry to `history` per completed phase, as an object: `{"phase": "<the completed phase>", "at": "<UTC ISO-8601 timestamp>", "note": "<one line, optional>"}`. `request` is written once in the worktree phase and is **immutable** — it is the independent source of truth the QA agent is judged against.
 
@@ -83,8 +83,8 @@ If it does not exist, run the pipeline on defaults and mention once at the end t
 | 3 | Plan | subagent → `plan.md` | — |
 | 4 | Approve plan | **you + user** | ✋ approval required |
 | 5 | TDD implement + proof of work | subagent | — |
-| 6 | Verify the tests: mutate + trace to spec | subagent | — |
-| 7 | Simplify / review / rules / PR | subagent | — |
+| 6 | Simplify / review / rules / PR | subagent | — |
+| 7 | Verify the tests: mutate + trace to spec | subagent | — |
 | 8 | Blind QA regression pass | subagent | — |
 | 9 | Hand off: ready to merge | **you + user** | ✋ **stop here** |
 | 10 | Verify on dev/prod | subagent, on `/ship verify` | — |
@@ -159,7 +159,7 @@ Present:
 - PR link and title
 - the QA verdict, verbatim — **including any failure**
 - the test-verification verdict: mutants survived vs killed, and anything still under `## Escalate`
-- what the polish phase changed after implementation
+- what the polish phase changed after implementation, and anything verify-tests found that the PR description no longer matches
 - one line: the proof of work, and where to see it
 - explicitly: anything the run could not verify
 

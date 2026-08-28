@@ -38,8 +38,8 @@ Optional. Lives at `<repo>/.claude/ship.json` and is committed, so the pipeline 
   // Model per phase. Omit to inherit the session model.
   "models": {
     "implement":    "opus",
-    "verify-tests": "opus",
     "polish":       "sonnet",
+    "verify-tests": "opus",
     "qa":           "opus"
   },
 

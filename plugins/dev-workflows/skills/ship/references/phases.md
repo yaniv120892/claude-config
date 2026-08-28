@@ -128,9 +128,32 @@ Write `<worktree>/.claude/ship/proof-of-work.md`:
 
 If the repo has a `run` skill or a Dockerfile, use it — evidence from the real app beats evidence from a unit test. If you genuinely cannot produce runtime proof, say exactly why under `## Proof it works`. Never describe a verification you did not run.
 
-Commit your work in the worktree (conventional commit, `feat`/`fix` for anything shippable). Do not push — the polish phase pushes once.
+Commit your work in the worktree (conventional commit, `feat`/`fix` for anything shippable). Do not push — polish is what opens the PR.
 
 Return: what you built, the test counts, the proof type, and anything the plan got wrong.
+
+---
+
+## polish
+
+**Agent type:** default (inherit) · **Purpose:** make the diff shippable and open the PR.
+
+**REQUIRED SUB-SKILL:** `finalize-pr`, "Polish & ship" flow. You are the dispatched subagent for it — follow it directly, do not delegate further.
+
+That skill covers `/code-review`, `/simplify`, rules alignment, the quality gate, and commit/push. In addition, before you push:
+
+- **Strip redundant comments. REQUIRED SUB-SKILL:** `prune-comments`, scoped to this branch's diff. It goes further than deleting noise — where a comment is propping up a bad name, the fix is the rename, not the deletion. Do not widen it beyond the diff.
+- **Re-check against the plan.** Anything in `plan.md`'s `## Out of scope` that crept in gets removed.
+- **Update the repo's `CLAUDE.md`.** You read it at the start of this phase. Re-read the final diff against it and fix anything it now states wrongly — architecture notes, invariants, commands, routes, crons, models. Record the rule the code now follows, not the story of the change; git log holds that. If this branch merged the base branch, check the file against the merged tree rather than your own diff alone — a doc goes stale from commits your PR never touched. Fix what is cheaply and factually wrong; anything larger goes in your report for the handoff instead of growing this PR. If the repo has no `CLAUDE.md`, or nothing the file claims has changed, say so in your report and move on — do not create one, and do not pad it with a summary of this PR.
+- Confirm `.claude/ship/` is not staged.
+
+Then open or update the PR. **REQUIRED SUB-SKILL:** `creating-prs` — it is forge-agnostic and already handles the GitHub/GitLab split. Do not branch on the forge yourself; the command mapping lives in the `pr-workflows` plugin's `references/forge-cli.md`. Push to the feature branch only.
+
+**The PR title must be a valid conventional commit** (`<type>(<scope>): <description>`). These PRs are squash-merged, so the title — not any commit on the branch — becomes the permanent base-branch history. Use `feat`/`fix` for anything that ships; `chore` does not trigger a release pipeline. Commit as granularly as you like on the branch; the squash is what reconciles a useful working history with a readable base branch.
+
+**PR description: REQUIRED SUB-SKILL:** `writing-pr-description`. Write it against the **final** diff, after simplify — not the original plan. Pull the Proof of Work section from `proof-of-work.md`. If a description already exists, rewrite it rather than appending.
+
+Return: PR number and URL, quality-gate result per check, what review/simplify actually changed, how many comments you removed, and whether `CLAUDE.md` needed updating.
 
 ---
 
@@ -138,11 +161,15 @@ Return: what you built, the test counts, the proof type, and anything the plan g
 
 **Agent type:** default (inherit) · **Purpose:** prove the tests would actually catch a bug, and that what shipped is what was planned.
 
-You may read `plan.md`, `proof-of-work.md`, `reports/implement.md`, and `state.json`. Your own report is on the blind QA agent's do-not-read list — see `qa-agent.md`.
+You run **after** polish, on the diff that will actually merge. That is deliberate: `/code-review` and `/simplify` rewrite production code, so a mutation result taken before them describes code that no longer exists. Everything you mutate here is final.
+
+The PR is already open. You will push test-only commits to the feature branch on top of it — never retitle, reopen, or rewrite it.
+
+You may read `plan.md`, `proof-of-work.md`, `reports/implement.md`, `reports/polish.md`, and `state.json`. Your own report is on the blind QA agent's do-not-read list — see `qa-agent.md`.
 
 ### 0. Baseline
 
-Run the full suite **with coverage** (`commands.test` from `ship.json`, plus that runner's coverage flag). It confirms the tree implement handed you is green, and the coverage map it produces is what lets step 2 trust a targeted run. A red baseline makes every mutation result meaningless — it is a blocker.
+Run the full suite **with coverage** (`commands.test` from `ship.json`, plus that runner's coverage flag). It confirms the polished tree is green, and the coverage map it produces is what lets step 2 trust a targeted run. A red baseline makes every mutation result meaningless — it is a blocker.
 
 Record `git rev-parse HEAD`: every production file must still match that commit when you finish.
 
@@ -200,7 +227,11 @@ You strengthen tests here, you do not just grade them.
 
 ### 5. Finish
 
-Full suite once, green, after the last fix. **Then prove no mutant reached the branch:** `git diff --name-only <baseline>` must list test files only. Run it — a leaked mutant is the one unrecoverable failure of this phase.
+Full suite once, green, after the last fix, plus the repo's lint on the test files you touched — polish's quality gate has already run and will not run again.
+
+**Then prove no mutant reached the branch:** `git diff --name-only <baseline>` must list test files only. Run it — a leaked mutant is the one unrecoverable failure of this phase, and the next thing that happens is a push.
+
+Push the test commits to the feature branch. The PR updates itself; leave its title and description alone. If your work contradicts something the description claims — a test count, a "not covered" note — say so in your report and let the hand-off carry it.
 
 Write `reports/verify-tests.md`:
 
@@ -233,30 +264,6 @@ SOLID | STRENGTHENED | GAPS REMAIN | BLOCKED
 ```
 
 Return: verdict, survivors still alive, traceability gaps, and the report path.
-
----
-
-## polish
-
-**Agent type:** default (inherit) · **Purpose:** make the diff shippable and open the PR.
-
-**REQUIRED SUB-SKILL:** `finalize-pr`, "Polish & ship" flow. You are the dispatched subagent for it — follow it directly, do not delegate further.
-
-That skill covers `/code-review`, `/simplify`, rules alignment, the quality gate, and commit/push. In addition, before you push:
-
-- **Strip redundant comments. REQUIRED SUB-SKILL:** `prune-comments`, scoped to this branch's diff. It goes further than deleting noise — where a comment is propping up a bad name, the fix is the rename, not the deletion. Do not widen it beyond the diff.
-- **Re-check against the plan.** Anything in `plan.md`'s `## Out of scope` that crept in gets removed.
-- **Leave the verified tests alone.** `reports/verify-tests.md` lists assertions tightened because a mutant survived them. `/simplify` will read some as redundant — they are not. Do not loosen or collapse one; if you believe one must change, leave it and say so in your report. Do not re-run mutations here.
-- **Update the repo's `CLAUDE.md`.** You read it at the start of this phase. Re-read the final diff against it and fix anything it now states wrongly — architecture notes, invariants, commands, routes, crons, models. Record the rule the code now follows, not the story of the change; git log holds that. If this branch merged the base branch, check the file against the merged tree rather than your own diff alone — a doc goes stale from commits your PR never touched. Fix what is cheaply and factually wrong; anything larger goes in your report for the handoff instead of growing this PR. If the repo has no `CLAUDE.md`, or nothing the file claims has changed, say so in your report and move on — do not create one, and do not pad it with a summary of this PR.
-- Confirm `.claude/ship/` is not staged.
-
-Then open or update the PR. **REQUIRED SUB-SKILL:** `creating-prs` — it is forge-agnostic and already handles the GitHub/GitLab split. Do not branch on the forge yourself; the command mapping lives in the `pr-workflows` plugin's `references/forge-cli.md`. Push to the feature branch only.
-
-**The PR title must be a valid conventional commit** (`<type>(<scope>): <description>`). These PRs are squash-merged, so the title — not any commit on the branch — becomes the permanent base-branch history. Use `feat`/`fix` for anything that ships; `chore` does not trigger a release pipeline. Commit as granularly as you like on the branch; the squash is what reconciles a useful working history with a readable base branch.
-
-**PR description: REQUIRED SUB-SKILL:** `writing-pr-description`. Write it against the **final** diff, after simplify — not the original plan. Pull the Proof of Work section from `proof-of-work.md`. If a description already exists, rewrite it rather than appending.
-
-Return: PR number and URL, quality-gate result per check, what review/simplify actually changed, how many comments you removed, and whether `CLAUDE.md` needed updating.
 
 ---
 
