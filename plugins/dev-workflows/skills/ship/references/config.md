@@ -25,6 +25,12 @@ Optional. Lives at `<repo>/.claude/ship.json` and is committed, so the pipeline 
     "notes": "Login with the seeded dev account; prices need PRICING_API_KEY set."
   },
 
+  // The plan phase. For changes with real design risk, dispatch N parallel
+  // plan subagents with different constraints and choose at the gate.
+  "plan": {
+    "alternatives": 1                  // 1-3; default 1
+  },
+
   // The verify-tests phase: how hard it mutates the diff.
   "verifyTests": {
     "maxMutants": 12,                  // mutations applied per run, discards included; 0 skips the pass
@@ -58,6 +64,7 @@ Optional. Lives at `<repo>/.claude/ship.json` and is committed, so the pipeline 
 | base | the repo's default branch, via `git symbolic-ref refs/remotes/origin/HEAD` |
 | commands | detected from `package.json` scripts per `pre-push-quality-gate` |
 | qa.run | the repo's `dev` script, or its Dockerfile via `run-service-in-docker` |
+| plan.alternatives | 1 — a single plan subagent |
 | verifyTests.maxMutants | 12 |
 | verifyTests.exclude | empty — the phase's own never-mutate rule still applies |
 | dev / prod | none — `/ship verify` reports that it has nothing to verify against |
