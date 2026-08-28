@@ -37,7 +37,7 @@ repeats cheaply
 > three sites.
 
 **Don't Cache What the Environment Answers** — a doc line restating `package.json` scripts,
-config values, or directory layout is a cache that goes stale; the lookup can't
+config values, or directory layout is a cache that goes stale; the lookup can't go stale
 > Pattern: Document only what looking can't find — the unwritten convention, the why behind a
 > choice, the gotcha no config confesses; point at the file for the rest.
 > Avoid: Command lists and layout maps that duplicate one cheap lookup.
