@@ -65,7 +65,7 @@ Everything durable goes in the worktree at `.claude/ship/`:
 
 `phase` is one of: `scope` → `plan` → `plan-approved` → `implement` → `verify-tests` → `polish` → `qa` → `ready-to-merge` → `merged` → `verified`.
 
-Append one entry to `history` per completed phase, as an object: `{"phase": "<the completed phase>", "at": "<UTC ISO-8601 timestamp>", "note": "<one line, optional>"}`. `request` is written once at Phase 0 and is **immutable** — it is the independent source of truth the QA agent is judged against.
+Append one entry to `history` per completed phase, as an object: `{"phase": "<the completed phase>", "at": "<UTC ISO-8601 timestamp>", "note": "<one line, optional>"}`. `request` is written once in the worktree phase and is **immutable** — it is the independent source of truth the QA agent is judged against.
 
 ## Per-repo configuration
 
@@ -89,13 +89,13 @@ If it does not exist, run the pipeline on defaults and mention once at the end t
 | 9 | Hand off: ready to merge | **you + user** | ✋ **stop here** |
 | 10 | Verify on dev/prod | subagent, on `/ship verify` | — |
 
-**Phase 9 is a hard stop.** Never run `gh pr merge`, `glab mr merge`, approve a PR, or merge a branch. Present the PR link and the QA verdict and stop. Merging is the user's call, every time.
+**The hand-off phase is a hard stop.** Never run `gh pr merge`, `glab mr merge`, approve a PR, or merge a branch. Present the PR link and the QA verdict and stop. Merging is the user's call, every time.
 
-**One run is one branch, one PR.** Never split a run into a stack of PRs, and never open a second PR to finish something the first one started — if the plan is too big for one PR, say so at the Phase 4 approval gate and let the user split the *request*, rather than splitting the delivery behind their back.
+**One run is one branch, one PR.** Never split a run into a stack of PRs, and never open a second PR to finish something the first one started — if the plan is too big for one PR, say so at the plan-approval gate and let the user split the *request*, rather than splitting the delivery behind their back.
 
-Within that branch, each phase commits its own work as it completes: implementation commits before test verification begins, test verification commits its strengthened tests separately, polish commits its cleanups separately. That keeps a phase's changes recoverable if a later phase goes wrong, and lets `git log` on the branch show where a regression entered. None of it reaches the base branch — the squash at merge collapses the whole branch into the single commit named by the PR title, which is why that title has to be right.
+Within that branch, each phase commits its own work as it completes. That keeps a phase's changes recoverable if a later phase goes wrong, and lets `git log` on the branch show where a regression entered. None of it reaches the base branch — the squash at merge collapses the whole branch into the single commit named by the PR title, which is why that title has to be right.
 
-### Phase 0 — worktree and state
+### Worktree and state (inline)
 
 Derive a short kebab slug from the request. Then:
 
@@ -104,7 +104,7 @@ Derive a short kebab slug from the request. Then:
 3. Write `state.json` with the request **verbatim** and `phase: "scope"`.
 4. Add `.claude/ship/` to the worktree's `.git/info/exclude` — this is scaffolding, it must never land in the PR.
 
-### Phases 1, 3, 5, 6, 7, 8, 10 — dispatch
+### Dispatching a subagent phase — every row above whose *Who* is "subagent"
 
 One template for all of them. The subagent reads its own brief; you never inline it.
 
@@ -135,13 +135,13 @@ After it returns: relay the report, update `phase` and `history` in `state.json`
 
 If a subagent reports a blocker it cannot resolve, stop the pipeline, relay the blocker, and ask the user. Do not investigate it yourself.
 
-### Phase 2 — scoping questions (inline)
+### Scoping questions (inline)
 
 The scout wrote `scope.md` with its findings and the ambiguities worth resolving. Read it. Ask the user the **2–4 questions that would change the implementation** via `AskUserQuestion` — not everything the scout listed. Skip a question entirely if a sensible default exists; state the default instead.
 
 Append the answers to `scope.md`. Set `phase: "plan"`.
 
-### Phase 4 — approve the plan (inline)
+### Approve the plan (inline)
 
 Read `plan.md`. Present to the user, in your own text:
 
@@ -150,9 +150,9 @@ Read `plan.md`. Present to the user, in your own text:
 - the test list the TDD phase will write first
 - anything the plan explicitly leaves out
 
-Then ask for approval. On changes requested, re-dispatch Phase 3 with their feedback appended to `scope.md` — do not edit `plan.md` yourself. On approval set `phase: "plan-approved"` and continue.
+Then ask for approval. On changes requested, re-dispatch the plan phase with their feedback appended to `scope.md` — do not edit `plan.md` yourself. On approval set `phase: "plan-approved"` and continue.
 
-### Phase 9 — hand off (inline)
+### Hand off (inline)
 
 Present:
 
@@ -184,9 +184,8 @@ Set `phase: "ready-to-merge"`. Stop. Tell the user that after they merge, `/ship
 ## Red flags — the run is wrong if
 
 - You read a source file. Any source file.
-- The QA agent was given `plan.md`, `reports/verify-tests.md`, the implementer's report, or any description of *how* the change was built.
-- A mutation survived into the PR diff, or the verify-tests phase reported a kill it never re-ran.
-- The verify-tests phase "passed" without naming a single mutant it applied.
+- The QA agent was given `plan.md`, any `reports/*.md`, or any description of *how* the change was built.
+- The verify-tests phase returned a non-`BLOCKED` verdict without naming a single mutant it applied.
 - You merged, approved, or auto-closed anything.
 - You reported "QA passed" without the QA subagent's actual verdict in front of you.
 - A phase report exceeded 20 lines and you relayed all of it.
