@@ -34,12 +34,15 @@ Review as a senior engineer. Prioritize defects, risk, regressions, missing test
 
 Always read the repository instructions first: `AGENTS.md`, `CLAUDE.md`, `.codex/rules/`, `.claude/rules/`, package scripts, lint/type/test config, and the touched files' nearby patterns.
 
+On top of repo rules and the stack checklists, always apply the generic smell baseline in `references/code-smells.md` — it holds regardless of stack or repo. Baseline findings are judgement calls, never hard violations: report them as suggestions, distinct from rule violations, and let any documented repo standard override them.
+
 ## Workflow
 
 1. Identify the diff scope, touched modules, public contracts, data flows, and likely blast radius.
 2. Determine project type:
    - Express or backend API: also read `references/express-backend-review.md`.
    - Next.js or React frontend: also read `references/nextjs-frontend-review.md`.
+   - Any stack: read `references/code-smells.md` for the always-on smell baseline.
 3. Run or request lint. Do not run or request build/test/typecheck — CI already gates those on every PR. Spend that effort reading the actual logic instead.
 4. Review for issues first, then style. Do not spend review attention on harmless preferences when correctness or risk is unresolved.
 5. Produce the checklist output below. Mark an item `N/A` only when it is genuinely irrelevant to the diff.
