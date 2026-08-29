@@ -119,3 +119,10 @@ configuring it a single atomic step nobody can sequence; the first request after
 > integration URL has not been pasted into the dashboard yet.
 > Exception: config the process genuinely cannot run without (DB URL, JWT secret) is required —
 > but assert it at boot next to the others, never on first use.
+> Also: **open a provisioning ticket for the var in the same breath as the code.** A default keeps
+> the deploy alive; it does not make the feature work. Merged code reading an unprovisioned var is
+> silently inert, and neither the repo nor CI surfaces that — the code half looks done, so the
+> config half is forgotten until someone notices the feature never ran. The ticket covers: set it
+> in the host (Vercel: production **and** preview); where a third party issues the value, extract
+> it from that provider rather than inventing one; and update the consuming service or monitor in
+> the same change, so a new gate cannot lock out the caller it was meant to admit.
