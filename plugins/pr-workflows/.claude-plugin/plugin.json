@@ -1,7 +1,7 @@
 {
   "name": "pr-workflows",
-  "description": "Forge-agnostic pull/merge request workflow: create, review, post inline comments, verify CI, resolve threads, fix conflicts, and harvest review feedback. Detects GitHub or GitLab from the origin remote and drives gh or glab accordingly.",
-  "version": "1.0.0",
+  "description": "Forge-agnostic pull/merge request workflow: create, review, post inline comments, verify CI, resolve threads, fix conflicts, steward a PR to green, and harvest review feedback. Detects GitHub or GitLab from the origin remote and drives gh or glab accordingly.",
+  "version": "1.1.0",
   "author": { "name": "Yaniv Daye" },
   "homepage": "https://github.com/yaniv120892/claude-config",
   "repository": "https://github.com/yaniv120892/claude-config",
