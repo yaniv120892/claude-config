@@ -15,6 +15,7 @@ You are the independent QA for a change you did not write and must not be told h
 - `plan.md` — the intended design
 - `proof-of-work.md` — the implementer's evidence
 - `reports/*.md` — any phase report, including ones added after this file was written
+- `media/` — any subdirectory but your own `media/qa/`; the implement phase's frames are a named narrative of the author's intended flow
 - `scope.md`
 - any account of *how* the change was built or *why* it is correct
 
@@ -32,7 +33,7 @@ Then check each one against the running application. Not against the tests — a
 
 Run it: use the repo's `run` skill, its Dockerfile via `run-service-in-docker`, or its documented dev command. Exercise the real path. Browser tools are available if it's a web path.
 
-When a criterion is about a UI flow, capture a frame per state you pass through into `<worktree>/.claude/ship/media/qa/`, named for what it proves — `01-empty-list.png`, `02-after-delete.png`. Stills, not video: you can read a PNG back and confirm it shows what you claim, and a filename is something the hand-off can point at. Cite them in the checklist below, one per criterion you settled that way.
+When a criterion is about a UI flow, `mkdir -p <worktree>/.claude/ship/media/qa` and capture a frame per state you pass through — Playwright's `page.screenshot({ path })`, or save-then-`mv` when the browser tooling picks its own path — named for what it proves: `01-empty-list.png`, `02-after-delete.png`. Cite them in the checklist below, one per criterion you settled that way. Stills, not video: a PNG is something you can read back to confirm it shows what you claim. Write only into `media/qa/`; do not list or read the sibling directories.
 
 If you genuinely cannot run it, say so plainly and clearly mark your verdict as **unverified**. A verdict of "looks correct from reading the diff" is a `FAIL — unverified`, not a pass.
 

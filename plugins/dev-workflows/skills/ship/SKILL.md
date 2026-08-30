@@ -46,7 +46,8 @@ Everything durable goes in the worktree at `.claude/ship/`:
   plan.md            the approved plan — the contract every later phase reads
   proof-of-work.md   evidence the thing actually works
   reports/<phase>.md full detail from each phase (subagents write these)
-  media/             screenshots and traces backing the proof of work
+  media/implement/   frames and traces backing the proof of work
+  media/qa/          frames from the blind QA pass (QA reads no other media/)
 ```
 
 `state.json`:
@@ -106,7 +107,7 @@ Derive a short kebab slug from the request. Then:
 1. `EnterWorktree` with `name: <slug>`. If it fails, continue in place and say so.
 2. `mkdir -p .claude/ship/reports`
 3. Write `state.json` with the request **verbatim** and `phase: "scope"`.
-4. Add `.claude/ship/` to the worktree's `.git/info/exclude` — this is scaffolding, it must never land in the PR.
+4. Add `.claude/ship/` to `$(git rev-parse --git-path info/exclude)`, appending only if absent — this is scaffolding, it must never land in the PR. Use that command rather than a literal path: in a linked worktree `.git` is a file, and the exclude it resolves to is shared with the main clone, so drop the line again once the run is merged.
 
 ### Dispatching a subagent phase — every row above whose *Who* is "subagent"
 

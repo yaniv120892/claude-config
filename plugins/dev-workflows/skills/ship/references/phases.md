@@ -171,7 +171,7 @@ Write `<worktree>/.claude/ship/proof-of-work.md`:
 ## Proof it works
 <Actual evidence, from the real app — not a description of evidence.
  Whatever this repo supports: terminal output of the real path running,
- a request/response pair, a step sequence under `media/`, a before/after.
+ a request/response pair, a step sequence under `media/implement/`, a before/after.
  For a bug: the failing case reproduced first, then the same case passing.>
 
 ## Not covered
@@ -180,13 +180,9 @@ Write `<worktree>/.claude/ship/proof-of-work.md`:
 
 If the repo has a `run` skill or a Dockerfile, use it — evidence from the real app beats evidence from a unit test. If you genuinely cannot produce runtime proof, say exactly why under `## Proof it works`. Never describe a verification you did not run.
 
-**A UI flow is proven by a sequence, not one frame.** A single end-state screenshot shows the destination and hides the route — whether validation fired, whether the empty state rendered, whether step 3 flashed the wrong thing on the way. Capture one frame per state the flow passes through, into `<worktree>/.claude/ship/media/`, numbered and named for what each one proves: `01-empty-form.png`, `02-submit-invalid.png`, `03-error-shown.png`, `04-success.png`. The filename is the claim; the image is the evidence for it. Then reference the sequence under `## Proof it works` — the frames, and what each establishes.
+**A UI flow is proven by a sequence, not one frame.** One end-state screenshot shows the destination and hides the route. `mkdir -p <worktree>/.claude/ship/media/implement`, then capture a frame per state the flow passes through — Playwright's `page.screenshot({ path })`, or save-then-`mv` when you are driving the browser through MCP tooling, which picks its own path — named for what each proves: `01-empty-form.png`, `02-submit-invalid.png`, `03-error-shown.png`, `04-success.png`. Reference them under `## Proof it works`. Stills, not video: you can read a PNG back and confirm it shows what you claim, where a recording is evidence its own producer never checked. Where the repo drives the UI with Playwright, run the proof pass with the `--trace on` CLI flag and note the `trace.zip` path — its per-action DOM snapshots settle the timing and flash-of-wrong-state symptoms stills lose. Do not set `trace: 'on'` in `playwright.config.ts`; that is a tracked file, and the edit would ship trace capture for every CI run.
 
-Capture stills, not video. You can read a PNG back and confirm it shows what you claim; you cannot read a `.mp4`, so a recording is evidence whose producer never checked it — which is the failure this whole section exists to prevent. It is also not referenceable: verify-tests and the QA agent read this file, and `03-error-shown.png` is something they can act on where "00:07 in the recording" is not.
-
-Where the repo drives the UI with Playwright, turn its trace on for the proof run (`trace: 'on'`) and keep the `trace.zip` beside the frames. It carries a DOM snapshot per action plus console, network, and timings — everything a recording would have shown and more, scrubbable via `npx playwright show-trace`, and it is the artifact that settles a timing or flash-of-wrong-state symptom that stills genuinely lose. Note its path under `## Proof it works`.
-
-`media/` holds evidence, not repo content. Keep it out of the commit — `echo '.claude/ship/' >> "$(git rev-parse --git-path info/exclude)"` in the worktree, which is local to that worktree and leaves the target repo's tracked `.gitignore` alone.
+Frames go in `media/implement/`, never `media/qa/` — the blind QA agent writes to the latter, and a named sequence of your intended flow sitting where it works is the contamination its pass exists to prevent. Phase 0 already excluded `.claude/ship/` from git and polish re-checks it is unstaged, so these frames never reach the PR: anything the description cites has to be attached by hand through the forge's web UI.
 
 Commit your work in the worktree (conventional commit, `feat`/`fix` for anything shippable). Do not push — polish is what opens the PR.
 

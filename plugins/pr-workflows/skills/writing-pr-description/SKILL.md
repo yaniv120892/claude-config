@@ -254,7 +254,7 @@ Evidence that the change works **in practice**, not just in tests. Reviewers nee
 - `curl` response from a live endpoint
 - Prometheus metric sample showing the counter incremented
 - Screenshot of Temporal UI showing the workflow ran through the new activity
-- For a UI flow, a numbered frame sequence — `01-empty-form.png` → `04-success.png` — so the reviewer sees the route, not just the destination. Where the flow is the point and the forge renders it inline, a GIF of that sequence is worth more than the stills; a raw video file is not, since GitHub has no API for attaching one to a PR body
+- For a UI flow, a numbered frame sequence (`01-empty-form.png` → `04-success.png`), or a GIF of it — the route, not just the destination. Neither `gh` nor `glab` can attach media to a PR body, so these have to be dragged in through the forge's web UI; cite a frame only once it is actually attached, or the reviewer gets a filename pointing at nothing
 
 **What does NOT count:**
 - Unit test results — tests are a baseline, not proof the feature works
