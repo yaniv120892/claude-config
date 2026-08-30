@@ -46,6 +46,7 @@ Everything durable goes in the worktree at `.claude/ship/`:
   plan.md            the approved plan — the contract every later phase reads
   proof-of-work.md   evidence the thing actually works
   reports/<phase>.md full detail from each phase (subagents write these)
+  media/             screenshots and traces backing the proof of work
 ```
 
 `state.json`:

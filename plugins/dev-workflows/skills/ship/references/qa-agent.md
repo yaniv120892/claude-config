@@ -32,6 +32,8 @@ Then check each one against the running application. Not against the tests — a
 
 Run it: use the repo's `run` skill, its Dockerfile via `run-service-in-docker`, or its documented dev command. Exercise the real path. Browser tools are available if it's a web path.
 
+When a criterion is about a UI flow, capture a frame per state you pass through into `<worktree>/.claude/ship/media/qa/`, named for what it proves — `01-empty-list.png`, `02-after-delete.png`. Stills, not video: you can read a PNG back and confirm it shows what you claim, and a filename is something the hand-off can point at. Cite them in the checklist below, one per criterion you settled that way.
+
 If you genuinely cannot run it, say so plainly and clearly mark your verdict as **unverified**. A verdict of "looks correct from reading the diff" is a `FAIL — unverified`, not a pass.
 
 ### 2. Did it break anything?

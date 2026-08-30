@@ -171,7 +171,7 @@ Write `<worktree>/.claude/ship/proof-of-work.md`:
 ## Proof it works
 <Actual evidence, from the real app — not a description of evidence.
  Whatever this repo supports: terminal output of the real path running,
- a request/response pair, a screenshot path, a before/after.
+ a request/response pair, a step sequence under `media/`, a before/after.
  For a bug: the failing case reproduced first, then the same case passing.>
 
 ## Not covered
@@ -179,6 +179,14 @@ Write `<worktree>/.claude/ship/proof-of-work.md`:
 ```
 
 If the repo has a `run` skill or a Dockerfile, use it — evidence from the real app beats evidence from a unit test. If you genuinely cannot produce runtime proof, say exactly why under `## Proof it works`. Never describe a verification you did not run.
+
+**A UI flow is proven by a sequence, not one frame.** A single end-state screenshot shows the destination and hides the route — whether validation fired, whether the empty state rendered, whether step 3 flashed the wrong thing on the way. Capture one frame per state the flow passes through, into `<worktree>/.claude/ship/media/`, numbered and named for what each one proves: `01-empty-form.png`, `02-submit-invalid.png`, `03-error-shown.png`, `04-success.png`. The filename is the claim; the image is the evidence for it. Then reference the sequence under `## Proof it works` — the frames, and what each establishes.
+
+Capture stills, not video. You can read a PNG back and confirm it shows what you claim; you cannot read a `.mp4`, so a recording is evidence whose producer never checked it — which is the failure this whole section exists to prevent. It is also not referenceable: verify-tests and the QA agent read this file, and `03-error-shown.png` is something they can act on where "00:07 in the recording" is not.
+
+Where the repo drives the UI with Playwright, turn its trace on for the proof run (`trace: 'on'`) and keep the `trace.zip` beside the frames. It carries a DOM snapshot per action plus console, network, and timings — everything a recording would have shown and more, scrubbable via `npx playwright show-trace`, and it is the artifact that settles a timing or flash-of-wrong-state symptom that stills genuinely lose. Note its path under `## Proof it works`.
+
+`media/` holds evidence, not repo content. Keep it out of the commit — `echo '.claude/ship/' >> "$(git rev-parse --git-path info/exclude)"` in the worktree, which is local to that worktree and leaves the target repo's tracked `.gitignore` alone.
 
 Commit your work in the worktree (conventional commit, `feat`/`fix` for anything shippable). Do not push — polish is what opens the PR.
 
