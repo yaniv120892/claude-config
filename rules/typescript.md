@@ -58,11 +58,16 @@ decision, and a duplicate `type` is a compile error where a duplicate `interface
 > `&` intersections.
 
 **Type Placement** — keep type definitions out of implementation files
-> Pattern: A type used in one file goes at the top of that file. A type shared across files
-> goes in a co-located `<module>.types.ts`, re-exported from the implementation file so callers
-> don't break.
-> Avoid: Mixing exported type definitions with implementations. Does **not** apply to
-> activities/steps — short by design, input/output types co-located intentionally.
+> Pattern: A type used in one file goes at the top of that file. A type shared across files goes
+> in a co-located `<module>.types.ts` named to match its sibling; consumers `import type` from
+> that file directly.
+> Avoid: Mixing exported type definitions with implementations. A project-wide `types.ts`.
+> Re-exporting types from the implementation file, except as a shim for call sites that predate
+> the extraction — under `isolatedModules` a value-import of a type emits a real runtime edge to
+> the implementation and pulls in its dependencies.
+> `<module>.types.ts` never imports from its implementation sibling — that is the cycle this
+> layout invites.
+> Exception: activities/steps — short by design, input/output types co-located intentionally.
 
 **Fix ESLint Issues Instead of Suppressing** — disabling hides the problem
 > Pattern: Refactor, retype, restructure to satisfy the rule.
