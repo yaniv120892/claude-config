@@ -85,6 +85,9 @@ into that repo, so an edit is live on this machine and absent everywhere else un
 > do it without asking, in the same session that made the change.
 > Avoid: Committing straight to `main`; force-pushing; leaving the edit dirty in the
 > working tree; sweeping unrelated dirty files in — `git stash push <paths>` those first.
+> Enforced: `dev-workflows`' `protect-default-branch` hook blocks `git commit` and
+> `git push` from the default branch in any repo. When it fires, branch — do not reach
+> for its `ALLOW_DEFAULT_BRANCH_WRITE=1` escape hatch without the user saying so.
 > Corollary: A skill, command, or agent created directly in `~/.claude/skills`,
 > `~/.claude/commands`, or `~/.claude/agents` is local-only — `install.sh` leaves those
 > alone by design. To ship one, move it into `plugins/<plugin>/` in the repo.
