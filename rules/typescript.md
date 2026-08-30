@@ -44,6 +44,19 @@ silently omits members added later, falling through to the default branch
 > Pattern: Annotate every method and property `public`/`private`/`protected`. Logic tied to a
 > class lives in it as a `private` method, not a module-level function beside it.
 
+**Declare Shapes With `type`, Not `interface`** — one keyword removes a per-declaration
+decision, and a duplicate `type` is a compile error where a duplicate `interface` silently merges
+> Pattern: `type` for every object shape — DTOs, props, config, function signatures. It also
+> covers unions, tuples and mapped types, so widening a shape later never means changing the
+> declaration form.
+> Avoid: `interface` for an ordinary shape. Interfaces are implicitly open, so an
+> interface-typed value is not assignable to `Record<string, unknown>` and fails at logging,
+> serialization, and ORM-filter boundaries a `type` alias passes.
+> Exception: Declaration merging — augmenting a third-party module (`declare module 'express' {
+> interface Request { userId: string } }`) needs `interface`. So does a deep shape extended many
+> times, where `interface B extends A` type-checks faster and yields flatter errors than chained
+> `&` intersections.
+
 **Type Placement** — keep type definitions out of implementation files
 > Pattern: A type used in one file goes at the top of that file. A type shared across files
 > goes in a co-located `<module>.types.ts`, re-exported from the implementation file so callers
