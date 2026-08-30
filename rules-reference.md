@@ -98,9 +98,13 @@ Format: `➜  dir git:(branch) ✗ [Model Name] ctx:42%`
 > Exception: Declaration merging is the one thing `type` cannot do. Module augmentation (`declare module 'express' { interface Request { userId: string } }`) and global augmentation require `interface`. So does a deep shape extended many times: `interface B extends A` is checked once and cached, where a chain of `A & B & C` aliases is re-checked structurally and reports errors as an expanded wall of properties rather than a name.
 > Example: `type CreateUserBody = { email: string; name: string };` — not `interface CreateUserBody`. But `declare module 'fastify' { interface FastifyRequest { tenant: Tenant } }` stays an interface, because merging into Fastify's own declaration is the whole point.
 
-**TypeScript Type/Interface Placement** — Keep type definitions organized and co-located appropriately
-> Pattern: If a type/interface is exported (shared across files), move it to a dedicated types file (e.g., `types.ts`). If it's only used within the current file, define it at the top of that file before any logic.
-> Avoid: Exporting types inline from implementation files, or scattering internal type definitions throughout the file.
+**Type Placement** — keep type definitions out of implementation files so each file has one job and stays readable
+> Pattern: A type used only inside one file is declared at the top of that file, before any logic. A type shared across files goes in a co-located `<module>.types.ts`, named to match its sibling (`ffmpegOnlineClient.ts` → `ffmpegOnlineClient.types.ts`). The types file holds shapes only; the implementation file holds functions and classes only.
+> Import direction: Consumers import shapes straight from `<module>.types.ts`, with `import type`. Under `isolatedModules`/`verbatimModuleSyntax` — esbuild, swc, Vite, Babel — the transpiler works one file at a time and cannot tell that a value import is type-only, so `import { MixAudioRequestBody } from './ffmpegOnlineClient'` emits a real runtime edge to the client and drags its transitive dependencies into a consumer that only wanted a shape. Re-export from the implementation file (`export * from './x.types'`) only when extracting types out of a module whose callers already import them from there — it is a compatibility shim for existing call sites, not the front door. A new module needs no re-export.
+> Never let `<module>.types.ts` import from its implementation sibling. That is the circular import this layout invites, and a re-export hides it.
+> Avoid: A project-wide `types.ts` dumping ground — it destroys locality and becomes a cycle magnet. Mixing exported type definitions with implementations. Scattering internal type declarations through the body of a file.
+> Exception: Activities and steps are short by design; their input/output types stay co-located in the same file.
+> Example: `ffmpegOnlineClient.types.ts` holds `MixAudioRequestBody` and `FfmpegFileResponse`; `ffmpegOnlineClient.ts` imports what it needs and defines only functions; an activity does `import type { MixAudioRequestBody } from '../providers/ffmpegOnlineClient.types'`.
 
 **Always Use Braces for Control Flow** — Consistent, readable, less error-prone
 > Pattern: Always wrap `if`/`else`/`for`/`while` bodies in braces `{ }`, even for single statements — including early returns and guard clauses.
@@ -158,11 +162,6 @@ Format: `➜  dir git:(branch) ✗ [Model Name] ctx:42%`
 > Pattern: Create a client module (e.g. `src/providers/ffmpegOnlineClient.ts`) that owns the base URL, headers, and transport concerns. Expose one typed function per endpoint. Any caller — activity, step, or helper — imports and calls the client function instead of calling `gotJson`/`fetch` directly.
 > Avoid: Scattering `gotJson` / `fetch` calls across activities or steps with inline base-URL construction, header duplication, or copy-pasted timeout logic. Each new call site for the same service should add one function to the existing client, not introduce a new raw HTTP call.
 > Example: `ffmpegOnlineClient.ts` exposes `mixAudio(body, timeout)`, `muxVideoAudio(body, timeout)`, `extractAudio(body, timeout)`. Activities call these; they never construct `${FFMPEG_ONLINE_API_BASE_URL}/v1/audio/mix` themselves.
-
-**Types/Functions Separation** — Keep type definitions out of implementation files so files stay focused and readable
-> Pattern: When a module (class or client) grows types, extract them to a co-located `<module>.types.ts` file. The implementation file imports from it and re-exports the types so existing callers don't break. Name the types file to match its sibling (e.g. `ffmpegOnlineClient.ts` → `ffmpegOnlineClient.types.ts`).
-> Avoid: Mixing exported type definitions and function implementations in the same file. This applies to client modules and class-based modules. It does NOT apply to activities or steps — those are short by design and their input/output types are co-located intentionally.
-> Example: `ffmpegOnlineClient.types.ts` holds `MixAudioRequestBody`, `FfmpegFileResponse`, etc. `ffmpegOnlineClient.ts` imports and re-exports them, then defines only functions.
 
 **Run Subagents From the Repo They Modify** — Each repo's CLAUDE.md, rules, and skills must be in the agent's context
 > Pattern: When dispatching a subagent whose changes target a different repository than the current working directory, anchor it to that repo: state the target repo's absolute path at the top of the prompt, instruct it to read that repo's CLAUDE.md (and `.claude/rules/` if present) before changing anything, and run that repo's own package.json/build/test/lint scripts — never the current repo's.
