@@ -43,6 +43,10 @@
   "teammateMode": "auto",
   "remoteControlAtStartup": true,
   "agentPushNotifEnabled": true,
+  "worktree": {
+    "baseRef": "fresh",
+    "bgIsolation": "worktree"
+  },
   "statusLine": {
     "type": "command",
     "command": "bash ~/.claude/statusline-command.sh",
