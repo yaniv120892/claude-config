@@ -1,6 +1,6 @@
 ---
 name: reviewing-pr-code
-description: Use when reviewing pull requests, merge requests, diffs, or code changes in TypeScript, Express backend services, or Next.js frontend apps for correctness, maintainability, standards, security, performance, tests, and unintended side effects.
+description: Use when reviewing pull requests, diffs, or code changes in TypeScript, Express backend services, or Next.js frontend apps for correctness, maintainability, standards, security, performance, tests, and unintended side effects.
 ---
 
 # Reviewing PR Code

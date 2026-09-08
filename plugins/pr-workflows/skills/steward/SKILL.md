@@ -1,11 +1,11 @@
 ---
 name: steward
-description: House posture for driving a pull/merge request to green — what to do on red CI, merge conflicts, review threads, and when standing down is allowed. Use whenever watching, babysitting, or stewarding a PR/MR: on every CI failure, review comment, or conflict event, and at every scheduled check-in on an open change request. Also the canonical source for each repo's `.claude/skills/steward/SKILL.md`.
+description: House posture for driving a pull request to green — what to do on red CI, merge conflicts, review threads, and when standing down is allowed. Use whenever watching, babysitting, or stewarding a PR: on every CI failure, review comment, or conflict event, and at every scheduled check-in on an open pull request. Also the canonical source for each repo's `.claude/skills/steward/SKILL.md`.
 ---
 
 # PR Steward
 
-The posture for any change request this session opened or was asked to drive.
+The posture for any pull request this session opened or was asked to drive.
 Remote sessions read this file from a repo's `.claude/skills/steward/SKILL.md`
 on PR events; the copy in each app repo is synced from this plugin.
 
@@ -13,7 +13,7 @@ on PR events; the copy in each app repo is synced from this plugin.
 
 ## The contract
 
-A stewarded change request is done when it is merged or closed. Until then,
+A stewarded pull request is done when it is merged or closed. Until then,
 every event and every check-in ends in exactly one of three states:
 
 1. **A pushed fix** — the deliverable is the push, never a comment describing it.
@@ -72,7 +72,7 @@ costs a cycle and the reviewers' trust:
 
 ## Standing down
 
-Standing down is loud and single: one comment on the change request naming the
+Standing down is loud and single: one comment on the pull request naming the
 failing check, why it is not this change's failure, and the fix ported (or
 that none exists yet). One comment per cause — a repeat event on the same
 established blocker is a silent re-check, not a new comment.
@@ -83,4 +83,4 @@ Events under-deliver: CI success, pushes, and conflict transitions can arrive
 late or not at all. While the head is red, conflicted, or awaiting a re-check,
 keep a check-in scheduled (~1 hour out) that re-reads merge state, CI on the
 latest commit, and open threads, then re-arms. Quiet check-ins re-arm silently.
-Stop when the change request is merged or closed, or the user says stop.
+Stop when the pull request is merged or closed, or the user says stop.

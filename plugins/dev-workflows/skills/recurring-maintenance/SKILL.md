@@ -60,9 +60,9 @@ selection auditable when someone asks why this item and not another.
 
 From the qualifying set:
 
-1. **Skip anything already in flight** — an open PR/MR referencing it, or an unmerged
-   remote branch (`git branch -r | grep <key>`). Use the forge CLI; mapping is in the
-   `pr-workflows` plugin's `references/forge-cli.md`.
+1. **Skip anything already in flight** — an open PR referencing it, or an unmerged
+   remote branch (`git branch -r | grep <key>`). Use `gh`; the commands live in the
+   `pr-workflows` plugin's own skills.
 2. Pick the **oldest** by first-release-tag date among what remains.
 3. If everything qualifying is already in flight, **report that and stop** — no ticket,
    no branch, no PR. A run that correctly does nothing is a success, not a failure.

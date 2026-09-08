@@ -1,5 +1,5 @@
 {
-  "_comment": "Copy to ~/.claude/post-mr-to-slack.config.json and fill in. That path is machine-local and never committed — this repo ships only the shape. The skill WRITES BACK to it as it learns new developers, channels, and repo emoji.",
+  "_comment": "Copy to ~/.claude/post-pr-to-slack.config.json and fill in. That path is machine-local and never committed — this repo ships only the shape. The skill WRITES BACK to it as it learns new developers, channels, and repo emoji.",
 
   "emailDomain": "your-company.com",
 

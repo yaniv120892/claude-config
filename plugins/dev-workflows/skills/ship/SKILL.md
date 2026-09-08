@@ -29,7 +29,7 @@ You hold the human approval gates. Every gate is at the *end* of the run, so if 
 
 - **Never read, grep, glob, or edit a source file.** Not once, not "just to check."
 - Files you may read: `.claude/ship/state.json`, `.claude/ship/plan.md` (and `plan-<n>.md` candidates), `.claude/ship/reports/*.md`, `.claude/ship.json`, `.claude/ship/proof-of-work.md`.
-- Bash you may run: `git` / `gh` / `glab` metadata (status, log, remote, pr view), `mkdir`, `jq`, `cat` on the files above. Never a test run, build, grep sweep, or dev server.
+- Bash you may run: `git` / `gh` metadata (status, log, remote, pr view), `mkdir`, `jq`, `cat` on the files above. Never a test run, build, grep sweep, or dev server.
 - Every phase that touches code is a subagent. If you catch yourself about to inspect the code to answer something — dispatch instead, or ask the user.
 - Relay each subagent's report as it came back. It is already capped at 20 lines. Do not expand, re-derive, or verify it yourself.
 
@@ -94,7 +94,7 @@ If it does not exist, run the pipeline on defaults and mention once at the end t
 | 10 | Hand off: ready to merge | **you + user** | ✋ **stop here** |
 | 11 | Verify on dev/prod | subagent, on `/ship verify` | — |
 
-**The hand-off phase is a hard stop.** Never run `gh pr merge`, `glab mr merge`, approve a PR, or merge a branch. Present the PR link and the QA verdict and stop. Merging is the user's call, every time.
+**The hand-off phase is a hard stop.** Never run `gh pr merge`, approve a PR, or merge a branch. Present the PR link and the QA verdict and stop. Merging is the user's call, every time.
 
 **One run is one branch, one PR.** Never split a run into a stack of PRs, and never open a second PR to finish something the first one started — if the plan is too big for one PR, say so at the plan-approval gate and let the user split the *request*, rather than splitting the delivery behind their back.
 
@@ -184,7 +184,7 @@ Then hand over the exact command, so merging is one paste rather than a decision
 gh pr merge <n> --squash --delete-branch
 ```
 
-On GitLab, or if you are unsure of the flags, read the `pr-workflows` plugin's `references/forge-cli.md` rather than guessing.
+If you are unsure of the flags, read the `pr-workflows` plugin's `creating-prs` skill rather than guessing.
 
 Squash always — the base branch keeps one commit per PR, not the run's internal steps. If the user asks *you* to merge, that is the command you run; it is the only circumstance in which this pipeline merges anything.
 

@@ -7,8 +7,8 @@ Full rationale and worked examples for every rule, plus the situational ones kep
 the always-loaded set, are in `~/.claude/rules-reference.md` — read it when a rule's
 application is unclear or before codifying a new one. Pass the path; never paste it in.
 
-Forge commands (GitHub `gh` vs GitLab `glab`) are mapped in the `pr-workflows`
-plugin's `references/forge-cli.md`. Read it instead of guessing flags.
+Pull request work goes through `gh`; the `pr-workflows` plugin owns those skills
+and its `lib/github.py` owns the API plumbing.
 
 ## Developer Context
 
@@ -54,6 +54,18 @@ so a large rule set is paid for on every prompt whether or not it's relevant
 > Pattern: Always give the absolute path from the filesystem root when referencing a file.
 > Avoid: `./docs/foo.md`, bare `foo.md`, or anything relative to an assumed cwd.
 
+## Verification
+
+**Proof of Work Is Not Regression Coverage** — a throwaway script proves the change worked once,
+on the branch that shipped it; the next person to touch the call site reverts the behaviour and
+every committed test still passes
+> Pattern: Any behaviour a reviewer could silently undo — a per-call override, a non-default
+> argument, a guard at one call site — ships with a committed spec that exercises the real code
+> path and asserts that behaviour. Verify it bites: revert the change locally, watch the spec
+> fail, restore.
+> Avoid: A PoW script written, run, pasted into the change request, and deleted; a test that only
+> covers the shared default the override deviates from.
+
 ## Commits
 
 **Conventional Commits** — commit type drives release pipelines
@@ -69,8 +81,7 @@ so a large rule set is paid for on every prompt whether or not it's relevant
 as a list of shipped changes rather than a transcript of how each one was arrived at
 > Pattern: Squash-merge every PR you own, deleting the branch. The squash message
 > defaults to the PR title, so write that title as a conventional commit — it, not any
-> commit on the branch, becomes the permanent history. Forge command mapping is in the
-> `pr-workflows` plugin's `references/forge-cli.md`.
+> commit on the branch, becomes the permanent history.
 > Avoid: Merge commits or rebase-merges, which replay a branch's working history onto
 > the base branch. Clicking a repo's default merge button without checking which
 > strategy it runs.
@@ -79,10 +90,12 @@ as a list of shipped changes rather than a transcript of how each one was arrive
 
 **Ship `claude-config` Changes; Never Leave Them Uncommitted** — `~/.claude` is symlinked
 into that repo, so an edit is live on this machine and absent everywhere else until pushed
-> Pattern: Any change under `~/Develop/claude-config` — statusline, rules, settings,
-> keybindings, plugins — gets a branch, a PR, a squash-merge to `main`, and a local
-> fast-forward so the symlink target matches `origin`. This is standing authorization:
-> do it without asking, in the same session that made the change.
+> Pattern: Any change under the `claude-config` checkout (`~/.claude/plugins/marketplaces/yaniv-claude-config`)
+> — statusline, rules, settings, keybindings, plugins — gets a branch, a PR, a squash-merge
+> to `main`, and a local fast-forward so the symlink target matches `origin`. This is
+> standing authorization: do it without asking, in the same session that made the change.
+> Corollary: if a file under `~/.claude` is a regular file where `install.sh` links one, the
+> symlink was clobbered and the two have drifted — reconcile before editing either.
 > Avoid: Committing straight to `main`; force-pushing; leaving the edit dirty in the
 > working tree; sweeping unrelated dirty files in — `git stash push <paths>` those first.
 > Corollary: A skill, command, or agent created directly in `~/.claude/skills`,

@@ -21,7 +21,7 @@ To steer step by step instead, chain the pieces yourself:
 
 ## PR maintenance
 
-Your own PR: **`creating-prs`** → **`writing-pr-description`** → **`post-mr-to-slack`** to open and announce it; then **`finalize-pr`**, **`fix-pr-conflicts`**, **`address-pr-feedback`**, and **`verify-pr-state`** keep it healthy through to merge.
+Your own PR: **`creating-prs`** → **`writing-pr-description`** → **`post-pr-to-slack`** to open and announce it; then **`finalize-pr`**, **`fix-pr-conflicts`**, **`address-pr-feedback`**, and **`verify-pr-state`** keep it healthy through to merge.
 
 Someone else's PR: **`pr-review-workflow`** drives the review, with **`reviewing-pr-code`** carrying the standards and **`post-pr-inline-comments`** the posting format; after the author says "fixed", **`pr-second-review`** (verify, resolve, approve) or **`verify-resolve-pr-comments`** (re-check and resolve your own comments only).
 

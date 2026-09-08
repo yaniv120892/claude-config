@@ -1,6 +1,6 @@
 ---
 name: writing-pr-description
-description: Use when writing or updating a merge request / pull request description. Generates short, budgeted Motivation, Implementation, Proof of Work and Verify-on-dev sections matching team conventions — with shorter forms for docs-only, config-only, and package-bump PRs.
+description: Use when writing or updating a pull request description. Generates short, budgeted Motivation, Implementation, Proof of Work and Verify-on-dev sections matching team conventions — with shorter forms for docs-only, config-only, and package-bump PRs.
 ---
 
 # Writing PR Descriptions
@@ -31,7 +31,7 @@ Agent({
     you are the dispatched subagent, so do not delegate further.
     Ticket: <ticket ID if known>. Base branch: <base branch, e.g. origin/main>.
     Read the diff, gather Proof of Work yourself (you have Bash access), and
-    apply the final description via `glab mr edit` / `glab mr create --description`."
+    apply the final description via `gh pr edit --body` / `gh pr create --body`."
 })
 ```
 
@@ -134,7 +134,7 @@ For PRs whose primary change is **bumping a shared package version** (e.g. `@mod
 
 For PRs whose only change is configuration — Helm/Kubernetes values, Terraform, Crossplane manifests, resource requests/limits, replica counts, env vars — with no application code and therefore nothing to build/lint/test, skip the full structure entirely. There is no Implementation or Proof of Work section: the diff (a values file) is already fully self-explanatory line-by-line, and there's no runtime evidence to gather pre-merge.
 
-**The test is whether the diff explains itself line-by-line.** A values file does; a config file that *changes behaviour* does not, and does not get this form. A `.gitlab-ci.yml` job change, an `eslint.config.mjs` rule, a `tsconfig` path, or a Dockerfile edit all alter what runs — they take the full structure, and their Proof of Work is a pipeline job list, a resolved-config dump (`npx eslint --print-config <file>`), or a built image, not a claim that the file was edited.
+**The test is whether the diff explains itself line-by-line.** A values file does; a config file that *changes behaviour* does not, and does not get this form. A `.github/workflows/*.yml` job change, an `eslint.config.mjs` rule, a `tsconfig` path, or a Dockerfile edit all alter what runs — they take the full structure, and their Proof of Work is a pipeline job list, a resolved-config dump (`npx eslint --print-config <file>`), or a built image, not a claim that the file was edited.
 
 Use one short prose block (what changed + why, folded together — this doubles as the Motivation) plus a before/after table:
 
@@ -254,7 +254,7 @@ Evidence that the change works **in practice**, not just in tests. Reviewers nee
 - `curl` response from a live endpoint
 - Prometheus metric sample showing the counter incremented
 - Screenshot of Temporal UI showing the workflow ran through the new activity
-- For a UI flow, a numbered frame sequence (`01-empty-form.png` → `04-success.png`), or a GIF of it — the route, not just the destination. Neither `gh` nor `glab` can attach media to a PR body, so these have to be dragged in through the forge's web UI; cite a frame only once it is actually attached, or the reviewer gets a filename pointing at nothing
+- For a UI flow, a numbered frame sequence (`01-empty-form.png` → `04-success.png`), or a GIF of it — the route, not just the destination. `gh` cannot attach media to a PR body, so these have to be dragged in through the web UI; cite a frame only once it is actually attached, or the reviewer gets a filename pointing at nothing
 
 **What does NOT count:**
 - Unit test results — tests are a baseline, not proof the feature works
@@ -318,7 +318,7 @@ exists only in the deployed accounts.
 6. Gather Proof of Work — run the workflow, capture output. **Skip the section entirely for docs-only and config-only**; do not replace it with a placeholder.
 7. Decide on `## Verify on dev` — check the deploy-shaped list. Include it with commands, or omit the heading.
 8. **Cut.** Word-count the draft; over ~600, remove rather than rewrite until it fits the budget table.
-9. Format using `glab mr edit` or `glab mr create --description`
+9. Format using `gh pr edit --body` or `gh pr create --body`
 
 ## Common Mistakes
 

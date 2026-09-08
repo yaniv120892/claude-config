@@ -1,11 +1,11 @@
 ---
-description: Strict senior-level review of a pull/merge request against your global rules plus the repo's own conventions, with CI verification and an optional inline-comment pass. Works on GitHub and GitLab.
-argument-hint: <PR/MR number or URL> (required)
-allowed-tools: Bash(gh:*), Bash(glab:*), Bash(git:*), Bash(python3:*), Read, Grep, Glob, Skill
+description: Strict senior-level review of a pull request against your global rules plus the repo's own conventions, with CI verification and an optional inline-comment pass.
+argument-hint: <PR number or URL> (required)
+allowed-tools: Bash(gh:*), Bash(git:*), Bash(python3:*), Read, Grep, Glob, Skill
 model: claude-sonnet-5
 ---
 
-You are doing a senior-level code review of the change request in `$ARGUMENTS`.
+You are doing a senior-level code review of the pull request in `$ARGUMENTS`.
 
 Be rigorous and skeptical. Verify claims with evidence — never assert something
 passes without inspecting it. Report faithfully: if you cannot verify something
@@ -18,31 +18,23 @@ number. If it is empty, **stop and ask**; do NOT fall back to the current branch
 which is frequently not the change under review (different ticket, stale, or
 stacked).
 
-## 1. Detect the forge, then review the ACTUAL head
-
-Read `${CLAUDE_PLUGIN_ROOT}/references/forge-cli.md` for the command mapping.
+## 1. Review the ACTUAL head
 
 ```bash
-git remote get-url origin   # github.com → gh,  gitlab → glab
-${CLAUDE_PLUGIN_ROOT}/skills/creating-prs/pr-meta.sh <number>   # FORGE, SHAs, branches
+${CLAUDE_PLUGIN_ROOT}/skills/creating-prs/pr-meta.sh <number>   # SHAs, branches
 ```
 
-Drive off the change request itself, not the local branch:
+Drive off the pull request itself, not the local branch:
 
 ```bash
-gh pr view <n> --json title,author,state,headRefName,baseRefName,headRefOid   # GitHub
+gh pr view <n> --json title,author,state,headRefName,baseRefName,headRefOid
 gh pr diff <n>
-
-glab mr view <n> --output json    # GitLab
-glab mr diff <n>
 ```
 
 For exact line numbers (needed for inline comments), read files at HEAD:
 
 ```bash
 gh api "repos/<slug>/contents/<PATH>?ref=<HEAD>" --jq .content | base64 -d | cat -n
-glab api "projects/<id>/repository/files/<URL-ENCODED-PATH>?ref=<HEAD>" \
-  | python3 -c "import sys,json,base64;print(base64.b64decode(json.load(sys.stdin)['content']).decode())" | cat -n
 ```
 
 ## 2. Read real context, not just hunks
@@ -127,18 +119,15 @@ source of truth, hardcoded values that should be derived.
 
 ## 6. Verify via CI (authority)
 
-Treat CI for the change request head as the source of truth rather than a local
+Treat CI for the pull request head as the source of truth rather than a local
 build, which often needs scaffolding the reviewer doesn't have:
 
 ```bash
-gh pr checks <n>                      # GitHub
-glab ci status --branch <source_branch>   # GitLab
+gh pr checks <n>
 ```
 
 Confirm the lint/test/build jobs are green **and** that the latest commit is
-included. On GitLab, a merged-results pipeline SHA is a synthetic
-`refs/merge-requests/<n>/merge` commit rather than the head — that is expected.
-If CI is red or stale, say so; do not vouch for what CI has not run.
+included. If CI is red or stale, say so; do not vouch for what CI has not run.
 
 ## 7. Report, then gate on confirmation
 
@@ -153,6 +142,5 @@ lines — never general notes).
 
 ## Gotchas
 
-- Approving can return **401** on GitLab even with a valid token when the project requires interactive re-auth (password/SAML) — direct the user to the web UI.
 - `gh pr review --approve` cannot approve your own pull request.
 - After switching the base branch, reinstall dependencies before trusting any local test run; stale worktree tests otherwise produce false failures.

@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
 """Read, inspect, and resolve the inline comments YOU left as a reviewer.
 
-Reviewer-side plumbing for the verify-resolve-pr-comments skill. Works on GitHub
-and GitLab through the shared `forge` helper.
+Reviewer-side plumbing for the verify-resolve-pr-comments skill, built on the
+shared `github` helper.
 
 Subcommands:
     list      Print your own inline threads as JSON — resolved AND unresolved,
               because an author may resolve a thread without actually fixing it,
               and that case still has to be verified.
-    ci        Print the CI outcome for the change request's head commit.
+    ci        Print the CI outcome for the pull request's head commit.
     resolve   Mark one thread resolved.
 
 Usage:
-    pr_review_comments.py list    --pr <NUMBER> [--repo <slug>] [--forge <name>]
+    pr_review_comments.py list    --pr <NUMBER> [--repo <slug>]
     pr_review_comments.py ci      --pr <NUMBER> [--repo <slug>]
     pr_review_comments.py resolve --pr <NUMBER> --thread <ID> [--repo <slug>]
 """
@@ -29,7 +29,7 @@ _PLUGIN_ROOT = os.environ.get("CLAUDE_PLUGIN_ROOT") or os.path.abspath(
 )
 sys.path.insert(0, os.path.join(_PLUGIN_ROOT, "lib"))
 
-import forge  # noqa: E402
+import github  # noqa: E402
 
 
 def main() -> int:
@@ -41,35 +41,34 @@ def main() -> int:
     arguments = parse_arguments()
 
     try:
-        forge_name = forge.resolve(arguments.forge)
+        github.require_cli()
 
         if arguments.command == "list":
-            return run_list(arguments.pr, forge_name, arguments.repo)
+            return run_list(arguments.pr, arguments.repo)
         if arguments.command == "ci":
-            status = forge.latest_ci_status(arguments.pr, forge_name, arguments.repo)
+            status = github.latest_ci_status(arguments.pr, arguments.repo)
             print(json.dumps(status, indent=2))
             return 0
-        forge.resolve_thread(arguments.pr, arguments.thread, forge_name, arguments.repo)
+        github.resolve_thread(arguments.pr, arguments.thread, arguments.repo)
         print(f"OK resolved thread={arguments.thread}")
         return 0
-    except forge.ForgeError as error:
+    except github.GitHubError as error:
         print(f"error: {error}", file=sys.stderr)
         return 1
 
 
-def run_list(number: str, forge_name: str, repo_slug: str | None) -> int:
+def run_list(number: str, repo_slug: str | None) -> int:
     """Print the inline threads authored by the current user.
 
     Args:
-        number: Pull request number or merge request IID.
-        forge_name: Either `forge.GITHUB` or `forge.GITLAB`.
+        number: Pull request number.
         repo_slug: Optional repository slug.
 
     Returns:
         Process exit code: 0 on success.
     """
-    current_username = forge.current_username(forge_name)
-    threads = forge.list_review_threads(number, forge_name, repo_slug)
+    current_username = github.current_username()
+    threads = github.list_review_threads(number, repo_slug)
     mine = [
         thread
         for thread in threads
@@ -92,7 +91,7 @@ def parse_arguments() -> argparse.Namespace:
 
     for command_name in ("list", "ci", "resolve"):
         subparser = subparsers.add_parser(command_name)
-        forge.add_change_request_arguments(subparser)
+        github.add_pull_request_arguments(subparser)
         if command_name == "resolve":
             subparser.add_argument("--thread", required=True, help="Thread id")
 

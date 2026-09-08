@@ -1,6 +1,6 @@
 ---
 name: pr-feedback-harvest
-description: Use when reviewing recurring pull/merge request review feedback to turn it into rules/skills/hooks — e.g. a sprint/bi-weekly retro on PR comments, finding patterns reviewers repeat, or measuring whether a codified rule reduced a class of comments over time. Works across GitHub orgs and GitLab groups (subgroups included) for change requests you authored and merged.
+description: Use when reviewing recurring pull request review feedback to turn it into rules/skills/hooks — e.g. a sprint/bi-weekly retro on PR comments, finding patterns reviewers repeat, or measuring whether a codified rule reduced a class of comments over time. Works across GitHub orgs for pull requests you authored and merged.
 ---
 
 # MR Feedback Harvest
@@ -38,20 +38,20 @@ Mine review comments from your recently-merged MRs, bucket them into recurring t
 - Deciding whether a recurring comment justifies a new rule/skill/hook
 - Checking if a rule you added last sprint reduced the comments it targeted
 
-Requires an authenticated `gh` or `glab` on PATH. The forge is detected from the repository's origin remote; override with `--forge`.
+Requires an authenticated `gh` on PATH.
 
 ## Step 1 — Harvest
 
 ```bash
 python3 scripts/harvest.py \
-  --scope <github-org-or-gitlab-group> \
+  --scope <github-org-or-user> \
   --scope <another-scope> \
   --exclude-repo <repo-substring> \
   --since-days 14 \
   --out-dir ./retro
 ```
 
-A `--scope` is a GitHub org/user or a GitLab group path (subgroups included) and
+A `--scope` is a GitHub org or user and
 is repeatable. Writes `pr-feedback-<since-date>.json` and prints the
 human/self/noise counts. `--author` defaults to the authenticated user.
 
@@ -60,7 +60,7 @@ it hits that ceiling rather than silently truncating the window.
 
 ## Step 2 — Read the buckets, not the counts
 
-⚠️ **The #1 trap: raw comment counts are dominated by noise.** Release bots post an announcement per change request, and CI service accounts post more. The script already filters authors matching `service_account`, `_bot_`, `semantic-release`, `[bot]`, GitHub `Bot`-type users, and GitLab `system` notes. The real signal is two buckets:
+⚠️ **The #1 trap: raw comment counts are dominated by noise.** Release bots post an announcement per pull request, and CI service accounts post more. The script already filters authors matching `service_account`, `_bot_`, `semantic-release`, `[bot]`, and `Bot`-type users. The real signal is two buckets:
 
 - **`human`** — teammate reviewer comments (the prevention gold)
 - **`self`** — your own self-review threads (review-style question + your answer/fix); these reveal what you catch manually and could automate

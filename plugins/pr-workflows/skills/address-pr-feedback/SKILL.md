@@ -1,11 +1,11 @@
 ---
 name: address-pr-feedback
-description: Use when someone leaves review comments on a pull or merge request you authored and you want them handled. Triggers on "I got comments on my PR/MR", "address my MR feedback", "respond to the review on my MR", "someone reviewed my PR, handle it", "go through my MR comments", "fix the comments on PR/MR <n>".
+description: Use when someone leaves review comments on a pull request you authored and you want them handled. Triggers on "I got comments on my PR", "address my PR feedback", "respond to the review on my PR", "someone reviewed my PR, handle it", "go through my PR comments", "fix the comments on PR <n>".
 ---
 
 # Address Reviewer Feedback on My MR
 
-A reviewer left comments on a change request **you authored**. Work through each one, fix what is genuinely
+A reviewer left comments on a pull request **you authored**. Work through each one, fix what is genuinely
 right, push the fixes, and reply in every thread. This is the author-side counterpart to
 `verify-resolve-pr-comments` (which is the reviewer re-checking their own comments).
 
@@ -29,7 +29,7 @@ from Slack — it gates the extra question in Step 8.
 ## Step 1 — Get the MR IID
 
 Require an MR IID or URL (`.../-/merge_requests/504` → `504`). If none was given and Step 0 didn't
-resolve one either, derive it from the current branch with `glab mr view --output json` and **state
+resolve one either, derive it from the current branch with `gh pr view --json number` and **state
 which MR you resolved to** before continuing. Check the MR state — if it is already merged, say so
 and confirm the user still wants replies/fixes before pushing anything.
 
@@ -133,7 +133,7 @@ with `thread_ts` set to the parent message's timestamp. Do not post unprompted.
 |---|---|
 | Implementing a wrong comment to be agreeable | Verify against the code/SDK; push back with reasoning (Step 3) |
 | "You're absolutely right!" / "Thanks!" in a reply | State the fix or the reasoning. No performative agreement. |
-| Posting multi-line replies with `glab -f body=` | Backticks/newlines break escaping — write to a file, use `--body-file` |
+| Posting multi-line replies with an inline `--body` | Backticks/newlines break shell escaping — write to a file, use `--body-file` |
 | Resolving threads to "tidy up" | Resolving is outward-facing and the reviewer's signal — leave open by default |
 | Running another repo's build/lint in a worktree | Run THIS repo's `package.json` scripts (pre-push-quality-gate) |
 | Treating a release-bot note as feedback | Ignore non-actionable general notes; act on reviewer comments |

@@ -17,4 +17,4 @@ it from the placeholders below.
   like `chore`.
 - Subagent prompts reference sibling repos under `~/Develop/` — always anchor a
   subagent to the target repo path and have it read that repo's CLAUDE.md first.
-- The forge CLI here is `glab`; see the `pr-workflows` plugin (`references/forge-cli.md`).
+- The CLI here is `gh`; see the `pr-workflows` plugin.

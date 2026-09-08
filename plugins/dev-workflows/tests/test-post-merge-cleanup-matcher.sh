@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Exercises the merge-invocation matcher in post-merge-cleanup.sh, the guard that
-# decides whether the hook asks the forge about a merge at all. The literals are
+# decides whether the hook asks GitHub about a merge at all. The literals are
 # split ('gh p''r merge') so this file does not match its own pattern when the
 # hook runs over a command that writes it.
 HOOK_NAME=post-merge-cleanup.sh
@@ -21,11 +21,11 @@ check skip    'gh p''r mergeable'
 check skip    'gh p''r view 17'
 check skip    'git merge main'
 check skip    'gh p''r create --title "gh p''r merge"'
+check skip    'glab m''r merge 42'
 
 echo "--- must trigger ---"
 check TRIGGER 'gh p''r merge'
 check TRIGGER 'gh p''r merge 17 --squash --delete-branch'
-check TRIGGER 'glab m''r merge 42'
 check TRIGGER 'cd /repo && gh p''r merge 17 --squash'
 check TRIGGER 'gh p''r merge; echo done'
 check TRIGGER '(cd x && gh p''r merge)'

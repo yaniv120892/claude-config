@@ -1,10 +1,10 @@
 ---
 name: pr-review-workflow
 disable-model-invocation: true
-description: Review a pull or merge request. Use when the user asks to review a PR/MR, or is given a change request URL or number to review. Detects GitHub or GitLab and uses the matching CLI.
+description: Review a pull request. Use when the user asks to review a PR, or is given a pull request URL or number to review.
 ---
 
-# Pull / Merge Request Review Workflow
+# Pull Request Review Workflow
 
 ## Delegate the analysis to a Sonnet subagent
 
@@ -16,13 +16,13 @@ Otherwise, spawn a subagent to run Steps 1–4 and return the formatted review:
 
 ```
 Agent({
-  description: "Analyze change request",
+  description: "Analyze pull request",
   model: "sonnet",
   run_in_background: false,
   prompt: "You are the pr-review-workflow subagent. Invoke the pr-review-workflow skill
     yourself and follow it directly through Step 4 only — you are the dispatched
     subagent, so do not delegate further, and do NOT post anything (Step 5 is handled
-    by the caller after user approval). Change request: <number/URL>. Repo: <slug>.
+    by the caller after user approval). Pull request: <number/URL>. Repo: <slug>.
     Return the exact Step 4 formatted review output, nothing else."
 })
 ```
@@ -34,16 +34,11 @@ Present the returned review to the user exactly as formatted, then continue to *
 Run both in parallel:
 
 ```bash
-# GitHub
 gh pr view <NUMBER> --repo <owner/repo>
 gh pr diff <NUMBER> --repo <owner/repo>
-
-# GitLab
-glab mr view <IID> --repo <group/subgroup/repo>
-glab mr diff <IID> --repo <group/subgroup/repo>
 ```
 
-If no number is provided, run `gh pr list` / `glab mr list` to show what is open.
+If no number is provided, run `gh pr list` to show what is open.
 
 ## Step 2 — Read changed files for context
 
@@ -94,7 +89,7 @@ Rules for comments:
 - Always numbered sequentially: **Comment 1:**, **Comment 2:**, etc.
 - Each is self-contained: file context + issue + suggested fix
 - Actionable: the author knows exactly what to change
-- When a concern spans multiple change requests, number it once under a "Cross-cutting" header before the per-request sections, still using the same numbering sequence
+- When a concern spans multiple pull requests, number it once under a "Cross-cutting" header before the per-request sections, still using the same numbering sequence
 
 **CRITICAL — DO NOT POST until the user approves.**
 End with: "Review ready. Waiting for your approval before posting to <number>."
@@ -108,6 +103,5 @@ When the user approves, use the **post-pr-inline-comments** skill to post each c
 
 ## Notes
 
-- Detect the forge from the origin remote and use the matching CLI throughout; see `${CLAUDE_PLUGIN_ROOT}/references/forge-cli.md`
-- Repo slug format: `owner/repo` on GitHub, `group/subgroup/repo` on GitLab
-- Do not approve or request changes (`gh pr review`, `glab mr approve`) unless explicitly asked
+- Repo slug format: `owner/repo`
+- Do not approve or request changes (`gh pr review`) unless explicitly asked
