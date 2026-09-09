@@ -297,7 +297,7 @@ def post_inline_comment(
 def list_review_threads(
     number: str, repo_slug: str | None = None
 ) -> list[dict[str, Any]]:
-    """List the inline review comments on a pull request.
+    """List the inline review threads on a pull request.
 
     Args:
         number: Pull request number.
@@ -305,27 +305,46 @@ def list_review_threads(
 
     Returns:
         A list of dicts with `thread_id`, `author`, `body`, `file_path`, `line`,
-        `resolved`, and `resolved_by`. The REST API exposes neither resolution
-        flag, so both are False/None; a caller that needs the real values has to
-        read them from GraphQL.
+        `resolved`, and `resolved_by`, one entry per thread. `thread_id` is the
+        opening comment's REST id, which is what `reply_to_thread` and
+        `resolve_thread` take.
 
     Raises:
-        GitHubError: If the comments cannot be read.
+        GitHubError: If the threads cannot be read.
     """
+    # GraphQL, not REST: resolution lives only here, and REST returns every
+    # reply as its own comment with no way to group them back into threads.
     target_slug = repo_slug or current_repo_slug()
-    comments = api(f"repos/{target_slug}/pulls/{number}/comments") or []
-    return [
-        {
-            "thread_id": str(comment["id"]),
-            "author": comment["user"]["login"],
-            "body": comment["body"],
-            "file_path": comment.get("path"),
-            "line": comment.get("line") or comment.get("original_line"),
-            "resolved": False,
-            "resolved_by": None,
-        }
-        for comment in comments
-    ]
+    owner, _, repository = target_slug.partition("/")
+    query = (
+        "query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,"
+        "name:$repo){pullRequest(number:$number){reviewThreads(first:100){nodes{"
+        "isResolved resolvedBy{login} path line originalLine "
+        "comments(first:1){nodes{databaseId author{login} body}}}}}}}"
+    )
+    payload = _graphql(query, {"owner": owner, "repo": repository, "number": number})
+    threads = payload["data"]["repository"]["pullRequest"]["reviewThreads"]["nodes"]
+
+    listed = []
+    for thread in threads:
+        comments = thread["comments"]["nodes"]
+        if not comments:
+            continue
+        opening_comment = comments[0]
+        resolved_by = thread.get("resolvedBy") or {}
+        author = opening_comment.get("author") or {}
+        listed.append(
+            {
+                "thread_id": str(opening_comment["databaseId"]),
+                "author": author.get("login"),
+                "body": opening_comment["body"],
+                "file_path": thread.get("path"),
+                "line": thread.get("line") or thread.get("originalLine"),
+                "resolved": bool(thread["isResolved"]),
+                "resolved_by": resolved_by.get("login"),
+            }
+        )
+    return listed
 
 
 def resolve_thread(number: str, thread_id: str, repo_slug: str | None = None) -> None:

@@ -33,6 +33,7 @@ Relay the subagent's status table and outcome to the user, and handle the Slack-
 Accept a full PR URL, or a bare number plus `--repo`.
 
 From `https://github.com/owner/repo/pull/437`:
+
 - repo = `owner/repo`
 - number = `437`
 
@@ -59,15 +60,14 @@ it.
 Each thread carries `thread_id`, `body`, `file_path`, `line`, `resolved`, and
 `resolved_by`. Triage on the last two:
 
-| `resolved` | `resolved_by` | Read it as |
-| --- | --- | --- |
-| `false` | `null` | 🔴 open — verify against the diff |
-| `true` | you | ✅ you already closed it |
-| `true` | someone else | ⚠️ **suspicious** — the author may have self-closed it without fixing the code. Always verify these against the diff. |
+| `resolved` | `resolved_by` | Read it as                                                                                                            |
+| ---------- | ------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `false`    | `null`        | 🔴 open — verify against the diff                                                                                     |
+| `true`     | you           | ✅ you already closed it                                                                                              |
+| `true`     | someone else  | ⚠️ **suspicious** — the author may have self-closed it without fixing the code. Always verify these against the diff. |
 
-**API limitation:** the REST API exposes neither flag, so every thread comes
-back `resolved: false, resolved_by: null` and the ⚠️ case cannot be detected —
-verify every thread against the diff rather than trusting the resolved state.
+Both flags are real, but they are still claims about the code, not evidence
+about it — verify a `true` against the diff rather than trusting it.
 
 ## Step 3 — Verify each comment against the latest diff
 
@@ -85,12 +85,12 @@ gh api "repos/<slug>/contents/<PATH>?ref=<HEAD_SHA>" --jq .content | base64 -d |
 
 ## Step 4 — Present a status table to the user
 
-| # | Comment (truncated) | Resolved? | Actually fixed? |
-|---|---------------------|-----------|-----------------|
-| 1 | Missing `public` on… | ✅ by me | ✅ Yes |
-| 2 | Counter duplication… | ⚠️ by developer | ✅ Yes |
-| 3 | Misleading name… | 🔴 open | ✅ Yes |
-| 4 | Test missing assert… | ⚠️ by developer | ❌ No |
+| #   | Comment (truncated)  | Resolved?       | Actually fixed? |
+| --- | -------------------- | --------------- | --------------- |
+| 1   | Missing `public` on… | ✅ by me        | ✅ Yes          |
+| 2   | Counter duplication… | ⚠️ by developer | ✅ Yes          |
+| 3   | Misleading name…     | 🔴 open         | ✅ Yes          |
+| 4   | Test missing assert… | ⚠️ by developer | ❌ No           |
 
 If any comment is **not actually fixed** — regardless of who resolved it — stop here and report clearly. Do not approve until all are addressed.
 
@@ -117,6 +117,7 @@ After approving, ask the user:
 > "Done — approved. Want me to reply in a Slack thread? If so, drop the thread URL."
 
 When the user provides a URL like `https://<workspace>.slack.com/archives/C04AY4FNUUB/p1782136493804559`:
+
 - `channel_id` = `C04AY4FNUUB`
 - `thread_ts` = insert `.` before the last 6 digits → `1782136493.804559`
 
