@@ -85,6 +85,11 @@ into that repo, so an edit is live on this machine and absent everywhere else un
 > do it without asking, in the same session that made the change.
 > Avoid: Committing straight to `main`; force-pushing; leaving the edit dirty in the
 > working tree; sweeping unrelated dirty files in — `git stash push <paths>` those first.
+> Enforced: a GitHub ruleset rejects direct pushes, force-pushes, and non-squash merges
+> to `main` server-side, with no bypass for anyone. `dev-workflows`' `protect-default-branch`
+> hook is the local early warning — it stops the commit before the rejected push, and covers
+> repos with no server-side rule. When it fires, branch; do not reach for its
+> `ALLOW_DEFAULT_BRANCH_WRITE=1` escape hatch without the user saying so.
 > Corollary: A skill, command, or agent created directly in `~/.claude/skills`,
 > `~/.claude/commands`, or `~/.claude/agents` is local-only — `install.sh` leaves those
 > alone by design. To ship one, move it into `plugins/<plugin>/` in the repo.

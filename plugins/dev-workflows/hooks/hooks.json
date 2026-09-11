@@ -6,6 +6,12 @@
         "hooks": [
           {
             "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/protect-default-branch.sh\"",
+            "timeout": 10,
+            "statusMessage": "Checking the target branch..."
+          },
+          {
+            "type": "command",
             "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/pre-push-quality-gate.sh\"",
             "timeout": 300,
             "statusMessage": "Running pre-push checks (base sync, build, lint, typecheck, prettier, test)..."
