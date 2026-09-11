@@ -29,8 +29,10 @@ fi
 #
 # The assignment group is what keeps this from failing open: `FOO=bar git push`
 # is an ordinary invocation, so requiring `git` to sit immediately after a
-# separator let any env-var prefix skip the entire gate.
-readonly ENV_ASSIGNMENT='([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*'
+# separator let any env-var prefix skip the entire gate. The value alternates
+# a quoted string with a bare token so `GIT_SSH_COMMAND="ssh -i key" git push`
+# — whose value contains a space — still matches, not just the unquoted case.
+readonly ENV_ASSIGNMENT='([A-Za-z_][A-Za-z0-9_]*=("[^"]*"|'\''[^'\'']*'\''|[^[:space:]]*)[[:space:]]+)*'
 readonly GIT_PUSH_INVOCATION="(^|[;&|]|&&|\|\||\\$\()[[:space:]]*${ENV_ASSIGNMENT}(sudo[[:space:]]+)?${ENV_ASSIGNMENT}git([[:space:]]+-[^[:space:]]+([[:space:]]+[^-][^[:space:]]*)?)*[[:space:]]+push([[:space:];&|)]|\$)"
 grep -qE "$GIT_PUSH_INVOCATION" <<<"$target" || exit 0
 

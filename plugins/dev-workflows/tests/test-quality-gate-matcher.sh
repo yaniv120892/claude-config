@@ -36,5 +36,7 @@ check TRIGGER 'gi''t pu''sh; cd elsewhere'
 check TRIGGER 'gi''t pu''sh && echo done'
 check TRIGGER '(cd x && gi''t pu''sh)'
 check TRIGGER 'gi''t pu''sh|tee log'
+check TRIGGER 'FOO=bar gi''t pu''sh'
+check TRIGGER 'GIT_SSH_COMMAND="ssh -i key" gi''t pu''sh'
 
 summarize
