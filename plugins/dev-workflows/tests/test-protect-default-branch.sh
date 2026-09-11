@@ -67,12 +67,22 @@ echo "--- escape hatch ---"
 git_quiet checkout -q main
 report "ALLOW_DEFAULT_BRANCH_WRITE=1 prefix in the command" 0 \
   "$(fire "ALLOW_DEFAULT_BRANCH_WRITE=1 $COMMIT" "$TMP/work")"
-report "ALLOW_DEFAULT_BRANCH_WRITE=1 set directly on the hook's process also allows" 0 \
+report "ALLOW_DEFAULT_BRANCH_WRITE=1 set only on the hook's own process is not honoured" 2 \
   "$(fire_with_env "ALLOW_DEFAULT_BRANCH_WRITE=1" "$COMMIT" "$TMP/work")"
+report "a commit message that merely mentions the opt-out is not honoured" 2 \
+  "$(fire "${COMMIT} -m \"doc: mention ALLOW_DEFAULT_BRANCH_WRITE=1 escape hatch\"" "$TMP/work")"
 
-echo "--- prefixes that must not bypass detection ---"
+echo "--- prefixes and wrappers that must not bypass detection ---"
 report "FOO=bar env-assignment prefix still triggers" 2 "$(fire "FOO=bar $COMMIT" "$TMP/work")"
 report "sudo prefix still triggers"                    2 "$(fire "sudo $COMMIT" "$TMP/work")"
+report "env prefix still triggers"                     2 "$(fire "env $COMMIT" "$TMP/work")"
+report "stacked wrapper prefixes still trigger"         2 "$(fire "sudo env $COMMIT" "$TMP/work")"
+report "quoted env value with an embedded space still triggers" 2 \
+  "$(fire 'GIT_SSH_COMMAND="ssh -i key" '"$COMMIT" "$TMP/work")"
+
+echo "--- compound-command shapes that must not bypass detection ---"
+report "bare subshell still triggers"    2 "$(fire "($COMMIT)" "$TMP/work")"
+report "brace group still triggers"      2 "$(fire "{ $COMMIT; }" "$TMP/work")"
 
 echo "--- target resolution ---"
 report "git -C targets the checkout, not the payload cwd" 2 \
@@ -81,6 +91,13 @@ git_quiet checkout -q feature
 report "git -C tracks the checked-out branch, not just the directory name" 0 \
   "$(fire "git -C $TMP/work c""ommit -m x" "$TMP")"
 git_quiet checkout -q main
+
+# A directory earlier in the command that itself contains the literal word
+# "commit" (a decoy notes folder, say) must not corrupt where the parser
+# thinks the real invocation's verb starts, and so which directory it checks.
+mkdir -p "$TMP/precommit-notes"
+report "an unrelated \"commit\"-containing path earlier in the command is not mistaken for the verb" 2 \
+  "$(fire "cd $TMP/precommit-notes && cd $TMP/work && $COMMIT" "$TMP")"
 
 echo "--- nothing to resolve ---"
 mkdir -p "$TMP/lonely" && cd "$TMP/lonely" && git_quiet init -q .

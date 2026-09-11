@@ -22,30 +22,51 @@ fi
 # Match a real invocation of either verb, not text that merely mentions one — a
 # heredoc writing this file, `echo "then git commit"`, a grep pattern. The flag
 # group allows a flag that takes a value (`git -C <dir> commit`), and the
-# trailing boundary accepts a separator so `git commit && git push` counts.
+# trailing boundary accepts a separator so `git commit && git push` counts. The
+# leading boundary covers a bare subshell or brace group too (`(git commit)`,
+# `{ git commit; }`), not just the separators between top-level commands.
 #
 # The assignment group is load-bearing for a guard: `FOO=bar git commit` is a
 # normal invocation, so a pattern that requires `git` to sit right after a
-# separator lets any env-var prefix walk straight past.
-readonly ENV_ASSIGNMENT='([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*'
-readonly WRITE_INVOCATION="(^|[;&|]|&&|\|\||\\\$\()[[:space:]]*${ENV_ASSIGNMENT}(sudo[[:space:]]+)?${ENV_ASSIGNMENT}git([[:space:]]+-[^[:space:]]+([[:space:]]+[^-][^[:space:]]*)?)*[[:space:]]+(commit|push)([[:space:];&|)]|\$)"
-grep -qE "$WRITE_INVOCATION" <<<"$target" || exit 0
+# separator lets any env-var prefix walk straight past. Quoted values
+# (`GIT_SSH_COMMAND="ssh -i key" git commit`) need their own alternative or the
+# embedded space breaks the match. The wrapper group covers the handful of
+# no-op passthroughs (`env`, `command`, `nice`, `time`) that a real invocation
+# routinely sits behind, same as `sudo`, and can repeat since these stack.
+readonly ENV_ASSIGNMENT='([A-Za-z_][A-Za-z0-9_]*=("[^"]*"|'\''[^'\'']*'\''|[^[:space:]]*)[[:space:]]+)*'
+readonly WRAPPER='((sudo|env|command|nice|time)[[:space:]]+)*'
+readonly WRITE_INVOCATION="(^|[;&|(){]|&&|\|\||\\\$\()[[:space:]]*${ENV_ASSIGNMENT}${WRAPPER}${ENV_ASSIGNMENT}git([[:space:]]+-[^[:space:]]+([[:space:]]+[^-][^[:space:]]*)?)*[[:space:]]+(commit|push)([[:space:];&|)]|\$)"
+
+# One builtin match, not a match-then-rematch: this hook fires on every Bash
+# call, so the common case (no write verb present) should cost no subprocess.
+# The captured match also bounds the opt-out check below and the cd/-C parsing
+# after it to the actual invocation text, not the whole command.
+[[ "$target" =~ $WRITE_INVOCATION ]] || exit 0
+matched_invocation="${BASH_REMATCH[0]}"
 
 # An explicit, per-command opt-out. Seeding a fresh repo or landing a hotfix the
 # user asked for out loud are real cases; making them say so is the point.
 #
-# Read from the command text, not this process's environment: a prefix like
-# `ALLOW_DEFAULT_BRANCH_WRITE=1 git commit` scopes the variable to the command
-# the agent runs, which this hook never inherits.
-if [ "${ALLOW_DEFAULT_BRANCH_WRITE:-}" = "1" ] ||
-   grep -qE '(^|[[:space:];&|])ALLOW_DEFAULT_BRANCH_WRITE=1([[:space:]]|$)' <<<"$target"; then
+# Checked against the matched invocation, not the raw command: the match ends
+# right after the verb, before any arguments, so a commit message that merely
+# mentions `ALLOW_DEFAULT_BRANCH_WRITE=1` can't be mistaken for the prefix
+# opting out of this guard. Read from the command text, not this process's
+# environment — a prefix like `ALLOW_DEFAULT_BRANCH_WRITE=1 git commit` scopes
+# the variable to the command the agent runs, which this hook never inherits.
+if [[ "$matched_invocation" == *"ALLOW_DEFAULT_BRANCH_WRITE=1"* ]]; then
   exit 0
 fi
 
 # Resolve the repo the command actually runs against, not the hook's own cwd:
-# a command may `cd` or `git -C` first. Only what precedes the verb counts.
-before_write="${target%%commit*}"
-[ "$before_write" = "$target" ] && before_write="${target%%push*}"
+# a command may `cd` or `git -C` first. Only what precedes the verb counts, but
+# a flag value on that same invocation (`git -C /tmp/precommit-notes commit`)
+# can itself contain the literal word "commit" — so the split has to happen
+# inside matched_invocation, at its own trailing verb, greedily taking
+# everything up to the LAST whitespace-plus-verb in that short, already-bounded
+# string rather than the first literal occurrence anywhere in the full command.
+verb_prefix="$matched_invocation"
+[[ "$matched_invocation" =~ ^(.*[[:space:]])(commit|push)([[:space:];\&\|\)]|$) ]] && verb_prefix="${BASH_REMATCH[1]}"
+before_write="${target%%"$matched_invocation"*}${verb_prefix}"
 target_directory=""
 if [[ "$before_write" =~ .*(^|[\;\&\|][[:space:]]*)cd[[:space:]]+([^[:space:]\;\&\|]+) ]]; then
   target_directory="${BASH_REMATCH[2]//\"/}"
