@@ -11,6 +11,7 @@ paths:
   - "**/*.java"
   - "**/*.rb"
   - "**/*.sql"
+  - "**/*.prisma"
   - "**/*.sh"
   - "**/*.bash"
 description: Language-agnostic craft rules: comments, naming, control flow, error handling, guards.
@@ -32,6 +33,19 @@ Language-agnostic. TypeScript specifics are in `typescript.md`, Python in `pytho
 > no types or functions to extract to, so the urge to narrate is strongest where the payoff is
 > lowest. Comment only what the file cannot show: hidden behaviour of the consuming tool, a key
 > that's inert unless mirrored elsewhere, an upstream-bug workaround.
+
+**Comments Name the Mechanism, Not Today's Provider** — the behaviour belongs to the class of
+thing, so a comment naming the current vendor goes wrong the day the vendor changes while the
+code it describes stays right
+> Pattern: State the property that forces the code — "a transaction pooler does not hold the
+> advisory lock `prisma migrate` takes". That stays true across every pooler, and it tells a
+> reader what to re-check rather than what to look up.
+> Avoid: The current host, region, plan tier, or dashboard named beside code that would read
+> identically on any other provider.
+> Exception: a workaround for one named product's own bug — there the vendor *is* the mechanism,
+> and the name is what lets a reader retest it.
+> The deployment fact still belongs somewhere: one maintained place (`CLAUDE.md`, README), not
+> restated in each file that reacts to it.
 
 **Always Use Braces for Control Flow** — including single-statement guards and early returns
 > Pattern: `if (!x) { return null; }` — never `if (!x) return null;`

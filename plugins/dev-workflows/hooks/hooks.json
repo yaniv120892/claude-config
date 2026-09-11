@@ -11,6 +11,17 @@
             "statusMessage": "Running pre-push checks (base sync, build, lint, typecheck, prettier, test)..."
           }
         ]
+      },
+      {
+        "matcher": "Edit|Write|NotebookEdit|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/require-worktree.sh\"",
+            "timeout": 10,
+            "statusMessage": "Checking the edit lands in a worktree, not the main checkout..."
+          }
+        ]
       }
     ],
     "PostToolUse": [
