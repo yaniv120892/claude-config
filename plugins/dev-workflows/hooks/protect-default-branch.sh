@@ -57,13 +57,21 @@ if [[ "$matched_invocation" == *"ALLOW_DEFAULT_BRANCH_WRITE=1"* ]]; then
   exit 0
 fi
 
-# Resolve the repo the command actually runs against, not the hook's own cwd:
-# a command may `cd` or `git -C` first. Only what precedes the verb counts, but
-# a flag value on that same invocation (`git -C /tmp/precommit-notes commit`)
-# can itself contain the literal word "commit" — so the split has to happen
-# inside matched_invocation, at its own trailing verb, greedily taking
-# everything up to the LAST whitespace-plus-verb in that short, already-bounded
-# string rather than the first literal occurrence anywhere in the full command.
+# Resolve the repo the command actually runs against, not the hook's own cwd.
+# `cd` and `-C` differ in scope: a `cd` changes the shell's cwd for every
+# command that follows it in the same compound statement, so an earlier one
+# still counts — `before_write` (everything preceding the write invocation,
+# plus that invocation's own flags) is the right text to search. `-C` is a
+# flag on one specific `git` call and has no effect on any other command, so
+# an earlier, unrelated `git -C <dir> status && git commit` must not be read
+# as targeting <dir> — only `verb_prefix`, the guarded invocation's own flags,
+# is in scope for it.
+#
+# A flag value on that invocation (`git -C /tmp/precommit-notes commit`) can
+# itself contain the literal word "commit" — so the split has to happen inside
+# matched_invocation, at its own trailing verb, greedily taking everything up
+# to the LAST whitespace-plus-verb in that short, already-bounded string
+# rather than the first literal occurrence anywhere in the full command.
 verb_prefix="$matched_invocation"
 [[ "$matched_invocation" =~ ^(.*[[:space:]])(commit|push)([[:space:];\&\|\)]|$) ]] && verb_prefix="${BASH_REMATCH[1]}"
 before_write="${target%%"$matched_invocation"*}${verb_prefix}"
@@ -71,7 +79,7 @@ target_directory=""
 if [[ "$before_write" =~ .*(^|[\;\&\|][[:space:]]*)cd[[:space:]]+([^[:space:]\;\&\|]+) ]]; then
   target_directory="${BASH_REMATCH[2]//\"/}"
 fi
-if [[ "$before_write" =~ .*git[[:space:]]+-C[[:space:]]+([^[:space:]]+) ]]; then
+if [[ "$verb_prefix" =~ git[[:space:]]+-C[[:space:]]+([^[:space:]]+) ]]; then
   target_directory="${BASH_REMATCH[1]//\"/}"
 fi
 [ -z "$target_directory" ] && target_directory="$payload_cwd"

@@ -20,6 +20,10 @@ git_quiet fetch -q origin
 git_quiet remote set-head origin -a >/dev/null
 git_quiet checkout -q -b feature
 
+# A second, unrelated repo: `-C` on an earlier, different git call in the same
+# compound command must not be mistaken for the write invocation's own target.
+mkdir -p "$TMP/decoy" && git_quiet init -q "$TMP/decoy"
+
 # Split so this test file's own source doesn't read as the invocation it's
 # testing for.
 COMMIT="git c""ommit -m x"
@@ -98,6 +102,16 @@ git_quiet checkout -q main
 mkdir -p "$TMP/precommit-notes"
 report "an unrelated \"commit\"-containing path earlier in the command is not mistaken for the verb" 2 \
   "$(fire "cd $TMP/precommit-notes && cd $TMP/work && $COMMIT" "$TMP")"
+
+# `-C` is a flag on one specific git call; an earlier, unrelated invocation
+# with its own `-C` must not be read as scoping the write invocation that
+# follows it — only `cd` persists across a compound command, `-C` does not.
+report "a decoy -C on an earlier git call does not redirect an unqualified write (deny on main)" 2 \
+  "$(fire "git -C $TMP/decoy status && $COMMIT" "$TMP/work")"
+git_quiet checkout -q feature
+report "a decoy -C on an earlier git call does not redirect an unqualified write (allow on feature)" 0 \
+  "$(fire "git -C $TMP/decoy log && $COMMIT" "$TMP/work")"
+git_quiet checkout -q main
 
 echo "--- nothing to resolve ---"
 mkdir -p "$TMP/lonely" && cd "$TMP/lonely" && git_quiet init -q .
