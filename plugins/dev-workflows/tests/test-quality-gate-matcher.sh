@@ -5,8 +5,10 @@
 # we observe by stubbing the guard out via a marker file.
 source "$(dirname "${BASH_SOURCE[0]}")/harness.sh"
 
-# Extract just the matcher line and evaluate it standalone.
-PATTERN=$(grep -oE "^readonly GIT_PUSH_INVOCATION='.*'$" "$HOOK" | sed "s/^readonly GIT_PUSH_INVOCATION='//; s/'$//")
+# Evaluate the matcher's own declarations rather than textually extracting the
+# pattern — GIT_PUSH_INVOCATION interpolates ENV_ASSIGNMENT, so its source line
+# is no longer a standalone literal.
+PATTERN=$(eval "$(grep -E "^readonly (ENV_ASSIGNMENT|GIT_PUSH_INVOCATION)=" "$HOOK")"; printf '%s' "$GIT_PUSH_INVOCATION")
 
 check() {
   local expected="$1" text="$2" actual
