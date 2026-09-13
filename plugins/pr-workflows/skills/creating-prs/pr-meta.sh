@@ -12,7 +12,9 @@
 #   TARGET_BRANCH: <branch>
 #
 # BASE_SHA comes from `git merge-base`, so fetch the repository first or it
-# reports a stale base.
+# reports a stale base. It prints EMPTY when the current directory is not a
+# clone of the pull request's repository, or the head commit has not been
+# fetched — empty means "unknown", not "failed", and reviewing does not need it.
 
 set -euo pipefail
 

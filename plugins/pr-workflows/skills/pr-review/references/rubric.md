@@ -5,6 +5,13 @@ Read by the per-PR review subagent. Follow it in order.
 Be rigorous and skeptical. Verify with evidence — never assert something passes
 without inspecting it. If you cannot verify something, say so and say why.
 
+**Verification depth scales with what you are about to assert, not with a call
+budget.** Claiming a HIGH earns whatever reading it takes to be sure — including
+a dependency's own source in `node_modules` when the behaviour in question is
+the library's. Confirming something routine earns the cheapest check that
+settles it, and then you stop. Apply this wherever the rubric asks you to
+verify; it is the rule, and the steps below do not restate it.
+
 ## 1. Review the actual head, not the local branch
 
 ```bash
@@ -33,7 +40,7 @@ expands it to nothing and the command silently no-ops instead of erroring.
 Without one:
 
 ```bash
-gh api "repos/<slug>/contents/<PATH>?ref=<HEAD_SHA>" --jq .content | base64 -d | cat -n
+gh api "repos/<slug>/contents/<PATH>?ref=<HEAD_SHA>" --jq '.content' | base64 -d | cat -n
 ```
 
 ## 2. Read real context, not just hunks
@@ -41,13 +48,6 @@ gh api "repos/<slug>/contents/<PATH>?ref=<HEAD_SHA>" --jq .content | base64 -d |
 For every changed file, open the surrounding module, its callers, and any
 co-located tests. A hunk in isolation hides the contract, lifecycle, and
 concurrency problems that matter most.
-
-**The read budget does not bind evidence for a HIGH finding.** When the
-behaviour in question belongs to a dependency — what a library actually does
-with a drained stream, whether a framework re-reads a body — read that
-dependency's source in `node_modules`. Spending four extra calls to confirm a
-HIGH is right; asserting one you could not verify is not. Stay inside the budget
-for everything else.
 
 ## 3. Rules (highest priority, reported separately)
 
@@ -134,16 +134,19 @@ Run the check in `docs-alignment.md` and carry its output into section C below.
 ## 7. CI is the authority
 
 ```bash
-gh pr checks <n> --repo <slug>
+python3 <PLUGIN_ROOT>/skills/verify-resolve-pr-comments/pr_review_comments.py ci --pr <n> --repo <slug>
 ```
+
+This wraps `github.latest_ci_status()` and returns one verdict rather than a
+list to read check-by-check. Prefer it over raw `gh pr checks`, which the repo
+already rejected for the same reason in `verify-pr-state`.
 
 Confirm the lint/test/build jobs are green **and** that they ran on the head
 commit. A local build usually needs scaffolding a reviewer doesn't have, so CI
 decides. If CI is red or stale, say so; never vouch for what CI has not run.
 
-`gh pr checks` does not print the SHA it inspected — it reports the current
-head. Confirming that `headRefOid` from step 1 equals the head you reviewed **is**
-sufficient; say so in section D and move on. Don't hunt for a stronger proof.
+The check reports the current head without printing the SHA, so confirming that
+`headRefOid` from step 1 equals the head you reviewed is what settles it.
 
 ## Comment contract
 

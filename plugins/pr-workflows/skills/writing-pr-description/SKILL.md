@@ -150,7 +150,7 @@ not just that they changed.>
 <Optional one-line scope/rollout note, e.g. "Prod only — dev unchanged.">
 ```
 
-**Good example (from an `eks-services-gitops` MR):**
+**Good example (from an `eks-services-gitops` PR):**
 ```markdown
 `ai-models-error-mapping`'s **implement** phase clones 4 repos, installs deps, and drives the Claude CLI
 inside a single pod — a resource-heavy burst on top of otherwise low, scheduler-driven traffic. On

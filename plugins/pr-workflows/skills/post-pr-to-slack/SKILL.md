@@ -23,11 +23,11 @@ AskUserQuestion, which subagents have):
 
 ```
 Agent({
-  description: "Post MR to Slack",
+  description: "Post PR to Slack",
   model: "sonnet",
   prompt: "You are the post-pr-to-slack subagent. Invoke the post-pr-to-slack skill
     yourself and follow it end-to-end — you are the dispatched subagent, so do not
-    delegate further. MR URL(s): <url(s)>. Channel/reviewer override, if any: <override>.
+    delegate further. PR URL(s): <url(s)>. Channel/reviewer override, if any: <override>.
     Follow the message format and routing rules exactly. Report the sent message links
     per channel."
 })
@@ -51,12 +51,16 @@ start of every run; it is the source of truth and **the skill writes back to it*
 learns new developers, channels, and repo emoji. If it's missing, create it from the
 example on first use.
 
-## Gathering MR information
+This file used to be `~/.claude/post-mr-to-slack.config.json`. It is machine-local and
+never committed, so check for the old name before creating a fresh one — starting from
+the example silently discards every Slack user ID and channel route already learned.
+
+## Gathering PR information
 
 Use `gh`. It uses the
 user's existing authentication, so no token is stored here.
 
-For each URL: parse out the project path and MR number, fetch the MR, and extract title,
+For each URL: parse out the project path and PR number, fetch the PR, and extract title,
 state, author, and reviewer usernames. If the CLI call fails, fall back to asking the
 user for the title and reviewers rather than posting a half-filled message.
 
@@ -65,11 +69,11 @@ the config. On no match, ask which emoji to use and **append the entry** so it's
 next time.
 
 **Description** — only capture it if the user explicitly asks, and even then condense to
-1–2 sentences. Never carry a raw MR description into Slack.
+1–2 sentences. Never carry a raw PR description into Slack.
 
 ## Resolving reviewers to Slack users
 
-For each reviewer username from the MR:
+For each reviewer username from the PR:
 
 1. **Check the config first.** A `developers` entry with a `slackUserId` is used as-is —
    no Slack search.
@@ -85,7 +89,7 @@ Format mentions as `<@USER_ID>`.
    - **Unknown** → ask via `AskUserQuestion` which channel(s) their PRs go to, then
      **write them back** into the config (username, name, `slackUserId`, chosen
      channels), adding any new channel to `channels` too.
-2. **Group reviewers by channel, per MR.** One MR may post to several channels — one
+2. **Group reviewers by channel, per PR.** One PR may post to several channels — one
    message per channel, tagging only that channel's reviewers.
 3. A channel with no reviewers routed to it gets no message.
 
@@ -104,7 +108,7 @@ so bold is `**double asterisk**` (single `*…*` renders as _italic_). Slack-nat
 
 ```
 {repo emoji}
-<{mr url}|{MR title}>
+<{pr url}|{PR title}>
 **Project:**
 {repo name}
 **Reviewers:**
@@ -115,7 +119,7 @@ Add a `**Summary:**` line of at most 1–2 sentences only when the user asked fo
 description, or it's clearly essential (a breaking change). Never paste the raw
 description.
 
-**One MR = one Slack message, always.** Posting several MRs to the same channel means
+**One PR = one Slack message, always.** Posting several PRs to the same channel means
 several `slack_send_message` calls, never one combined message.
 
 ## Sending and reporting
@@ -130,7 +134,7 @@ scheduled time instead.
 
 ## Worked examples
 
-**All reviewers in one channel.** Parse URL → fetch MR → both reviewers known and route
+**All reviewers in one channel.** Parse URL → fetch PR → both reviewers known and route
 to `team-prs` → use cached `slackUserId`s → repo emoji from config → no questions asked →
 one message.
 

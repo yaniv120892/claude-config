@@ -47,7 +47,7 @@ From `https://github.com/owner/repo/pull/437`:
 python3 ../verify-resolve-pr-comments/pr_review_comments.py list --pr <NUMBER> --repo <slug>
 
 # Latest diff
-gh pr diff <NUMBER>
+gh pr diff <NUMBER> --repo <slug>
 ```
 
 ## Step 2 — Extract ALL comments I posted
@@ -80,7 +80,7 @@ For every comment I posted (resolved or not), read the relevant section of the n
 To read a file at HEAD:
 
 ```bash
-gh api "repos/<slug>/contents/<PATH>?ref=<HEAD_SHA>" --jq .content | base64 -d | cat -n
+gh api "repos/<slug>/contents/<PATH>?ref=<HEAD_SHA>" --jq '.content' | base64 -d | cat -n
 ```
 
 ## Step 4 — Present a status table to the user
@@ -99,7 +99,7 @@ If any comment is **not actually fixed** — regardless of who resolved it — s
 For each of my threads that is not already resolved by me and whose concern is confirmed fixed:
 
 ```bash
-python3 ../verify-resolve-pr-comments/pr_review_comments.py resolve --pr <NUMBER> --thread <ID>
+python3 ../verify-resolve-pr-comments/pr_review_comments.py resolve --pr <NUMBER> --thread <ID> --repo <slug>
 ```
 
 Run in parallel. Skip threads already resolved by me.
@@ -107,7 +107,7 @@ Run in parallel. Skip threads already resolved by me.
 ## Step 6 — Approve
 
 ```bash
-gh pr review <NUMBER> --approve
+gh pr review <NUMBER> --approve --repo <slug>
 ```
 
 ## Step 7 — Offer to post to Slack

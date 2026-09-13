@@ -38,6 +38,14 @@ such as which specific job failed (Step 3 does exactly that).
 
 ## Step 2 — Branch on state
 
+### unknown → stop, do not treat as green
+
+The commit reported no check runs at all. That is a repo whose CI posts through
+the legacy commit-status API (Jenkins, CircleCI classic), or the gap before the
+first check registers — never evidence that CI passed. Say the state is unknown
+and why, check `gh pr checks <NUMBER> --repo <slug>` for statuses the check-runs
+API does not carry, and **never enable auto-merge from here**.
+
 ### running / pending
 
 Schedule a wakeup in **5 minutes** using `ScheduleWakeup` with the original /loop prompt, passing the pull request URL as context. Narrate: "CI still running — rechecking in 5 min."

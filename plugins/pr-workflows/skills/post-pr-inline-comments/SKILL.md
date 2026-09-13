@@ -28,8 +28,7 @@ Read the file at the pull request's head so line numbers match what the
 reviewer sees.
 
 ```bash
-gh api "repos/{OWNER}/{REPO}/contents/{PATH}?ref={HEAD_SHA}" \
-  --jq '.content' | base64 -d | cat -n
+gh api "repos/<slug>/contents/<PATH>?ref=<HEAD_SHA>" --jq '.content' | base64 -d | cat -n
 ```
 
 ## Step 3 — Decide which lines to comment on and what to write
@@ -55,10 +54,14 @@ python3 post_inline_comment.py \
   --new-line <N> \
   --body "Comment text here" \
   [--old-line <N>] \
-  [--repo <slug>]
+  [--repo <slug>] \
+  [--head-sha <sha>]
 ```
 
 Run it once per comment. It prints `OK comment_id=<id> ...` on success.
+
+Pass `--head-sha` (the `HEAD_SHA` from Step 1) when posting more than one
+comment. Without it the script re-runs `gh pr view` for every single comment.
 
 ## Step 5 — General notes (non-code context)
 

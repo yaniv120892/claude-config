@@ -90,7 +90,7 @@ For every conflicted file, read all three versions before touching it:
 ```bash
 BASE=$(git merge-base HEAD origin/<target_branch>)
 git show "${BASE}:<path>"                  # what both sides started from
-git show HEAD:<path>                       # ours — the MR
+git show HEAD:<path>                       # ours — the PR
 git show "origin/<target_branch>:<path>"   # theirs — the target
 git diff "${BASE}" origin/<target_branch> -- <path>   # what the target actually changed, and why
 ```
@@ -99,9 +99,9 @@ git diff "${BASE}" origin/<target_branch> -- <path>   # what the target actually
 > zsh's `:l` modifier and silently gives you a mangled ref.
 
 This is the step that catches the resolutions that look obvious and are wrong. A real case:
-markers suggested the target branch had *added* a per-field comment that the MR wanted
+markers suggested the target branch had *added* a per-field comment that the PR wanted
 gone. The base showed it had contained **both** a section header and that per-field comment
-— the target deleted the header, the MR deleted the comment. Each side deleted a *different*
+— the target deleted the header, the PR deleted the comment. Each side deleted a *different*
 half. Taking either side wholesale would have silently reverted the other's intent.
 
 Rules for choosing:

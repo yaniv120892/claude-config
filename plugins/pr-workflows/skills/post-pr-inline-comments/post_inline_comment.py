@@ -6,7 +6,7 @@ assembled by hand here.
 
 Usage:
     post_inline_comment.py --pr <NUMBER> --file <path> --body <text>
-        (--new-line <N> and/or --old-line <N>) [--repo <slug>]
+        (--new-line <N> and/or --old-line <N>) [--repo <slug>] [--head-sha <sha>]
 
 An added line uses --new-line only. A removed line uses --old-line only. A
 context (unchanged) line takes both.
@@ -43,6 +43,7 @@ def main() -> int:
             new_line=arguments.new_line,
             old_line=arguments.old_line,
             repo_slug=arguments.repo,
+            head_sha=arguments.head_sha,
         )
     except github.GitHubError as error:
         print(f"error: {error}", file=sys.stderr)
@@ -75,6 +76,11 @@ def parse_arguments() -> argparse.Namespace:
         "--old-line", type=int, default=None, help="Old-side line number"
     )
     parser.add_argument("--body", required=True, help="Comment text")
+    parser.add_argument(
+        "--head-sha",
+        default=None,
+        help="Head commit to pin against; skips a `gh pr view` per comment",
+    )
     return parser.parse_args()
 
 

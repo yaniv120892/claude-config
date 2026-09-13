@@ -23,17 +23,13 @@ import sys
 from typing import Any
 
 
-# `git remote get-url` is read by both the smoke test and slug resolution; cache
-# it so one logical operation does not spawn git twice for the same answer.
-_remote_url_cache: dict[str, str] = {}
-
 
 class GitHubError(RuntimeError):
     """Raised when the `gh` CLI is missing, unauthenticated, or returns an error."""
 
 
 def origin_url(repo_directory: str | None = None) -> str:
-    """Read the repository's `origin` remote, once per directory per process.
+    """Read the repository's `origin` remote.
 
     Args:
         repo_directory: Repository to inspect; defaults to the current directory.
@@ -44,10 +40,6 @@ def origin_url(repo_directory: str | None = None) -> str:
     Raises:
         GitHubError: If the remote cannot be read.
     """
-    cache_key = repo_directory or ""
-    if cache_key in _remote_url_cache:
-        return _remote_url_cache[cache_key]
-
     git_command = ["git"]
     if repo_directory is not None:
         git_command += ["-C", repo_directory]
@@ -60,8 +52,7 @@ def origin_url(repo_directory: str | None = None) -> str:
     except (FileNotFoundError, subprocess.CalledProcessError) as error:
         raise GitHubError(f"could not read the origin remote: {error}") from error
 
-    _remote_url_cache[cache_key] = completed_process.stdout.strip()
-    return _remote_url_cache[cache_key]
+    return completed_process.stdout.strip()
 
 
 def require_cli() -> None:
@@ -233,9 +224,19 @@ def resolve_base_sha(pull_request: dict[str, Any]) -> str | None:
         pull_request: A dict from `view_pull_request`.
 
     Returns:
-        The merge-base SHA, or None when it cannot be resolved locally.
+        The merge-base SHA, or None when it cannot be resolved locally — which
+        includes every case where the current directory is not a clone of the
+        pull request's repository. Callers must treat None as "unknown", never
+        as an error and never as a base of their own repository.
     """
     try:
+        # Without this the command runs against whatever repository the cwd
+        # happens to be, where `origin/<target_branch>` almost always exists.
+        subprocess.run(
+            ["git", "cat-file", "-e", f"{pull_request['head_sha']}^{{commit}}"],
+            capture_output=True,
+            check=True,
+        )
         completed_process = subprocess.run(
             [
                 "git", "merge-base",
@@ -258,6 +259,7 @@ def post_inline_comment(
     new_line: int | None = None,
     old_line: int | None = None,
     repo_slug: str | None = None,
+    head_sha: str | None = None,
 ) -> str:
     """Post a comment pinned to a line of the diff, not a general note.
 
@@ -268,6 +270,9 @@ def post_inline_comment(
         new_line: New-side line number; set for an added or context line.
         old_line: Old-side line number; set for a removed or context line.
         repo_slug: Optional repository slug.
+        head_sha: Head commit to pin the comment against. A caller posting a
+            batch should pass the SHA it already resolved; omitting it costs an
+            extra `gh pr view` per comment.
 
     Returns:
         The created comment id, as a string.
@@ -278,20 +283,68 @@ def post_inline_comment(
     if new_line is None and old_line is None:
         raise GitHubError("at least one of new_line or old_line is required")
 
-    pull_request = view_pull_request(number, repo_slug)
+    commit_id = head_sha or view_pull_request(number, repo_slug)["head_sha"]
     target_slug = repo_slug or current_repo_slug()
     response = api(
         f"repos/{target_slug}/pulls/{number}/comments",
         method="POST",
         fields={
             "body": body,
-            "commit_id": pull_request["head_sha"],
+            "commit_id": commit_id,
             "path": file_path,
             "side": "RIGHT" if new_line is not None else "LEFT",
             "line": new_line if new_line is not None else old_line,
         },
     )
     return str(response["id"])
+
+
+def _all_review_thread_nodes(
+    target_slug: str, number: str, node_fields: str
+) -> list[dict[str, Any]]:
+    """Read every review thread on a pull request, following the cursor.
+
+    A capped read is not a smaller answer, it is a wrong one: callers treat an
+    absent thread as one that does not exist, so `resolve_thread` reports "no
+    review thread found" for a thread that is merely past the first page.
+
+    Args:
+        target_slug: Repository slug.
+        number: Pull request number.
+        node_fields: GraphQL field selection for each thread node.
+
+    Returns:
+        Every review thread node on the pull request.
+
+    Raises:
+        GitHubError: If a page cannot be read.
+    """
+    owner, _, repository = target_slug.partition("/")
+    query = (
+        "query($owner:String!,$repo:String!,$number:Int!,$cursor:String){"
+        "repository(owner:$owner,name:$repo){pullRequest(number:$number){"
+        f"reviewThreads(first:100,after:$cursor){{nodes{{{node_fields}}}"
+        "pageInfo{hasNextPage endCursor}}}}}"
+    )
+
+    nodes: list[dict[str, Any]] = []
+    cursor: str | None = None
+    while True:
+        payload = _graphql(
+            query,
+            {
+                "owner": owner,
+                "repo": repository,
+                "number": number,
+                "cursor": cursor,
+            },
+        )
+        threads = payload["data"]["repository"]["pullRequest"]["reviewThreads"]
+        nodes.extend(threads["nodes"])
+        page_info = threads.get("pageInfo") or {}
+        if not page_info.get("hasNextPage"):
+            return nodes
+        cursor = page_info["endCursor"]
 
 
 def list_review_threads(
@@ -315,15 +368,12 @@ def list_review_threads(
     # GraphQL, not REST: resolution lives only here, and REST returns every
     # reply as its own comment with no way to group them back into threads.
     target_slug = repo_slug or current_repo_slug()
-    owner, _, repository = target_slug.partition("/")
-    query = (
-        "query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,"
-        "name:$repo){pullRequest(number:$number){reviewThreads(first:100){nodes{"
+    threads = _all_review_thread_nodes(
+        target_slug,
+        number,
         "isResolved resolvedBy{login} path line originalLine "
-        "comments(first:1){nodes{databaseId author{login} body}}}}}}}"
+        "comments(first:1){nodes{databaseId author{login} body}}",
     )
-    payload = _graphql(query, {"owner": owner, "repo": repository, "number": number})
-    threads = payload["data"]["repository"]["pullRequest"]["reviewThreads"]["nodes"]
 
     listed = []
     for thread in threads:
@@ -414,11 +464,7 @@ def latest_ci_status(number: str, repo_slug: str | None = None) -> dict[str, Any
     """
     pull_request = view_pull_request(number, repo_slug)
     target_slug = repo_slug or current_repo_slug()
-    runs = (
-        api(f"repos/{target_slug}/commits/{pull_request['head_sha']}/check-runs")
-        or {}
-    )
-    check_runs = runs.get("check_runs") or []
+    check_runs = _all_check_runs(target_slug, pull_request["head_sha"])
 
     if not check_runs:
         return {"state": "unknown", "web_url": pull_request["web_url"]}
@@ -433,6 +479,41 @@ def latest_ci_status(number: str, repo_slug: str | None = None) -> dict[str, Any
         "state": "failed" if failed else "success",
         "web_url": (failed[0]["html_url"] if failed else pull_request["web_url"]),
     }
+
+
+def _all_check_runs(target_slug: str, head_sha: str) -> list[dict[str, Any]]:
+    """Read every check run for a commit, following pagination to the end.
+
+    A partial read is worse than no read here: callers treat the absence of a
+    failure as success, and `verify-pr-state` auto-merges on it. GitHub's
+    default page is 30, so a busy pipeline silently passes.
+
+    Args:
+        target_slug: Repository slug.
+        head_sha: Commit to read check runs for.
+
+    Returns:
+        Every check run reported for the commit.
+
+    Raises:
+        GitHubError: If a page cannot be read.
+    """
+    check_runs: list[dict[str, Any]] = []
+    page = 1
+    while True:
+        response = (
+            api(
+                f"repos/{target_slug}/commits/{head_sha}"
+                f"/check-runs?per_page=100&page={page}"
+            )
+            or {}
+        )
+        batch = response.get("check_runs") or []
+        check_runs.extend(batch)
+        total = response.get("total_count")
+        if not batch or total is None or len(check_runs) >= total:
+            return check_runs
+        page += 1
 
 
 def _thread_node_id(number: str, comment_id: str, repo_slug: str | None) -> str:
@@ -450,14 +531,9 @@ def _thread_node_id(number: str, comment_id: str, repo_slug: str | None) -> str:
         GitHubError: If no thread contains the comment.
     """
     target_slug = repo_slug or current_repo_slug()
-    owner, _, repository = target_slug.partition("/")
-    query = (
-        "query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,"
-        "name:$repo){pullRequest(number:$number){reviewThreads(first:100){nodes{id "
-        "comments(first:1){nodes{databaseId}}}}}}}"
+    threads = _all_review_thread_nodes(
+        target_slug, number, "id comments(first:1){nodes{databaseId}}"
     )
-    payload = _graphql(query, {"owner": owner, "repo": repository, "number": number})
-    threads = payload["data"]["repository"]["pullRequest"]["reviewThreads"]["nodes"]
     for thread in threads:
         comments = thread["comments"]["nodes"]
         if comments and str(comments[0]["databaseId"]) == str(comment_id):

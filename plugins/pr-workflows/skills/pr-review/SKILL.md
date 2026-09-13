@@ -24,7 +24,9 @@ Resolve each target to `owner/repo` + number before dispatching.
 Send all `Agent` calls in a **single message** so they run concurrently.
 
 Substitute the real absolute paths into the prompt — a subagent cannot expand
-`${CLAUDE_PLUGIN_ROOT}`.
+`${CLAUDE_PLUGIN_ROOT}`. State the root itself too: `rubric.md` spells commands
+with `<PLUGIN_ROOT>` inline, so a subagent that only knows the five file paths
+hits a literal placeholder partway through.
 
 ```
 Agent({
@@ -40,6 +42,8 @@ Agent({
       <PLUGIN_ROOT>/skills/reviewing-pr-code/references/express-backend-review.md
       <PLUGIN_ROOT>/skills/reviewing-pr-code/references/nextjs-frontend-review.md
       <PLUGIN_ROOT>/skills/reviewing-pr-code/references/code-smells.md
+
+    Wherever those files write <PLUGIN_ROOT>, it means <the real absolute path>.
 
     Follow rubric.md exactly. Do not delegate further. Do not post anything —
     the caller posts after the user approves.
@@ -101,8 +105,12 @@ Wait. Nothing posts before an explicit yes.
 On yes, use the **post-pr-inline-comments** skill for every finding, pinned to
 its file and line. Docs-alignment findings post as a general note on the PR.
 
-Every comment obeys the comment contract in `references/rubric.md`: two
-sentences, then a ` ```suggestion ` block where the fix is code.
+Pass each PR's head SHA — the one you resolved in step 2 — through that skill's
+`--head-sha`. A batch posts many comments per PR, and without it every single
+one pays for its own `gh pr view`.
+
+Every comment obeys the comment contract in `references/rubric.md`, which is
+the single source of truth for comment form — do not restate its rules here.
 
 ## Gotchas
 
