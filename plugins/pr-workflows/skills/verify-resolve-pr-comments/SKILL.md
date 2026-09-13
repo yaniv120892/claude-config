@@ -1,6 +1,6 @@
 ---
 name: verify-resolve-pr-comments
-description: Use when re-checking your own inline review comments on a pull or merge request after the author says they fixed them — to independently verify each concern was genuinely addressed by the new commits and resolve only the ones that were. Triggers on "they fixed my comments", "re-check my review", "verify and resolve my PR/MR comments", "did they address my feedback".
+description: Use when re-checking your own inline review comments on a pull request after the author says they fixed them — to independently verify each concern was genuinely addressed by the new commits and resolve only the ones that were. Triggers on "they fixed my comments", "re-check my review", "verify and resolve my PR comments", "did they address my feedback".
 ---
 
 # Verify & Resolve My Own Review Comments
@@ -15,13 +15,13 @@ Otherwise, spawn a subagent to run the full flow (it needs Bash access for the p
 
 ```
 Agent({
-  description: "Verify and resolve MR comments",
+  description: "Verify and resolve PR comments",
   model: "sonnet",
   run_in_background: false,
   prompt: "You are the verify-resolve-pr-comments subagent. Invoke the
     verify-resolve-pr-comments skill yourself and follow it directly end-to-end — you
-    are the dispatched subagent, so do not delegate further. MR: <IID/URL>. Repo:
-    <group/subgroup/repo, if not the current directory>. Follow the destructive-action
+    are the dispatched subagent, so do not delegate further. PR: <number/URL>. Repo:
+    <owner/repo, if not the current directory>. Follow the destructive-action
     gates exactly as written (never resolve NOT/PARTIAL comments; ask before
     approving). Return the Step 6 verification table."
 })
@@ -29,7 +29,7 @@ Agent({
 
 Relay the subagent's verification table to the user, and handle the approval ask yourself if the subagent says it's pending.
 
-You left inline review comments on a GitLab MR. The author pushed commits and says "fixed it."
+You left inline review comments on a pull request. The author pushed commits and says "fixed it."
 Your job: independently re-read the NEW code, judge whether each of YOUR concerns is genuinely
 addressed, and resolve only the ones that are. Leave the rest open with a reason.
 
@@ -37,13 +37,13 @@ addressed, and resolve only the ones that are. Leave the rest open with a reason
 comment resolved without fixing it. You verify against the actual new code and CI — never against
 status.
 
-Repo-agnostic: pass `--repo <group/subgroup/repo>` to every command to target a repo other than the
+Repo-agnostic: pass `--repo <owner/repo>` to every command to target a repo other than the
 current working directory. All plumbing lives in `pr_review_comments.py` in this skill directory.
 
-## Step 1 — Get the MR IID
+## Step 1 — Get the PR number
 
-Require an MR IID or URL as input. From a URL, extract the trailing number
-(`.../-/merge_requests/2385` → `2385`). **If no IID/URL was given, STOP and ask** — do not guess
+Require a PR number or URL as input. From a URL, extract the trailing number
+(`.../pull/2385` → `2385`). **If no number/URL was given, STOP and ask** — do not guess
 from the current branch.
 
 ## Step 2 — List MY inline comments (resolved AND unresolved)
@@ -52,26 +52,38 @@ from the current branch.
 python3 pr_review_comments.py list --pr <NUMBER> [--repo <slug>]
 ```
 
-Returns JSON of every inline discussion whose first note is yours (matched against `glab api user`),
+Returns JSON of every inline thread whose first comment is yours (matched against `gh api user`),
 **including ones the author already marked resolved** — those are exactly the cases worth
-double-checking. Each entry gives you `discussion_id`, `resolved`, `file`, `old_line`/`new_line`,
-`posted_against_head_sha`, `current_head_sha`, `head_moved`, and the comment `body`.
+double-checking. The shape is `{"me": <login>, "threads": [...]}`, and each thread gives you
+exactly these fields:
 
-If `count` is 0, report that you have no inline comments to verify and stop.
+`thread_id`, `author`, `body`, `file_path`, `line`, `resolved`, `resolved_by`.
+
+`thread_id` is what Step 5's `resolve` takes. There is no per-comment SHA and no `head_moved`
+flag — Step 3 works from the diff instead.
+
+If `threads` is empty, report that you have no inline comments to verify and stop.
 
 ## Step 3 — See what actually changed at each comment's anchor
 
-Each comment carries the head SHA it was posted against. Diff that against the current head for the
-file to see what the author changed:
+Read the PR's own changes for the file the comment sits on:
 
 ```bash
-git fetch origin                       # ensure both SHAs are local (or `glab mr checkout <IID>`)
-git diff <posted_against_head_sha>..<current_head_sha> -- <file>
+git fetch origin pull/<NUMBER>/head
+git diff origin/<BASE_BRANCH>...FETCH_HEAD -- '<file_path>'
 ```
 
-When `head_moved` is `false`, nothing was pushed since your comment — the concern is untouched by
-definition; mark it **not fixed**. When the local clone lacks a SHA, fetch the MR ref or read the
-file at the current head via `glab api "projects/{id}/repository/files/{enc_path}?ref={head_sha}"`.
+Single-quote `<file_path>` — a `[tenant]`-style route folder is a shell glob and expands to
+nothing unquoted.
+
+Without a local clone, read the file at the current head instead:
+
+```bash
+gh api "repos/<slug>/contents/<PATH>?ref=<HEAD_SHA>" --jq '.content' | base64 -d | cat -n
+```
+
+Judge against the thread's `line` and `body`. If the file is absent from the diff entirely, nothing
+was changed there — mark it **not fixed** without further reading.
 
 ## Step 4 — Verify genuinely (this is the judgment, not the plumbing)
 
@@ -107,9 +119,9 @@ Call out separately any comment that was `resolved: true` but you judged **not**
 
 - **Never resolve a comment you judge NOT or PARTIAL.** Resolving is outward-facing and signals the
   author it's handled — only do it for genuinely-fixed concerns.
-- **Ask before approving the MR.** Do not run `glab mr approve` unprompted.
-- **Repo gotchas:** `glab mr approve` can return 401 on interactive re-auth, and the MR may already
-  be merged — check MR state before any approve/resolve and report it instead of erroring out.
+- **Ask before approving the PR.** Do not run `gh pr review --approve` unprompted.
+- **Repo gotchas:** `gh pr review --approve` cannot approve your own PR, and the PR may already
+  be merged — check PR state before any approve/resolve and report it instead of erroring out.
 
 ## Common Mistakes
 
@@ -119,4 +131,4 @@ Call out separately any comment that was `resolved: true` but you judged **not**
 | Skipping resolved comments | `list` returns them on purpose — they're the prime suspects |
 | Resolving a partial/unfixed comment to "clean up" | Leave it open with a reason; resolving is outward-facing |
 | Diffing against the wrong base | Use `posted_against_head_sha`..`current_head_sha`, not main |
-| Approving the MR without asking | Approval is outward-facing — ask first |
+| Approving the PR without asking | Approval is outward-facing — ask first |

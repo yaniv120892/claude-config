@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 set -uo pipefail
 
-# Runs after `gh pr merge` / `glab mr merge` and cleans up what the merge left
-# behind: the branch's worktree, the local branch, and a stale local default
-# branch. Every step is conditional on the forge confirming the change really
-# merged — `gh pr merge` exits non-zero when its own post-merge checkout step
-# fails even though the merge itself succeeded, so the exit code is not evidence.
+# Runs after `gh pr merge` and cleans up what the merge left behind: the
+# branch's worktree, the local branch, and a stale local default branch. Every
+# step is conditional on GitHub confirming the PR really merged — `gh pr merge`
+# exits non-zero when its own post-merge checkout step fails even though the
+# merge itself succeeded, so the exit code is not evidence.
 
 IFS= read -r -d '' payload
 
@@ -20,7 +20,7 @@ IFS=$'\t' read -r target payload_cwd < <(
 # Match a real merge invocation, not text that merely mentions one (a heredoc
 # writing this file, `echo "then gh pr merge"`, a grep pattern). Same reasoning
 # as the pre-push gate's git-push matcher.
-readonly MERGE_INVOCATION='(^|[;&|]|&&|\|\||\$\()[[:space:]]*(gh[[:space:]]+pr|glab[[:space:]]+mr)[[:space:]]+merge([[:space:];&|)]|$)'
+readonly MERGE_INVOCATION='(^|[;&|]|&&|\|\||\$\()[[:space:]]*gh[[:space:]]+pr[[:space:]]+merge([[:space:];&|)]|$)'
 grep -qE "$MERGE_INVOCATION" <<<"$target" || exit 0
 
 # `--auto` queues the merge behind CI rather than performing it, so there is
@@ -38,21 +38,14 @@ emit() {
       hookSpecificOutput: {hookEventName: "PostToolUse", additionalContext: $message}}'
 }
 
-# Ask the forge what actually happened. A change number in the command wins;
-# otherwise the forge resolves the PR/MR from the current branch.
-change_number=$(grep -oE '(gh[[:space:]]+pr|glab[[:space:]]+mr)[[:space:]]+merge[[:space:]]+[0-9]+' <<<"$target" | grep -oE '[0-9]+$')
+# Ask GitHub what actually happened. A PR number in the command wins; otherwise
+# gh resolves the PR from the current branch.
+pull_request_number=$(grep -oE 'gh[[:space:]]+pr[[:space:]]+merge[[:space:]]+[0-9]+' <<<"$target" | grep -oE '[0-9]+$')
 
-if command -v gh >/dev/null 2>&1 && gh repo view >/dev/null 2>&1; then
-  merged_state=$(gh pr view ${change_number:+"$change_number"} --json state --jq '.state' 2>/dev/null)
-  merged_branch=$(gh pr view ${change_number:+"$change_number"} --json headRefName --jq '.headRefName' 2>/dev/null)
-  default_branch=$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name' 2>/dev/null)
-elif command -v glab >/dev/null 2>&1; then
-  merged_state=$(glab mr view ${change_number:+"$change_number"} --output json 2>/dev/null | jq -r '.state | ascii_upcase')
-  merged_branch=$(glab mr view ${change_number:+"$change_number"} --output json 2>/dev/null | jq -r '.source_branch')
-  default_branch=$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null | sed 's#^origin/##')
-else
-  exit 0
-fi
+command -v gh >/dev/null 2>&1 && gh repo view >/dev/null 2>&1 || exit 0
+merged_state=$(gh pr view ${pull_request_number:+"$pull_request_number"} --json state --jq '.state' 2>/dev/null)
+merged_branch=$(gh pr view ${pull_request_number:+"$pull_request_number"} --json headRefName --jq '.headRefName' 2>/dev/null)
+default_branch=$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name' 2>/dev/null)
 
 [ "$merged_state" = "MERGED" ] || exit 0
 [ -n "$merged_branch" ] && [ "$merged_branch" != "null" ] || exit 0
@@ -93,7 +86,7 @@ fi
 
 # Delete the local branch. `-D`, not `-d`: a squash merge leaves the branch's
 # commits off the default branch, so `-d` refuses every branch this hook is
-# meant to clean up. The forge already confirmed the merge above.
+# meant to clean up. GitHub already confirmed the merge above.
 if [ "$branch_is_free" -eq 1 ] && git show-ref --quiet "refs/heads/$merged_branch"; then
   if [ "$(git branch --show-current 2>/dev/null)" = "$merged_branch" ]; then
     git checkout "$default_branch" >/dev/null 2>&1

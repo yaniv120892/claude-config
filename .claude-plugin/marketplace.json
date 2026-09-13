@@ -6,7 +6,7 @@
   "plugins": [
     {
       "name": "pr-workflows",
-      "description": "Forge-agnostic pull/merge request workflow — create, review, comment inline, verify CI, resolve threads, fix conflicts. Works on GitHub and GitLab.",
+      "description": "GitHub pull request workflow — create, review, comment inline, verify CI, resolve threads, fix conflicts.",
       "category": "engineering",
       "source": "./plugins/pr-workflows"
     },

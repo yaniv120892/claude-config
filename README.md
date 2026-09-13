@@ -46,7 +46,7 @@ Add `--profile work` or `--target ~/.claude-personal` for a second profile.
 
 | Plugin | Skills | What it does |
 | --- | --- | --- |
-| `pr-workflows` | 15 | Forge-agnostic change-request workflow: create, review (house rules plus a Fowler smell baseline), inline comments, CI verification, thread resolution, conflict fixing, the `steward` drive-to-green posture, feedback harvesting, posting an MR to Slack. Ships `/pr-review`, `lib/forge.py`, and `references/forge-cli.md` |
+| `pr-workflows` | 15 | GitHub pull request workflow: create, review (house rules plus a Fowler smell baseline, batched across PRs with a Notion docs-drift check), inline comments, CI verification, thread resolution, conflict fixing, the `steward` drive-to-green posture, feedback harvesting, posting a PR to Slack. Ships `/pr-review` and `lib/github.py` |
 | `dev-workflows` | 21 | `/ship` (scoping rounds through blind-QA'd PR, with a reproduce phase for bugs), brainstorming, plan writing and execution, TDD, subagent-driven development, worktree isolation, Docker-based service runs, drip-feed recurring maintenance, domain modeling (`CONTEXT.md` + ADRs), the `/flows` router, and the `wizard`/`research`/`retro`/`wait-what` helpers. Ships the pre-push quality-gate, post-merge cleanup, require-worktree, and default-branch-guard hooks |
 | `issue-tracker` | 3 | Jira ticket creation and status transitions, with a cached per-project transition map. Also files Linear issues against a fixed Why/Repro/Fix/Done-when/Signals template |
 | `infra-workflows` | 2 | Helm env vars across GitOps registries, and AWS SSM SecureString provisioning with an account guard. Ships `provision_ssm.sh` |
@@ -61,19 +61,17 @@ Enable or disable a whole plugin per profile through `enabledPlugins` in
 `settings.json` — that replaces maintaining a `skillOverrides` list of individual
 skill names.
 
-### Forge-agnostic by construction
+### One CLI, no tokens in scripts
 
-The PR skills detect GitHub or GitLab from the origin remote and drive `gh` or
-`glab` accordingly. Their scripts share `lib/forge.py`, which normalises the
-parts the forges genuinely disagree on — inline-comment position payloads, thread
-resolution (REST on GitLab, GraphQL on GitHub), and merge-base resolution — and
-routes every API call through `gh api` / `glab api` so **no script ever reads a
-token**.
+The PR skills drive `gh` and nothing else. Their scripts share `lib/github.py`,
+which owns the parts worth writing once — inline-comment position payloads,
+thread resolution (GraphQL, since REST cannot express it), merge-base resolution
+— and routes every API call through `gh api` so **no script ever reads a token**.
 
 ```sh
-# smoke-test the forge layer from inside any repo
-python3 ~/.claude/plugins/.../pr-workflows/lib/forge.py
-# → forge=github cli=gh repo=owner/name
+# smoke-test the layer from inside any repo
+python3 ~/.claude/plugins/.../pr-workflows/lib/github.py
+# → repo=owner/name
 ```
 
 Scripts resolve `${CLAUDE_PLUGIN_ROOT}` when installed and fall back to walking up

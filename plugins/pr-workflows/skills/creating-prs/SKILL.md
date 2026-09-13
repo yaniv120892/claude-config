@@ -1,35 +1,25 @@
 ---
 name: creating-prs
 disable-model-invocation: true
-description: Use when creating a pull request or merge request for a feature, bugfix, or docs change — enforces the quality gate, conventional-commit title format, description structure, and separation of environment-specific changes. Works on GitHub (gh) and GitLab (glab).
+description: Use when creating a pull request for a feature, bugfix, or docs change — enforces the quality gate, conventional-commit title format, description structure, and separation of environment-specific changes.
 ---
 
-# Creating Pull / Merge Requests
+# Creating Pull Requests
 
 ## Overview
 
-A change request's title and description are not cosmetic — conventional-commit
+A pull request's title and description are not cosmetic — conventional-commit
 titles drive release automation and changelog generation, and the description is
 the only context reviewers and future readers get.
 
-**Core principle:** get the gate right before opening anything. A change request
+**Core principle:** get the gate right before opening anything. A pull request
 opened on a dirty tree, a stale branch, or a failing build costs more to unwind
 than it saved.
-
-## Forge
-
-Detect the forge once from the origin remote and use the matching CLI. The
-command mapping is in `${CLAUDE_PLUGIN_ROOT}/references/forge-cli.md` — read it rather than
-guessing flags.
-
-```bash
-git remote get-url origin   # github.com → gh,  gitlab → glab
-```
 
 ## The Gate Function
 
 ```
-BEFORE creating any change request:
+BEFORE creating any pull request:
 
 1. QUALITY GATE: Run pre-push-quality-gate (syncs with the base, then every check)
 2. VERIFY GIT STATE: clean tree, fresh target, branch up to date
@@ -53,7 +43,7 @@ Pre-flight git checks:
 
 ## Issue Tracker Reference
 
-Some projects require every change request to reference a tracked issue; others
+Some projects require every pull request to reference a tracked issue; others
 have no tracker at all. **Follow the project's own convention — do not invent
 one, and do not block on a ticket in a project that does not use tickets.**
 
@@ -62,7 +52,7 @@ one, and do not block on a ticket in a project that does not use tickets.**
   (`feature/ABC-123-desc` → `ABC-123`), verify it exists via whatever tracker
   integration is configured, and gate on it. If the branch has no key, ask.
 - **Project uses GitHub issues**: reference them as `#123` in the description and
-  let GitHub link them. Use `Closes #123` when the change request should close it.
+  let GitHub link them. Use `Closes #123` when the pull request should close it.
 - **Project has no tracker** (most personal projects): skip this step entirely
   and use the scopeless title form below.
 
@@ -98,12 +88,12 @@ above — never a placeholder.
 
 ## Environment-Specific Changes
 
-**Create SEPARATE change requests when a change affects both dev and prod:**
+**Create SEPARATE pull requests when a change affects both dev and prod:**
 
 1. Create `branch-name-dev` with only the dev changes.
-2. Open change request #1 for dev.
+2. Open pull request #1 for dev.
 3. Create `branch-name-prod` with only the prod changes.
-4. Open change request #2 for prod.
+4. Open pull request #2 for prod.
 5. Note in #2's description: "Merge after dev validation (#<first>)".
 
 **Why separate?** Validate dev before touching prod, roll back more easily, and
@@ -132,26 +122,11 @@ The description body comes from `writing-pr-description`.
 git push -u origin HEAD
 ```
 
-**GitHub:**
-
 ```bash
 gh pr create \
   --base main \
   --title "feat(scope): Description" \
   --body "$(cat <<'EOF'
-<description body from writing-pr-description>
-EOF
-)"
-```
-
-**GitLab:**
-
-```bash
-glab mr create \
-  --source-branch "$(git branch --show-current)" \
-  --target-branch main \
-  --title "feat(SCOPE-1): Description" \
-  --description "$(cat <<'EOF'
 <description body from writing-pr-description>
 EOF
 )"
@@ -181,7 +156,7 @@ confirmation.
 | Mistake | Fix |
 |---------|-----|
 | Title missing the conventional-commit type | Follow the pattern exactly — the title drives automation |
-| Combining dev+prod in one change request | Separate branches, separate requests |
+| Combining dev+prod in one pull request | Separate branches, separate requests |
 | No motivation section | Add 2–4 sentences on product/engineering value |
 | Generic description ("Added changes") | Be specific about what changed and why |
 | Lowercase issue key `(abc-20)` | Uppercase: `(ABC-20)` |
@@ -206,8 +181,8 @@ confirmation.
   until it passes.
 - **Branch not on remote** — `git push -u origin HEAD`.
 - **Wrong project** — check the remote with `git remote -v`.
-- **Auth issues** — `gh auth login` or `glab auth login`.
-- **CLI missing** — `brew install gh` or `brew install glab`.
+- **Auth issues** — `gh auth login`.
+- **CLI missing** — `brew install gh`.
 
 ## Why This Matters
 
