@@ -57,10 +57,11 @@ Returns JSON of every inline thread whose first comment is yours (matched agains
 double-checking. The shape is `{"me": <login>, "threads": [...]}`, and each thread gives you
 exactly these fields:
 
-`thread_id`, `author`, `body`, `file_path`, `line`, `resolved`, `resolved_by`.
+`thread_id`, `node_id`, `author`, `body`, `file_path`, `line`, `resolved`, `resolved_by`.
 
-`thread_id` is what Step 5's `resolve` takes. There is no per-comment SHA and no `head_moved`
-flag — Step 3 works from the diff instead.
+`thread_id` is what Step 5's `resolve` takes. Pass the thread's `node_id` to it too — without it
+every call pages through all of the PR's threads again just to find that one. There is no
+per-comment SHA and no `head_moved` flag — Step 3 works from the diff instead.
 
 If `threads` is empty, report that you have no inline comments to verify and stop.
 
@@ -100,7 +101,7 @@ loudly** — that is the failure mode this skill exists to catch.
 ## Step 5 — Resolve ONLY the genuinely-fixed comments
 
 ```bash
-python3 pr_review_comments.py resolve --pr <NUMBER> --thread <THREAD_ID> [--repo ...]
+python3 pr_review_comments.py resolve --pr <NUMBER> --thread <THREAD_ID> --node-id <NODE_ID> [--repo ...]
 ```
 
 Run once per confirmed comment. Leave **partial** and **not** open — their continued existence is the

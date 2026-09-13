@@ -99,7 +99,7 @@ If any comment is **not actually fixed** — regardless of who resolved it — s
 For each of my threads that is not already resolved by me and whose concern is confirmed fixed:
 
 ```bash
-python3 ../verify-resolve-pr-comments/pr_review_comments.py resolve --pr <NUMBER> --thread <ID> --repo <slug>
+python3 ../verify-resolve-pr-comments/pr_review_comments.py resolve --pr <NUMBER> --thread <ID> --node-id <NODE_ID> --repo <slug>
 ```
 
 Run in parallel. Skip threads already resolved by me.

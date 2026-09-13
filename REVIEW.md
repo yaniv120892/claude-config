@@ -1,5 +1,20 @@
 # Config review — what was kept, generalized, and dropped
 
+> **Historical snapshot, not current state.** This records the one-off extraction
+> pass and the reasoning behind it. Read it for *why* things were shaped this way;
+> do not trust its file names or counts. Since it was written:
+>
+> - **The forge layer is gone.** `lib/forge.py` and `references/forge-cli.md` were
+>   deleted and GitLab support dropped — everything routes through `gh` and
+>   `lib/github.py`. Every `glab`, "dual fetch", and "detect the forge" claim below
+>   describes code that no longer exists.
+> - **`pr-review-workflow` was deleted** and `reviewing-pr-code` reduced to a holder
+>   for its stack reference files. One `pr-review` skill replaced all three review
+>   paths.
+> - **The open question at the end about `reviewing-pr-code` overlapping the built-in
+>   `/code-review` is settled** — that overlap is what the consolidation removed.
+> - Skill counts have moved; `git ls-files` is the answer, not the tables here.
+
 A pass over the whole Claude Code setup while extracting it into this repo:
 45 unique skills across two profiles, 4 rule files, 3 slash commands, 2 settings
 files, 1 hook, 1 MCP server.

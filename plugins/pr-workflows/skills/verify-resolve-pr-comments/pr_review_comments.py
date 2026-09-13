@@ -49,7 +49,9 @@ def main() -> int:
             status = github.latest_ci_status(arguments.pr, arguments.repo)
             print(json.dumps(status, indent=2))
             return 0
-        github.resolve_thread(arguments.pr, arguments.thread, arguments.repo)
+        github.resolve_thread(
+            arguments.pr, arguments.thread, arguments.repo, arguments.node_id
+        )
         print(f"OK resolved thread={arguments.thread}")
         return 0
     except github.GitHubError as error:
@@ -94,6 +96,11 @@ def parse_arguments() -> argparse.Namespace:
         github.add_pull_request_arguments(subparser)
         if command_name == "resolve":
             subparser.add_argument("--thread", required=True, help="Thread id")
+            subparser.add_argument(
+                "--node-id",
+                default=None,
+                help="node_id from `list`; skips a paged walk of every thread",
+            )
 
     return parser.parse_args()
 
