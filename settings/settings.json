@@ -32,7 +32,10 @@
     ],
     "defaultMode": "auto"
   },
-  "model": "Opus",
+  "model": "opus",
+  "env": {
+    "CLAUDE_CODE_SUBAGENT_MODEL": "opus"
+  },
   "effortLevel": "high",
   "tui": "fullscreen",
   "theme": "dark",
