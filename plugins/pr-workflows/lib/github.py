@@ -358,9 +358,11 @@ def list_review_threads(
 
     Returns:
         A list of dicts with `thread_id`, `author`, `body`, `file_path`, `line`,
-        `resolved`, and `resolved_by`, one entry per thread. `thread_id` is the
-        opening comment's REST id, which is what `reply_to_thread` and
-        `resolve_thread` take.
+        `resolved`, `resolved_by`, `last_author`, and `reply_count`, one entry
+        per thread. `thread_id` is the opening comment's REST id, which is what
+        `reply_to_thread` and `resolve_thread` take. `last_author` is whoever
+        spoke in the thread most recently — the only way a caller can tell an
+        unanswered thread from one it has already replied to.
 
     Raises:
         GitHubError: If the threads cannot be read.
@@ -371,33 +373,49 @@ def list_review_threads(
     threads = _all_review_thread_nodes(
         target_slug,
         number,
-        "isResolved resolvedBy{login} path line originalLine "
-        "comments(first:1){nodes{databaseId author{login} body}}",
+        "id isResolved resolvedBy{login} path line originalLine "
+        "comments(first:1){totalCount nodes{databaseId author{login} body}} "
+        "latestComment:comments(last:1){nodes{author{login}}}",
     )
 
     listed = []
     for thread in threads:
-        comments = thread["comments"]["nodes"]
-        if not comments:
+        comments = thread["comments"]
+        opening_nodes = comments["nodes"]
+        if not opening_nodes:
             continue
-        opening_comment = comments[0]
+        opening_comment = opening_nodes[0]
         resolved_by = thread.get("resolvedBy") or {}
         author = opening_comment.get("author") or {}
+        latest_nodes = (thread.get("latestComment") or {}).get("nodes") or []
+        latest_author = (latest_nodes[-1].get("author") if latest_nodes else None) or {}
         listed.append(
             {
                 "thread_id": str(opening_comment["databaseId"]),
+                # Hand back to resolve_thread to skip its lookup, which pages
+                # through every thread on the pull request to map one REST id.
+                "node_id": thread.get("id"),
                 "author": author.get("login"),
                 "body": opening_comment["body"],
                 "file_path": thread.get("path"),
                 "line": thread.get("line") or thread.get("originalLine"),
                 "resolved": bool(thread["isResolved"]),
                 "resolved_by": resolved_by.get("login"),
+                # Falls back to the opening author so a single-comment thread,
+                # and any caller stubbing the older selection, still reads true.
+                "last_author": latest_author.get("login") or author.get("login"),
+                "reply_count": max(comments.get("totalCount", 1) - 1, 0),
             }
         )
     return listed
 
 
-def resolve_thread(number: str, thread_id: str, repo_slug: str | None = None) -> None:
+def resolve_thread(
+    number: str,
+    thread_id: str,
+    repo_slug: str | None = None,
+    node_id: str | None = None,
+) -> None:
     """Mark a review thread resolved.
 
     Thread resolution exists only in GraphQL, so the REST id from
@@ -407,11 +425,15 @@ def resolve_thread(number: str, thread_id: str, repo_slug: str | None = None) ->
         number: Pull request number.
         thread_id: Thread id from `list_review_threads`.
         repo_slug: Optional repository slug.
+        node_id: The thread's GraphQL node id, as `list_review_threads` already
+            reported it. Omitting it costs a full paged walk of the pull
+            request's threads per call, which a caller resolving several pays
+            once each.
 
     Raises:
         GitHubError: If the thread cannot be resolved.
     """
-    node_id = _thread_node_id(number, thread_id, repo_slug)
+    node_id = node_id or _thread_node_id(number, thread_id, repo_slug)
     mutation = (
         "mutation($threadId:ID!){resolveReviewThread(input:{threadId:$threadId})"
         "{thread{isResolved}}}"
@@ -556,6 +578,13 @@ def _graphql(query: str, variables: dict[str, Any]) -> Any:
     """
     command = ["gh", "api", "graphql", "-f", f"query={query}"]
     for name, value in variables.items():
+        # A None would go on the wire as the string "None". GitHub answers a
+        # bogus `after` cursor by silently skipping threads instead of erroring:
+        # the first page comes back short with hasNextPage false, so the caller
+        # sees a clean partial answer and reports comments that do not exist.
+        # An omitted nullable variable is null, which is what a first page wants.
+        if value is None:
+            continue
         command += ["-F", f"{name}={value}"]
 
     try:

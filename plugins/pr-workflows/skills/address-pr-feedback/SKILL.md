@@ -36,15 +36,26 @@ and confirm the user still wants replies/fixes before pushing anything.
 ## Step 2 — List the incoming comments
 
 ```bash
-python3 pr_feedback.py list --pr <NUMBER> [--repo <slug>]
+python3 pr_feedback.py list --pr <NUMBER> [--repo <slug>] [--all]
 ```
 
-Returns `{"me": <login>, "threads": [...]}` — every **inline** reviewer thread, resolved and
-unresolved, excluding your own. Each thread gives you exactly these fields:
+Returns `{"me": <login>, "threads": [...]}` — every **inline** thread still waiting on you,
+resolved and unresolved. Each thread gives you exactly these fields:
 
-`thread_id`, `author`, `body`, `file_path`, `line`, `resolved`, `resolved_by`.
+`thread_id`, `node_id`, `author`, `body`, `file_path`, `line`, `resolved`, `resolved_by`,
+`last_author`, `reply_count`, `yours`, `answered`.
 
-`thread_id` is what Step 6's `reply` and `resolve` take. If `threads` is empty, report that and stop.
+A thread drops out only once it has a reply and that reply is yours. **`yours: true` threads are
+in the list and are usually the important ones** — the PR author commenting on their own diff is
+ordinary, and those comments outrank a bot's. Never skip one because you wrote it.
+
+Replies post under the same account as your own comments, so a thread where you commented and then
+replied to yourself reads as answered. `--all` lists everything, including answered threads — use it
+when you want to re-check what you already said.
+
+`thread_id` is what Step 6's `reply` and `resolve` take. Pass the thread's `node_id` to `resolve`
+too — without it every call pages through all of the PR's threads again just to find that one. If
+`threads` is empty, report that and stop.
 
 **General PR comments are not in this list.** It is backed by GraphQL `reviewThreads`, which only
 covers threads anchored to a line. Read general notes separately and ignore the non-actionable ones

@@ -18,6 +18,8 @@ def thread_node(
     is_resolved: bool,
     resolved_by: dict | None,
     comments: list | None = None,
+    last_login: str | None = None,
+    total_comments: int = 1,
 ) -> dict:
     """Build one reviewThreads node the way GraphQL returns it."""
     return {
@@ -27,10 +29,12 @@ def thread_node(
         "line": None,
         "originalLine": 42,
         "comments": {
+            "totalCount": total_comments,
             "nodes": comments
             if comments is not None
-            else [{"databaseId": database_id, "author": {"login": login}, "body": "b"}]
+            else [{"databaseId": database_id, "author": {"login": login}, "body": "b"}],
         },
+        "latestComment": {"nodes": [{"author": {"login": last_login or login}}]},
     }
 
 
@@ -40,6 +44,7 @@ def main() -> int:
         thread_node(1, "reviewer", False, None),
         thread_node(2, "reviewer", True, {"login": "author"}),
         thread_node(3, "ghost-deleted-user", True, {"login": "reviewer"}, comments=[]),
+        thread_node(4, "reviewer", False, None, last_login="author", total_comments=3),
     ]
     github._graphql = lambda query, variables: {
         "data": {"repository": {"pullRequest": {"reviewThreads": {"nodes": nodes}}}}
@@ -48,15 +53,22 @@ def main() -> int:
     threads = github.list_review_threads("1", "owner/repo")
 
     # The empty-comments node is skipped, so it never reaches the mapping.
-    assert len(threads) == 2, threads
-    assert [t["thread_id"] for t in threads] == ["1", "2"], threads
-    assert [t["resolved"] for t in threads] == [False, True], threads
-    assert [t["resolved_by"] for t in threads] == [None, "author"], threads
+    assert len(threads) == 3, threads
+    assert [t["thread_id"] for t in threads] == ["1", "2", "4"], threads
+    assert [t["resolved"] for t in threads] == [False, True, False], threads
+    assert [t["resolved_by"] for t in threads] == [None, "author", None], threads
     # line is null until a thread's diff hunk survives a force-push; fall back.
     assert threads[0]["line"] == 42, threads[0]
     assert threads[0]["file_path"] == "src/thing.ts", threads[0]
 
-    print("ok — list_review_threads maps resolution, authorship, and line fallback")
+    # Who spoke last is what says whether a thread is still waiting on a reply.
+    assert threads[0]["last_author"] == "reviewer", threads[0]
+    assert threads[0]["reply_count"] == 0, threads[0]
+    assert threads[2]["author"] == "reviewer", threads[2]
+    assert threads[2]["last_author"] == "author", threads[2]
+    assert threads[2]["reply_count"] == 2, threads[2]
+
+    print("ok — list_review_threads maps resolution, authorship, recency, and line fallback")
     return 0
 
 

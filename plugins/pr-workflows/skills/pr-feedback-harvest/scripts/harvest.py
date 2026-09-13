@@ -19,6 +19,7 @@ import json
 import os
 import sys
 from collections import Counter
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, timedelta
 from typing import Any
 from urllib.parse import quote
@@ -35,6 +36,11 @@ import github  # noqa: E402
 
 # Accounts that post automated, non-review noise. Extend as you discover more.
 NOISE_AUTHOR_SUBSTRINGS = ("service_account", "_bot_", "semantic-release", "[bot]")
+
+# Concurrent `gh api` calls when reading each pull request's comments. Kept well
+# under GitHub's secondary rate limit, which throttles bursts of concurrent
+# requests from one token regardless of the hourly quota.
+COMMENT_FETCH_WORKERS = 8
 
 
 def main() -> int:
@@ -63,9 +69,16 @@ def main() -> int:
         print(f"No merged pull requests by {author} since {since_date}.")
         return 0
 
-    all_comments: list[dict[str, Any]] = []
-    for pull_request in pull_requests:
-        all_comments += fetch_comments(pull_request)
+    # One `gh` subprocess per pull request, and a sprint's harvest spans dozens
+    # across several repositories. They are independent reads, so the wall clock
+    # is the sum of them only if they run one at a time. Ordered by pull request
+    # so a rerun of the same window produces a byte-identical report to diff.
+    with ThreadPoolExecutor(max_workers=COMMENT_FETCH_WORKERS) as pool:
+        per_pull_request = pool.map(fetch_comments, pull_requests)
+
+    all_comments: list[dict[str, Any]] = [
+        comment for comments in per_pull_request for comment in comments
+    ]
 
     buckets = bucket_comments(all_comments, author)
     report = {

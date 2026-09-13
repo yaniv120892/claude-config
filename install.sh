@@ -94,10 +94,16 @@ link "$REPO_DIR/rules"              "$SHARED_HOME/rules"
 link "$REPO_DIR/rules-reference.md" "$SHARED_HOME/rules-reference.md"
 link "$REPO_DIR/statusline-command.sh" "$SHARED_HOME/statusline-command.sh"
 
-# Profile-scoped pieces. Skills, commands, and hooks are intentionally absent —
-# they are installed as plugins, which keeps existing skills untouched.
+# Profile-scoped pieces. Skills, commands, and plugin hooks are intentionally
+# absent — they install as plugins, which keeps existing skills untouched.
 link "$REPO_DIR/keybindings.json"             "$TARGET/keybindings.json"
 link "$REPO_DIR/profiles/$PROFILE/CLAUDE.md"  "$TARGET/CLAUDE.md"
+
+# The exception: settings.json declares this PreToolUse hook itself, so no
+# plugin owns it and nothing else would put it on disk. It is referenced as
+# $HOME/.claude/hooks/, hence SHARED_HOME rather than TARGET.
+link "$REPO_DIR/settings/hooks/require-git-approval.sh" \
+     "$SHARED_HOME/hooks/require-git-approval.sh"
 
 # settings.json is copied, not linked: Claude Code writes machine-local state
 # into it, which must not flow back into the repo.
