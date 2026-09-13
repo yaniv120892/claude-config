@@ -67,5 +67,18 @@
     "pr-workflows@yaniv-claude-config": true,
     "dev-workflows@yaniv-claude-config": true,
     "cmux@yaniv-claude-config": true
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "p=$PPID; while [ \"${p:-1}\" -gt 1 ] && ! ps -o comm= -p \"$p\" | grep -q 'claude$'; do p=$(ps -o ppid= -p \"$p\" | tr -d ' '); done; [ \"${p:-1}\" -gt 1 ] && { pgrep -qf \"caffeinate -is -w $p\\$\" || nohup caffeinate -is -w \"$p\" >/dev/null 2>&1 & }; exit 0",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
   }
 }
