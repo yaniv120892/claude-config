@@ -66,7 +66,7 @@ Classify the diff before writing a word. The full structure is the default, but 
 |---|---|---|
 | Only documentation | [Docs-Only](#short-form-for-docs-only-changes) | Motivation + Implementation. **No Proof of Work.** |
 | Only configuration | [Config-Only](#short-form-for-config-only-changes) | One prose block + a before/after table. Nothing else. |
-| A package bump + call-sites | [Package Bump](#short-form-for-a-package-bump) | Motivation + Implementation + one-line Proof of Work |
+| A package bump + call-sites | [Package Bump](#short-form-for-a-package-bump) | Motivation + Implementation. **No Proof of Work.** |
 | Anything else, or a mix | [Full structure](#structure-the-default) | All three, **plus `## Verify on dev` if the risk is deploy-shaped** |
 
 **A mix falls back to the full structure.** If a PR changes docs *and* application code, it is not a docs PR — describe the code change properly. The short forms are for PRs where the excluded section would be genuinely empty, not for PRs where gathering it is inconvenient.
@@ -124,11 +124,11 @@ For PRs whose primary change is **bumping a shared package version** (e.g. `@mod
 
 - <File>: <what changed, one line per file>.
 - Bumps `<package>` to `<version>`.
-
-## Proof of Work
-
-✅ Build, lint, and prettier pass.
 ```
+
+There is no Proof of Work section here: a version bump has no runtime behaviour of its own to
+demonstrate, and a green pipeline is not evidence. Where the bump exists to make a new export
+reachable, show *that* instead — the call site now using it, or the value it resolves to.
 
 ## Short Form for Config-Only Changes
 
@@ -244,7 +244,14 @@ Related decisions belong in **one** bullet, not one each. Three bullets that all
 
 Evidence that the change works **in practice**, not just in tests. Reviewers need to trust the change before merging.
 
-**Length: 3–5 bullets, one line each.** Lead each with the claim in bold, then the evidence — `**The redaction is proven able to fail.** Un-redacting turns 3 of 8 cases red.` A bullet that needs a paragraph is describing the implementation again. Consolidate suite/lint/typecheck results into **one** trailing line at most, never a bullet each.
+**Length: 3–5 bullets, one line each.** Lead each with the claim in bold, then the evidence — `**The redaction is proven able to fail.** Un-redacting turns 3 of 8 cases red.` A bullet that needs a paragraph is describing the implementation again.
+
+**Never report tests, lint, typecheck, or the build passing — not as a bullet, and not as a trailing
+line.** CI already says so, in a place the reviewer trusts more than the description. Repeating it
+spends the reader's attention on the one claim in the section that carries no information, and it
+pads a green tick into evidence it is not. Proof of Work is for what CI cannot show.
+A test is worth naming only when it is doing something a passing suite does not: a spec **proven to
+bite**, where reverting the fix turns it red, is evidence about the change. "Tests pass" is not.
 
 **Close with a `**Not proven locally:**` line** naming what this evidence could not cover. That line is the raw material for `## Verify on dev` below — if it names something only a deployed environment can settle, that section is required.
 
