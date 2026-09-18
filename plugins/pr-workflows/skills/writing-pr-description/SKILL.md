@@ -303,7 +303,7 @@ done in 41s, peak RSS 412MB
 **Not proven locally:** the dev pod is capped at 4Gi, half this laptop's headroom.
 ````
 
-- **The test suite is not part of this.** Running it while you work is good practice; pasting the result here is not, because CI already shows the reviewer that, and a green `ok` sitting in this section reads like evidence without being any. If the only thing you ran was the tests, the proof is still missing — go drive the actual code path.
+- **No sentence about the tests belongs here, including as a footnote after real evidence.** The shape to catch yourself writing is "Also ran/added the new `x.test.ts` (`→ ok`)", tacked on at the end because it felt generous. The reviewer sees that file in the diff and its result in CI, so it tells them nothing new, while implying the suite was part of what proved the change. Cut the sentence — what you ran above already carries the section.
 - **Both halves, same command.** One-sided output proves the code runs, not that it fixes anything.
 - **Say how you ran it** — the command, the script, the endpoint — so a reviewer can reproduce it. Paste a short script inline in a fenced block, or commit it and name the path.
 - **Paste real output**, trimmed to the lines carrying the claim. A description of the output is not the output.
@@ -338,12 +338,13 @@ Then add a box for anything only the deployed accounts can settle: a value the e
 **Only dev can prove:** `TRANSACTION_ROUTING_KEY` matches the SNS `filterPolicy` — that pairing exists only in the deployed accounts.
 
 - [ ] **Rollout finished and the service answers** — `kubectl -n dev rollout status deploy/<deployment>`, then `curl -s "$DEV_API/health"` → `{"status":"ok"}`
-- [ ] **Existing jobs still complete** — submit a normal job, `curl -s "$DEV_API/jobs/<id>" | jq .status` → `completed`
+- [ ] **Existing jobs still complete** — `curl -sX POST "$DEV_API/jobs" -d @sample.json | jq -r .id`, then `curl -s "$DEV_API/jobs/<id>" | jq .status` → `completed`
 - [ ] **The new path runs on dev** — same check as Proof of Work: `kubectl -n dev logs deploy/<deployment> | grep 'transaction settled'` shows a non-null ticket
 - [ ] **Memory stays flat under the same batch** — `kubectl -n dev top pod -l app=<app>` well under the 4Gi limit
 ```
 
 - **Every box names a command and the outcome that command should show** — the sanity box included. It is the one that tends to get written as "a normal request still works", with no way for the next person to run it.
+- **A check that takes several calls is still a command.** Write the loop or the sequence — `for i in $(seq 1 5); do curl -s -o /dev/null -w '%{http_code} ' "$DEV_API/"; done` → `200 200 200 429 429` — rather than "send more requests than the limit allows". Prose is where these boxes decay: the multi-step ones get described, and whoever picks the list up has to reinvent the check.
 - A green pipeline never settles a box — nothing in CI runs the deployed image.
 - Omit the section only when nothing about the change reaches a deployed environment.
 
