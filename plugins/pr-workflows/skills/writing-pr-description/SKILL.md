@@ -78,6 +78,7 @@ When one is found:
 - **Say so.** Open the report to the user with "this repo has a PR template at `<path>` — filling that in" so nobody wonders why the headings differ from the usual four.
 - **Keep its headings, their wording, and their order.** Also keep its checklists, and tick the boxes honestly.
 - **Map this skill's guidance onto its sections by intent, not by name** — a "Why"/"Context"/"Background" section gets the plain-language Motivation, "What"/"Changes"/"How" gets the file-anchored Implementation, "Testing"/"Evidence"/"Screenshots" gets the before/after run, and "QA"/"Rollout"/"Post-deploy" gets the acceptance criteria.
+- **A "Summary" or "TL;DR" slot wants one plain sentence of what the PR does**, in the Motivation's register. Opening it with file names puts the Implementation in the wrong box and leaves the reader no plain-language answer anywhere.
 - **Replace the author instructions with the answer.** An HTML comment or a `<placeholder>` prompting for content goes away once the content is there.
 - **A section with nothing to say keeps its heading and gets one honest line** ("No user-facing change — nothing to check after deploy"). Deleting a heading the team agreed on is overriding the template; this rule outranks the usual "an empty section is worse than an absent one".
 - **Add a heading of your own only for something the template has no home for** — usually the before/after run — and append it at the end rather than interleaving it with the template's sections.
@@ -302,10 +303,11 @@ done in 41s, peak RSS 412MB
 **Not proven locally:** the dev pod is capped at 4Gi, half this laptop's headroom.
 ````
 
+- **The test suite is not part of this.** Running it while you work is good practice; pasting the result here is not, because CI already shows the reviewer that, and a green `ok` sitting in this section reads like evidence without being any. If the only thing you ran was the tests, the proof is still missing — go drive the actual code path.
 - **Both halves, same command.** One-sided output proves the code runs, not that it fixes anything.
 - **Say how you ran it** — the command, the script, the endpoint — so a reviewer can reproduce it. Paste a short script inline in a fenced block, or commit it and name the path.
 - **Paste real output**, trimmed to the lines carrying the claim. A description of the output is not the output.
-- **Close with `**Not proven locally:**`** naming what the run could not reach. That line is the raw material for `## Verify on dev`.
+- **Close with `**Not proven locally:**`** naming what the run could not reach. `## Verify on dev` opens with that same thought as its `**Only dev can prove:**` line — write it once and carry it down, rather than saying it twice in different words.
 - Where there is genuinely no *before* — a brand-new endpoint — the 404 from the base branch is the before. Show it.
 
 **What counts as the run:**
@@ -316,11 +318,9 @@ done in 41s, peak RSS 412MB
 - For a UI flow, a numbered frame sequence (`01-empty-form.png` → `04-success.png`) or a GIF — the route, not just the destination. `gh` cannot attach media to a PR body, so these get dragged in through the web UI; cite a frame only once it is actually attached.
 - A script that imports the real module and runs on real data shapes — labeled `Script output:`, not dressed up as a live service call.
 
-Test results, lint, typecheck and build status stay out of this section entirely. They are the baseline, the reviewer already sees them on the PR, and a line claiming them is the most common substitute for evidence nobody gathered.
-
 ### Verify on dev
 
-Acceptance criteria for after the merge deploys: what someone opens, runs, and looks at to call this change good on dev. The thinking already happened while gathering proof — this is the `**Not proven locally:**` line turned into a checklist, plus the sanity checks that say the service survived the deploy at all.
+Acceptance criteria for after the merge deploys: what someone opens, runs, and looks at to call this change good on dev. The thinking already happened while gathering proof — this is the `**Not proven locally:**` line carried down and turned into a checklist, plus the sanity checks that say the service survived the deploy at all. The framing line here restates that gap for a reader who starts at this heading; it does not need new words for the same idea.
 
 **Include it whenever the change ships inside a deployed service.** It is always at least these three, in this order:
 
@@ -343,7 +343,7 @@ Then add a box for anything only the deployed accounts can settle: a value the e
 - [ ] **Memory stays flat under the same batch** — `kubectl -n dev top pod -l app=<app>` well under the 4Gi limit
 ```
 
-- **Every box names a command and the outcome that command should show.** "Check it works" is the same omission wearing a heading.
+- **Every box names a command and the outcome that command should show** — the sanity box included. It is the one that tends to get written as "a normal request still works", with no way for the next person to run it.
 - A green pipeline never settles a box — nothing in CI runs the deployed image.
 - Omit the section only when nothing about the change reaches a deployed environment.
 
