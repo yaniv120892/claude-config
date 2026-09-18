@@ -344,7 +344,8 @@ Then add a box for anything only the deployed accounts can settle: a value the e
 ```
 
 - **Every box names a command and the outcome that command should show** — the sanity box included. It is the one that tends to get written as "a normal request still works", with no way for the next person to run it.
-- **A check that takes several calls is still a command.** Write the loop or the sequence — `for i in $(seq 1 5); do curl -s -o /dev/null -w '%{http_code} ' "$DEV_API/"; done` → `200 200 200 429 429` — rather than "send more requests than the limit allows". Prose is where these boxes decay: the multi-step ones get described, and whoever picks the list up has to reinvent the check.
+- **A check that takes several calls is still a command.** Write the loop or the sequence — `for i in $(seq 1 5); do curl -s -o /dev/null -w '%{http_code} ' "$DEV_API/" -H 'x-api-key: <key>'; done` → `200 200 200 429 429` — rather than "send more requests than the limit allows".
+- **You will not know dev's real values, and that is not a reason to fall back to prose.** Write the command with the blank left in it — `$DEV_API`, `<api-key>`, `<job-id>`, `$RATE_LIMIT_MAX` — because a command with one blank to fill beats a sentence the next person has to reconstruct a command from. The boxes that decay into description are almost always the ones where a value was unknown, and that is precisely where the reader needs the shape of the call.
 - A green pipeline never settles a box — nothing in CI runs the deployed image.
 - Omit the section only when nothing about the change reaches a deployed environment.
 
