@@ -40,7 +40,7 @@ Agent({
 
 Fill in the repo path, ticket, and base branch from what you already know in this conversation. Report the subagent's result back to the user when it completes.
 
-**Core principle — short and concise; the diff is the spec.** The reviewer can read the code. Spend words only where reasoning is *not* recoverable from the diff: the *why* (Motivation), non-obvious decisions or trade-offs, and evidence it works (Proof of Work). Keep Implementation as short as possible — it points at the files that changed and what each one is for, it does not re-explain the code. Detail is earned by non-obviousness, not spent by default. When a section has nothing non-obvious to add, keep it to one line rather than padding it.
+**Core principle — short and concise; the diff is the spec.** The reviewer can read the code. Spend words only where reasoning is *not* recoverable from the diff: the *why* (Motivation), non-obvious decisions or trade-offs, and evidence it works (Proof of Work). Detail is earned by non-obviousness, not spent by default.
 
 ### Length budget — the whole description, not per section
 
@@ -312,7 +312,7 @@ done in 41s, peak RSS 412MB
 
 **What counts as the run:**
 - A live call: `curl` against the local service, plus the response body.
-- A Temporal workflow run ID + status, or the history event showing the new field.
+- A Temporal workflow run ID + status (the run ID is in the local UI at `http://localhost:8233`), or the history event showing the new field.
 - Log lines showing the new behavior, on both sides.
 - A metrics sample: `curl localhost:9090/metrics | grep <metric_name>`.
 - For a UI flow, a numbered frame sequence (`01-empty-form.png` → `04-success.png`) or a GIF — the route, not just the destination. `gh` cannot attach media to a PR body, so these get dragged in through the web UI; cite a frame only once it is actually attached.
@@ -347,15 +347,6 @@ Then add a box for anything only the deployed accounts can settle: a value the e
 - A green pipeline never settles a box — nothing in CI runs the deployed image.
 - Omit the section only when nothing about the change reaches a deployed environment.
 
-## How to Gather Proof
-
-1. **Get the *after* first.** Start the service the way you normally would locally (`docker compose up`, `pnpm dev`, the worker entrypoint) and drive the changed path for real — a `curl`, a queued job, a workflow start, a click-through.
-2. **Then get the *before*.** `git stash`, or `git checkout origin/main -- <changed files>`, or turn the new flag/env off; run the identical command; restore afterwards. Copy both outputs while you have them.
-3. **When the service cannot run locally** — external keys, a real database, a third-party upstream — write a script that imports the real module and feeds it real or realistic data (`curl` the upstream schema, read a fixture), run it on both sides, and paste the script with both outputs.
-4. **For workflow changes** — run the workflow and copy the run ID from the Temporal UI (`http://localhost:8233`); paste the run ID and the event showing the new field.
-5. **For metrics** — `curl localhost:9090/metrics | grep <metric_name>` after each run.
-6. **Write down what the run could not reach** as you go. That is the `**Not proven locally:**` line, and it is what `## Verify on dev` is built from.
-
 ## Process
 
 1. **Look for a repo PR template** (`.github/pull_request_template.md` and the other paths above). Found one → its headings and order are the description's shape; say so in the report and fill it in with the guidance below.
@@ -373,28 +364,15 @@ Then add a box for anything only the deployed accounts can settle: a value the e
 
 | Mistake | Fix |
 |---------|-----|
-| Motivation describes what, not why | Start from the consequence of not having the change |
-| Motivation a product reader can't follow — acronyms, class names, enum values | Rewrite in plain words; every name moves down to Implementation |
 | Implementation names files with no link to the feature | Keep the path, add what that file does for this PR — the link is the point |
-| Implementation lists `.spec.ts`, fixtures, or snapshots | Remove them; only files carrying the implementation earn a bullet |
-| Over-long Implementation narrating the diff | Cut to 2–4 bullets; the code is the spec, say only what isn't obvious from opening the file |
-| Reflexively adding `###` subsections | Default to a flat list; subsections only for genuinely distinct components |
 | "Tests pass", lint, or typecheck results in Proof of Work | Delete the line and run the code instead — paste what it printed |
 | Proof of Work shows only the new behavior | Run the base branch the same way and paste that too; without the *before*, nothing is proven |
-| Proof of Work describes the output instead of pasting it | Paste the real lines, trimmed to what carries the claim |
 | "I tested it locally" with nothing attached | Name the command and show its output, or write a script and show that |
 | No proof and no script, on a PR that runs something | Block merge — a script is the fallback when live invocation is impossible, never an empty section |
 | A Proof of Work section reading "N/A", "docs only", or "✅ lint passes" | Delete the heading. An empty section is worse than an absent one — it implies evidence nobody gathered |
 | Ignoring a PR template the repo already has | Look before drafting; its headings and order are the shape, this skill is how to fill them |
 | Deleting a template section that felt empty | Keep the heading, put one honest line under it — the team agreed on that section |
-| Missing entire sections | All four required — *unless* the diff is docs-only (no Proof of Work) or config-only (Motivation only). Check the form table first |
-| Full structure on a docs-only PR | Classify the diff before drafting; a docs PR narrating its own bullet list back as "proof" is the usual symptom |
-| Short form on a PR that mixes docs and code | The short forms apply only when the excluded section would be genuinely empty, not when it's inconvenient to gather |
-| A long description where every sentence is individually defensible | Length is the defect. Word-count it, cut to the budget table — a reviewer skims a wall and misses the load-bearing line |
-| Re-arguing in prose what a code comment beside the change already says | One line and a pointer; the comment is the durable home for that reasoning |
-| A paragraph per rejected alternative | One clause names the alternative and why not. More than that is a design doc |
-| Bold lead-ins used as de-facto subsections to fit more in | That's the length budget being dodged. Consolidate into 2–4 bullets |
+| Missing entire sections, or the full structure on a docs-only PR | Check the form table first. All four are required *unless* the diff is docs-only (no Proof of Work) or config-only (Motivation only); a docs PR narrating its own bullet list back as "proof" is the usual symptom of skipping that check |
 | A deployed change with no `## Verify on dev` | Add it — otherwise nobody, including the author next week, can say what would count as this working after the deploy |
 | `## Verify on dev` bullets like "verify metrics work" | Every box pairs an observable outcome with the command that observes it |
-| `## Verify on dev` that jumps straight to the new feature | Health and one existing flow come first — a deploy that broke the service fails every other box for the wrong reason |
 | `## Verify on dev` added to a change nothing deploys | Delete the heading — it implies a verification nobody intends to run |
