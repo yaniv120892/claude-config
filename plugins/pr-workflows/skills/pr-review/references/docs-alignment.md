@@ -65,13 +65,8 @@ One row per drifted page, into section C of the review:
 
 Quote the stale claim verbatim so the reader can find it on the page.
 
-Pick exactly one closing line, by this test:
-
-| You found | Write |
-|---|---|
-| A page covering the subsystem, nothing in it contradicted | `None` — name the page and the one thing it does claim, so the reader knows you read it |
-| A page covering the subsystem at a higher altitude than the diff touches | `None` — same. A page that abstracts over the detail you changed is working as intended, not a gap |
-| No page mentions the subsystem anywhere | `No page covers <subsystem>` |
-
-The middle row is the common case and it is **not** a gap. Only claim a gap when
-the search genuinely returned nothing about the subsystem.
+Close with exactly one line. If any page covers the subsystem — including one
+pitched above the detail the diff touches, which is a page working as intended —
+write `None`, and name the page plus the one thing it does claim, so the reader
+knows you opened it. Only when the search returned nothing about the subsystem at
+all, write `No page covers <subsystem>`.

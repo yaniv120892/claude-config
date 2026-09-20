@@ -10,7 +10,7 @@ budget.** Claiming a HIGH earns whatever reading it takes to be sure — includi
 a dependency's own source in `node_modules` when the behaviour in question is
 the library's. Confirming something routine earns the cheapest check that
 settles it, and then you stop. Apply this wherever the rubric asks you to
-verify; it is the rule, and the steps below do not restate it.
+verify; it is the rule, and it holds throughout.
 
 ## 1. Review the actual head, not the local branch
 
@@ -55,18 +55,14 @@ Read the repo's own `CLAUDE.md` and `.claude/rules/*`, and apply the global
 rules in `~/.claude/shared-rules.md` and `~/.claude/rules/*`. Cite `file:line`.
 Keep these in a section **separate** from correctness findings.
 
-The ones that recur most:
+Read those files rather than working from memory of them — a list cached here
+goes stale the week a rule is added, and under-reports exactly the newest rules.
+Cite each finding by the rule's bold name plus `file:line`.
 
-- **Always use braces** for control flow — no braceless guards or early returns.
-- **No `as` casts** — narrow via type guards. (`as unknown as T` only to bridge genuinely incompatible types.)
-- **Explicit class access modifiers** on every member.
-- **`T[]` not `Array<T>`**; **no abbreviated identifiers** (`cfg`, `ctx`, `acc`, `res`…); **`switch` over `else if` chains** on one value.
-- **Self-documenting code** — comments only for genuinely non-obvious *why*; extract well-named helpers instead.
-- **Public-first method ordering**, unless the repo's lint enforces `no-use-before-define`, which wins for free functions.
-- **Avoid `Pick<T,'one'>`** for 1–3 static fields — inline `{ field: T }` or a named type.
-- **Types**: exported/shared types in a `types` file; file-local types at the top of the file.
-- **Fix lint, don't suppress** — no `eslint-disable` unless genuinely unavoidable.
-- **Conventional commit title.** Where `feat`/`fix` trigger a release and `chore` does not, a shippable change titled `chore` is a bug — it should be `fix`.
+The names that recur most, as a recall prompt only: Always Use Braces, Avoid
+TypeScript `as` Casts, Explicit Class Access Modifiers, No Abbreviated
+Identifiers, Self-Documenting Code Over Comments, Public-First Method Ordering,
+Fix ESLint Issues Instead of Suppressing, Conventional Commits.
 
 ## 4. Correctness — ranked HIGH / MEDIUM / LOW
 
@@ -80,25 +76,17 @@ stack you actually found; skip the rest rather than padding the report.
 - **Error handling**: user-facing errors surfaced with actionable messages, not swallowed.
 - **Security**: no secrets in code or client bundles, input validated at the boundary, no injection via string-built queries or commands.
 
-### Frontend (React / Next.js)
+### Stack specifics
 
-- Hooks rules; **dependency arrays** complete and honest — no silenced `exhaustive-deps`.
-- **Stale closures** over props/state captured in effects, callbacks, timers, async handlers.
-- Re-renders: inline object/array/function props to memoized children; `useMemo`/`useCallback` where it actually changes referential identity, not cargo-culted.
-- **`key`** stable and unique — never an array index for reorderable lists.
-- **Effect cleanup**: subscriptions, timers, aborts, listeners torn down; no setState-after-unmount.
-- Server/client boundary: `"use client"` placement, no server-only code or secrets reaching the client.
-- Data fetching: correct query keys, **cache invalidation** after mutations, loading/error/empty states, optimistic updates that roll back, requests cancelled on unmount or arg change.
-- Accessibility: labels tied to inputs, semantic roles, keyboard operability, focus management in modals.
+The per-stack checklists live in the reference files the dispatch prompt named —
+`reviewing-pr-code/references/nextjs-frontend-review.md` and
+`express-backend-review.md`. Apply the one matching the diff; this rubric does
+not restate them.
 
-### Backend / services
+Two that those files do not carry, and that this review owns:
 
-- Transaction boundaries and partial-failure behaviour; retries idempotent.
-- N+1 queries, missing indexes, unbounded result sets.
-- Concurrency: races on shared state, missing locks, non-atomic read-modify-write.
-- Backwards compatibility of API and schema changes; migration safety on a live table.
 - **Shared resolver / mapper / formatter edits.** A PR scoped to one provider can silently re-map every other caller through a function they share. Establish the full caller set before accepting the change, and name that set in the finding.
-- **Renamed emitted identifier values** — metric labels, log field values, event names, enum strings crossing a process boundary. Nothing fails to compile; the dashboard, alert rule, or downstream query just stops matching after deploy. Treat renaming an existing series as a breaking change needing its own migration.
+- **Renamed identifiers crossing a process boundary** — event names and enum strings, alongside the metric-label case the backend file covers. Nothing fails to compile; the downstream consumer just stops matching after deploy.
 
 ### Test gap (do this explicitly)
 
@@ -118,10 +106,8 @@ pipeline hides most of these:
 
 ## 5. Simplification
 
-Redundant or dead guards, duplicated predicates, collapsible conditions. Dead
-config: a directive the surrounding settings make inert. Footguns for the next
-change: parallel helpers that must be kept in sync, missing single source of
-truth, hardcoded values that should be derived.
+The catalogue is `reviewing-pr-code/references/code-smells.md`, which applies to
+every diff. This rubric owns only where its findings land.
 
 These have **no section of their own** — file them into section A at LOW unless
 the dead code hides a real bug, which makes it a correctness finding at its
@@ -137,16 +123,17 @@ Run the check in `docs-alignment.md` and carry its output into section C below.
 python3 <PLUGIN_ROOT>/skills/verify-resolve-pr-comments/pr_review_comments.py ci --pr <n> --repo <slug>
 ```
 
-This wraps `github.latest_ci_status()` and returns one verdict rather than a
-list to read check-by-check. Prefer it over raw `gh pr checks`, which the repo
-already rejected for the same reason in `verify-pr-state`.
+Branch on the state word exactly as `verify-pr-state` Step 2 does — including
+its **`unknown` → stop, do not treat as green**, which matters most here because
+this skill's output is a merge verdict. Do not restate its rationale.
 
 Confirm the lint/test/build jobs are green **and** that they ran on the head
 commit. A local build usually needs scaffolding a reviewer doesn't have, so CI
 decides. If CI is red or stale, say so; never vouch for what CI has not run.
 
-The check reports the current head without printing the SHA, so confirming that
-`headRefOid` from step 1 equals the head you reviewed is what settles it.
+The check reports whatever is currently head. If commits landed after the
+`headRefOid` you reviewed, the verdict describes code you did not read — say so
+rather than carrying it into the report.
 
 ## Comment contract
 

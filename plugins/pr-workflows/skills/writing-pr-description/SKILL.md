@@ -1,15 +1,15 @@
 ---
 name: writing-pr-description
-description: Use when writing or updating a pull request description. Generates short, budgeted Motivation, Implementation, Proof of Work and Verify-on-dev sections matching team conventions — with shorter forms for docs-only, config-only, and package-bump PRs.
+description: Use when writing or updating a pull request description. Fills in the repo's own PR template when there is one; otherwise generates a plain-language Motivation, a file-anchored Implementation, a Proof of Work built from actually running the code before and after, and Verify-on-dev acceptance criteria — with shorter forms for docs-only, config-only, and package-bump PRs.
 ---
 
 # Writing PR Descriptions
 
 ## Overview
 
-A PR description is the primary context reviewers and future readers have for understanding a change. It must answer four questions: **Why was this needed?** **What exactly changed and how?** **Does it actually work?** **And what can only a deployed environment prove?**
+A PR description is the primary context reviewers and future readers have for understanding a change. It must answer four questions, each for a different reader: **Why was this needed?** — in plain words, for the product person. **Which files changed, and what does each do for the feature?** — for the reviewer. **What happened when you ran it, before and after?** — for anyone who has to trust it. **What gets checked once it is deployed?** — for whoever is on the other side of the merge.
 
-The last two only exist when the change *does* something at runtime. A docs-only PR has no Proof of Work section at all, and a config-only PR has no Implementation or Proof of Work section — see **Pick the form first** below. `## Verify on dev` appears only when the risk is deploy-shaped.
+Those four are the default shape. **A PR template already in the repo replaces it** — see **The repo's own template wins** below. The last two only exist when the change *does* something at runtime. A docs-only PR has no Proof of Work section at all, and a config-only PR has no Implementation or Proof of Work section — see **Pick the form first** below. `## Verify on dev` appears whenever the change ships inside a deployed service.
 
 **Announce at start:** "I'm using the writing-pr-description skill."
 
@@ -30,14 +30,17 @@ Agent({
     Invoke the writing-pr-description skill yourself and follow it directly —
     you are the dispatched subagent, so do not delegate further.
     Ticket: <ticket ID if known>. Base branch: <base branch, e.g. origin/main>.
-    Read the diff, gather Proof of Work yourself (you have Bash access), and
-    apply the final description via `gh pr edit --body` / `gh pr create --body`."
+    Check for a repo PR template first and fill that in if one exists.
+    Read the diff, and gather Proof of Work yourself by actually running the
+    code — you have Bash access, so run the service or a script locally on this
+    branch and again on the base branch, and paste both outputs. Then apply the
+    final description via `gh pr edit --body` / `gh pr create --body`."
 })
 ```
 
 Fill in the repo path, ticket, and base branch from what you already know in this conversation. Report the subagent's result back to the user when it completes.
 
-**Core principle — short and concise; the diff is the spec.** The reviewer can read the code. Spend words only where reasoning is *not* recoverable from the diff: the *why* (Motivation), non-obvious decisions or trade-offs, and evidence it works (Proof of Work). Keep Implementation as short as possible — it points at what changed, it does not re-explain the code. Detail is earned by non-obviousness, not spent by default. When a section has nothing non-obvious to add, keep it to one line rather than padding it.
+**Core principle — short and concise; the diff is the spec.** The reviewer can read the code. Spend words only where reasoning is *not* recoverable from the diff: the *why* (Motivation), non-obvious decisions or trade-offs, and evidence it works (Proof of Work). Detail is earned by non-obviousness, not spent by default.
 
 ### Length budget — the whole description, not per section
 
@@ -46,10 +49,12 @@ Fill in the repo path, ticket, and base branch from what you already know in thi
 | Section | Budget |
 |---|---|
 | Preamble (optional, before `## Motivation`) | 1–2 lines — what this is and what it targets. Usually skip it. |
-| `## Motivation` | **2–3 sentences.** |
-| `## Implementation` | **2–3 bullets**, ~2 lines each. |
-| `## Proof of Work` | 3–5 bullets, one line each. |
-| `## Verify on dev` | One `**Only dev can prove:**` line + 2–4 checkboxes. |
+| `## Motivation` | **2–3 plain sentences** a product person reads once and gets. No acronyms, no code names. |
+| `## Implementation` | **2–4 bullets**, one per implementation file or tight group, ~2 lines each. No test files. |
+| `## Proof of Work` | How you ran it, then the same command's output without the change and with it. |
+| `## Verify on dev` | One framing line + 3–5 acceptance checkboxes: healthy, sane, then the local check on dev. |
+
+**Pasted command output does not count toward the word budget** — it is evidence, not prose. Trim it to the lines that carry the claim and it stays cheap to read.
 
 The commonest failure is a *well-written* description that is simply too long — every sentence defensible, the whole thing three times the size it needed. Two habits cause it, and both are worth naming because they feel like diligence:
 
@@ -58,16 +63,40 @@ The commonest failure is a *well-written* description that is simply too long �
 
 **On the final pass, cut — do not polish.** Ask of every sentence: would a reviewer with the diff open be worse off without this? If not, delete it. Aim to remove a third of the first draft.
 
+## The repo's own template wins
+
+**Before picking a form, look for a PR template in the repo.** When one exists it is the team's agreed shape, so it is the shape this description takes — the sections below become *how to fill it in*, not a structure to impose over it.
+
+```bash
+ls .github/pull_request_template.md .github/PULL_REQUEST_TEMPLATE.md \
+   PULL_REQUEST_TEMPLATE.md docs/pull_request_template.md 2>/dev/null
+ls .github/PULL_REQUEST_TEMPLATE/ 2>/dev/null   # a directory means several templates — pick by change type
+```
+
+When one is found:
+
+- **Say so.** Open the report to the user with "this repo has a PR template at `<path>` — filling that in" so nobody wonders why the headings differ from the usual four.
+- **Keep its headings, their wording, and their order.** Also keep its checklists, and tick the boxes honestly.
+- **Map this skill's guidance onto its sections by intent, not by name** — a "Why"/"Context"/"Background" section gets the plain-language Motivation, "What"/"Changes"/"How" gets the file-anchored Implementation, "Testing"/"Evidence"/"Screenshots" gets the before/after run, and "QA"/"Rollout"/"Post-deploy" gets the acceptance criteria.
+- **A "Summary" or "TL;DR" slot wants one plain sentence of what the PR does**, in the Motivation's register. Opening it with file names puts the Implementation in the wrong box and leaves the reader no plain-language answer anywhere.
+- **Replace the author instructions with the answer.** An HTML comment or a `<placeholder>` prompting for content goes away once the content is there.
+- **A section with nothing to say keeps its heading and gets one honest line** ("No user-facing change — nothing to check after deploy"). Deleting a heading the team agreed on is overriding the template; this rule outranks the usual "an empty section is worse than an absent one".
+- **Add a heading of your own only for something the template has no home for** — usually the before/after run — and append it at the end rather than interleaving it with the template's sections.
+
+The length budget, the plain-language Motivation, the one-bullet-per-file Implementation and the run-it-both-ways proof all still apply inside the template's sections. Only the headings and their order come from the repo.
+
+`gh pr create --body` overwrites whatever GitHub would have pre-filled, so a template is only honored if it is read and filled in deliberately.
+
 ## Pick the form first
 
-Classify the diff before writing a word. The full structure is the default, but three kinds of PR get a shorter form, and choosing wrong is the most common way this skill produces bloat.
+**No repo template? Then classify the diff** before writing a word. The full structure is the default, but three kinds of PR get a shorter form, and choosing wrong is the most common way this skill produces bloat.
 
 | The diff touches | Form | Sections |
 |---|---|---|
 | Only documentation | [Docs-Only](#short-form-for-docs-only-changes) | Motivation + Implementation. **No Proof of Work.** |
 | Only configuration | [Config-Only](#short-form-for-config-only-changes) | One prose block + a before/after table. Nothing else. |
 | A package bump + call-sites | [Package Bump](#short-form-for-a-package-bump) | Motivation + Implementation + one-line Proof of Work |
-| Anything else, or a mix | [Full structure](#structure-the-default) | All three, **plus `## Verify on dev` if the risk is deploy-shaped** |
+| Anything else, or a mix | [Full structure](#structure-the-default) | All three, **plus `## Verify on dev` whenever the change ships in a deployed service** |
 
 **A mix falls back to the full structure.** If a PR changes docs *and* application code, it is not a docs PR — describe the code change properly. The short forms are for PRs where the excluded section would be genuinely empty, not for PRs where gathering it is inconvenient.
 
@@ -85,8 +114,8 @@ For PRs that change **only documentation** — design docs, READMEs, ADRs, runbo
 ## Motivation
 
 <Why the document needed to change: what a reader would have concluded from the old text, and what
-that would have cost them. 2–3 sentences. "It was out of date" is not a motivation — say what was
-wrong and what it would have led someone to do.>
+that would have cost them. 2–3 plain sentences, same as the full form. "It was out of date" is not a
+motivation — say what was wrong and what it would have led someone to do.>
 
 ## Implementation
 
@@ -122,12 +151,16 @@ For PRs whose primary change is **bumping a shared package version** (e.g. `@mod
 
 ## Implementation
 
-- <File>: <what changed, one line per file>.
+- **`<file>`** — <what it now imports/uses from the package, one bullet per file>.
 - Bumps `<package>` to `<version>`.
 
 ## Proof of Work
 
-✅ Build, lint, and prettier pass.
+Ran <the call site> locally against the bumped package:
+
+```
+<the command + its output, showing the new type/value in use>
+```
 ```
 
 ## Short Form for Config-Only Changes
@@ -171,19 +204,19 @@ Don't add Implementation/Proof of Work headers "for consistency" — an empty or
 ```markdown
 ## Motivation
 
-<Why this change is needed — the business problem or capability gap, and what breaks or is missing without it. 2–3 sentences, engineering perspective, written for a reviewer who hasn't seen the ticket.>
+<Why this change exists, in plain words a product person gets on one read: what someone hits today, what it costs them, why it is worth fixing now. 2–3 sentences, no acronyms, no code names.>
 
 ## Implementation
 
-- <What changed, one concise bullet per logical change — behavior/decision, not files. 2–3 bullets.>
+- **`<path/to/file>`** — <what it now does and how that serves the core of this PR. One bullet per implementation file or tight group; no test files. 2–4 bullets.>
 
 ## Proof of Work
 
-<Concrete runtime evidence that the feature/fix works. See "Proof of Work" section below.>
+<How you ran it locally, then the same command's output without this change and with it. See "Proof of Work" below.>
 
 ## Verify on dev
 
-<Only when the risk is deploy-shaped. See "Verify on dev" below — omit the heading entirely otherwise.>
+<Acceptance criteria for after the deploy: the service is healthy, the surrounding flow is sane, and the local check repeats on dev. See "Verify on dev" below.>
 ```
 
 Add an optional section (e.g. `## Performance`, `## Migration`, `## Risk`) only when the change raises a question the reviewer will otherwise ask — a perf trade-off, a data migration, a rollout concern. Keep it tight and skip it when there's nothing non-obvious to say.
@@ -192,152 +225,156 @@ Add an optional section (e.g. `## Performance`, `## Migration`, `## Risk`) only 
 
 ### Motivation
 
-Answer: **Why does this change exist?** What was broken, missing, or inadequate before?
+Answer: **Why does this change exist?** Write it for the product person reading the PR, not for the reviewer — they should get it on one read, without opening the diff and without asking what a word means.
 
-**Length: 2–3 sentences. Hard cap.** If you need more, you're explaining the implementation, not the motivation. Move it down. The shape that fits in three: what is missing or broken → what that costs → why now / why in this PR rather than the next one.
+**Length: 2–3 sentences. Hard cap.** The shape that fits in three: what someone hits today → what that costs → why it is worth fixing now.
 
-- Write from an engineering perspective, not marketing copy
-- Include the consequence of NOT having this change
-- Reference the ticket only if it adds context — don't pad with "as per AIP-XXX"
-- Resist listing every component this PR touches — that's the Implementation section's job
+- **Plain words.** "The upload fails for large files" rather than "the multipart ingestion path throws". A word that only makes sense to someone who has read the code belongs further down.
+- **Spell out an acronym or drop it.** Ticket keys, enum values, class names, queue names, table names, feature-flag keys — all of it lives in Implementation.
+- Name the cost of not shipping it. A motivation with no consequence in it is a summary.
+- Reference the ticket only when it adds context a sentence cannot.
 
 **Good example (from AIP-322):**
-> Users on unlimited plans have a separate FAST_GENERATIONS wallet. Without wallet routing, the service either hard-fails unlimited users or incorrectly draws from their CREDITS balance. This PR wires the routing layer so each `generationMethod` maps to its correct wallet operation, with graceful degradation to `unlimited_slow` when fast-generation quota is exhausted.
+> Customers on the unlimited plan pay for fast image generations out of a separate balance. Today the service either rejects those customers outright or quietly spends their regular credits, so they lose money they already paid for. This change sends each request to the balance it belongs to, and falls back to the slower queue once the fast allowance runs out.
 
 **Bad examples:**
+- ❌ "Wires the routing layer so each `generationMethod` maps to its correct wallet operation, with graceful degradation to `unlimited_slow`" — accurate, and unreadable for the audience this section is written for
 - ❌ "Added generationMethod support" — describes what, not why
-- ❌ "As per AIP-339" — forces reviewer to read the ticket
+- ❌ "As per AIP-339" — sends the reader off to find the ticket
 - ❌ "This PR implements the package resolution feature" — circular
-- ❌ Motivation that lists 6 components and 3 design decisions — that belongs in Implementation
+- ❌ A motivation naming six components and three design decisions — that is Implementation's job
 
 ### Implementation
 
-**As short as possible — the code is the spec.** A flat bulleted list, one bullet per logical change. Say what changed and any decision that isn't obvious from reading it; nothing more. If a bullet just narrates what the diff plainly shows, cut it.
+Technical, and anchored on the files. **One bullet per implementation file** — or per tight group of files doing one job — naming the path and what it contributes to the feature, so a reviewer knows which file to open first and why.
 
-**Length: 2–3 bullets, ~2 lines each; hard ceiling 4.** `###` subsections are almost always wrong here — a PR that seems to need them is usually one where the length budget is being dodged rather than one with genuinely distinct components. Never a subsection per file, and never a `**bold lead-in**` per paragraph as a subsection in disguise.
+**Length: 2–4 bullets, ~2 lines each.** List only the files carrying the implementation; tests, fixtures, snapshots and lockfiles are assumed and stay out. When the change spans more files than bullets, fold the supporting ones into the bullet of the file they serve ("…plus its two call sites in `x/` and `y/`").
 
-Related decisions belong in **one** bullet, not one each. Three bullets that all explain the same new class is a wall; one bullet naming the class and its two non-obvious choices is a sentence.
+- Lead with the path in backticks, then what it now does and how that serves the core of this PR.
+- Say the decision that is not obvious from reading the file; skip the narration that is.
+- A flat list is the form — `###` subsections here are almost always the length budget being dodged.
 
-**Good example (small, focused PR — two lines is enough):**
+**Good example (small, focused PR):**
 ```markdown
 ## Implementation
-- `configureSharp()` (called once at worker `init()`): `sharp.cache(false)` + `sharp.concurrency(1)`.
-- Activity-side only — no workflow command change, no `patched()` concern.
+- **`src/worker/init.ts`** — calls a new `configureSharp()` once at worker startup (`sharp.cache(false)` + `sharp.concurrency(1)`); this is what caps the resident memory the PR is about.
+- Activity-side only — no workflow command changed, so there is no `patched()` concern.
 ```
 
-**Good example (larger PR, still compact):**
+**Good example (larger PR):**
 ```markdown
 ## Implementation
-- New `routeWalletByMethod` maps each `generationMethod` to its wallet operation; `UNLIMITED` falls back to `unlimited_slow` on `INSUFFICIENT_BALANCE`.
-- `effectiveMethod` + `generationMethod` columns persisted in one Prisma update — what the client asked for vs what ran.
-- Metrics: `wallet_route_downgrade_total` counter labeled by reason.
+- **`src/wallet/route-wallet-by-method.ts`** — new, and the core of the PR: maps each `generationMethod` to its wallet operation, falling back to `unlimited_slow` on `INSUFFICIENT_BALANCE`.
+- **`prisma/schema.prisma` + `src/generation/persist.ts`** — adds `effectiveMethod` next to `generationMethod` and writes both in one update, so a record shows what the client asked for vs what ran.
+- **`src/metrics/index.ts`** — `wallet_route_downgrade_total`, labeled by reason, which is what makes that fallback visible in production.
 ```
 
 **Bad examples:**
-- ❌ "Modified controller.ts and workflow-types.ts" — describes files, not behavior
-- ❌ A bullet for "added unit tests" or any `.spec.ts` file — tests are assumed, never list them
-- ❌ Subsections with one bullet each — just flatten
+- ❌ "Modified controller.ts and workflow-types.ts" — names files with no link to the feature; the link is the whole point
+- ❌ A bullet for a `.spec.ts`, fixture, or snapshot — never list tests
+- ❌ Subsections with one bullet each — flatten
 - ❌ Restating the Motivation, or narrating code the reviewer can read in the diff
-- ❌ Padding to hit a bullet count — fewer is better
 
 ### Proof of Work
 
-Evidence that the change works **in practice**, not just in tests. Reviewers need to trust the change before merging.
+**Run it, and paste what happened — both ways.** The reviewer should be able to see what the code does wrong without this PR and what it does instead with it, from output you actually produced on your machine.
 
-**Length: 3–5 bullets, one line each.** Lead each with the claim in bold, then the evidence — `**The redaction is proven able to fail.** Un-redacting turns 3 of 8 cases red.` A bullet that needs a paragraph is describing the implementation again. Consolidate suite/lint/typecheck results into **one** trailing line at most, never a bullet each.
+Run the service locally where the change is reachable that way (`docker compose up`, `pnpm dev`, the worker entrypoint) and drive the changed path for real. Where it is not reachable — no running service, external keys needed, a database-dependent flow — write a script that drives the real module with realistic data, and run that instead. Either way, produce the *without* half too: `git stash`, check the files out from the base branch, or turn the new path off, and run the identical command again.
 
-**Close with a `**Not proven locally:**` line** naming what this evidence could not cover. That line is the raw material for `## Verify on dev` below — if it names something only a deployed environment can settle, that section is required.
+**Format:**
 
-**What counts as proof:**
-- Temporal workflow run ID + status (completed/failed as expected)
-- Log output showing the new field/behavior
-- `curl` response from a live endpoint
-- Prometheus metric sample showing the counter incremented
-- Screenshot of Temporal UI showing the workflow ran through the new activity
-- For a UI flow, a numbered frame sequence (`01-empty-form.png` → `04-success.png`), or a GIF of it — the route, not just the destination. `gh` cannot attach media to a PR body, so these have to be dragged in through the web UI; cite a frame only once it is actually attached, or the reviewer gets a filename pointing at nothing
+````markdown
+## Proof of Work
 
-**What does NOT count:**
-- Unit test results — tests are a baseline, not proof the feature works
-- "Tests pass" — assumed; never mention this in the PR description
-- "I tested it locally" — not verifiable
-- Empty section
+Ran the worker locally over 200 source images with `scripts/repro-oom.sh` (included below).
 
-**When live invocation isn't possible** (no running service, external API keys required, DB-dependent flow), write a script instead:
+**Without this change** — resident memory climbs until the process is killed:
+```
+[worker] processed 12 images
+Killed (exit 137), peak RSS 3.9GB
+```
 
-- Write a focused Node.js or shell script that exercises the changed logic with real or realistic data
-- Feed it real external data where available (e.g. `curl` a third-party API, read a fixture file)
-- Capture the script's stdout and paste it as the proof — include the script itself so reviewers can reproduce it
-- Label it clearly: `Script output:` rather than pretending it's a live service call
+**With this change** — the same run finishes, memory flat:
+```
+[worker] processed 200 images
+done in 41s, peak RSS 412MB
+```
 
-This is acceptable when the script exercises the actual production code path (imports the real module, uses real data shapes) rather than re-implementing the logic inline.
+**Not proven locally:** the dev pod is capped at 4Gi, half this laptop's headroom.
+````
+
+- **No sentence about the tests belongs here, including as a footnote after real evidence.** The shape to catch yourself writing is "Also ran/added the new `x.test.ts` (`→ ok`)", tacked on at the end because it felt generous. The reviewer sees that file in the diff and its result in CI, so it tells them nothing new, while implying the suite was part of what proved the change. Cut the sentence — what you ran above already carries the section.
+- **Both halves, same command.** One-sided output proves the code runs, not that it fixes anything.
+- **Say how you ran it** — the command, the script, the endpoint — so a reviewer can reproduce it. Paste a short script inline in a fenced block, or commit it and name the path.
+- **Paste real output**, trimmed to the lines carrying the claim. A description of the output is not the output.
+- **Close with `**Not proven locally:**`** naming what the run could not reach. `## Verify on dev` opens with that same thought as its `**Only dev can prove:**` line — write it once and carry it down, rather than saying it twice in different words.
+- Where there is genuinely no *before* — a brand-new endpoint — the 404 from the base branch is the before. Show it.
+
+**What counts as the run:**
+- A live call: `curl` against the local service, plus the response body.
+- A Temporal workflow run ID + status (the run ID is in the local UI at `http://localhost:8233`), or the history event showing the new field.
+- Log lines showing the new behavior, on both sides.
+- A metrics sample: `curl localhost:9090/metrics | grep <metric_name>`.
+- For a UI flow, a numbered frame sequence (`01-empty-form.png` → `04-success.png`) or a GIF — the route, not just the destination. `gh` cannot attach media to a PR body, so these get dragged in through the web UI; cite a frame only once it is actually attached.
+- A script that imports the real module and runs on real data shapes — labeled `Script output:`, not dressed up as a live service call.
 
 ### Verify on dev
 
-Some risks no local run and no pipeline can touch: the pairing that fails only exists in the deployed accounts. `## Verify on dev` is the author's `**Not proven locally:**` clause promoted from an apology into a checklist someone can settle after the merge deploys. It costs nothing extra to write, because the thinking already happened while gathering proof.
+Acceptance criteria for after the merge deploys: what someone opens, runs, and looks at to call this change good on dev. The thinking already happened while gathering proof — this is the `**Not proven locally:**` line carried down and turned into a checklist, plus the sanity checks that say the service survived the deploy at all. The framing line here restates that gap for a reader who starts at this heading; it does not need new words for the same idea.
 
-**Include it when the change is deploy-shaped** — at least one of:
+**Include it whenever the change ships inside a deployed service.** It is always at least these three, in this order:
 
-- A config value consumed from a secret store / SSM, or any value the deployed environment must supply.
-- Queue, topic, or routing wiring; an endpoint default that points at local infrastructure.
-- Ingress, probe, or auth paths — including whether a route is publicly reachable.
-- Image contents or the runtime dependency set (a devDependency reachable at runtime passes every gate and fails in a pod).
-- A contract against a real upstream, or connection/queue settings for a workflow engine.
+1. **The service is up** — the rollout finished and the health endpoint answers.
+2. **Sanity** — the surrounding flow still works: one existing request path returns what it returned before this PR.
+3. **The proof, on dev** — the same check from Proof of Work run against dev, showing the *with this change* outcome.
 
-**Format — one framing line, then observable outcomes each paired with the command that observes it:**
+Then add a box for anything only the deployed accounts can settle: a value the environment supplies from a secret store, queue/topic/routing wiring, an endpoint default that pointed at local infrastructure, ingress/probe/auth reachability, the runtime dependency set baked into the image, or a contract against a real upstream.
+
+**Format — one framing line, then each criterion paired with the command that settles it:**
 
 ```markdown
 ## Verify on dev
 
-**Only dev can prove:** `TRANSACTION_ROUTING_KEY` matches the SNS `filterPolicy` — that pairing
-exists only in the deployed accounts.
+**Only dev can prove:** `TRANSACTION_ROUTING_KEY` matches the SNS `filterPolicy` — that pairing exists only in the deployed accounts.
 
-- [ ] **A job reaches `completed`** — `curl -s "$DEV_API/jobs/<id>" | jq .status`
-- [ ] **The worker logs a settled transaction with a non-null ticket** —
-      `kubectl -n dev logs deploy/<deployment> | grep 'transaction settled'`
+- [ ] **Rollout finished and the service answers** — `kubectl -n dev rollout status deploy/<deployment>`, then `curl -s "$DEV_API/health"` → `{"status":"ok"}`
+- [ ] **Existing jobs still complete** — `curl -sX POST "$DEV_API/jobs" -d @sample.json | jq -r .id`, then `curl -s "$DEV_API/jobs/<id>" | jq .status` → `completed`
+- [ ] **The new path runs on dev** — same check as Proof of Work: `kubectl -n dev logs deploy/<deployment> | grep 'transaction settled'` shows a non-null ticket
+- [ ] **Memory stays flat under the same batch** — `kubectl -n dev top pod -l app=<app>` well under the 4Gi limit
 ```
 
-- **Every bullet names a command and the outcome that command should show.** "Check it works" is the same omission wearing a heading.
-- **Omit the whole section when the change carries no deploy-shaped risk.** A padded block is worse than none: it implies a verification nobody intends to run. Same stance as an empty `## Proof of Work`.
-- A green pipeline is never the answer to a `## Verify on dev` bullet — nothing in CI runs the built image. Settling the block happens after the deploy, not before.
-
-## How to Gather Proof
-
-1. **For workflow changes:** Run the workflow locally or in dev, copy the run ID from Temporal UI (`http://localhost:8233`)
-2. **For schema/validation changes:** Trigger a real workflow run and show the relevant event/output in the run history
-3. **For new API endpoints:** Paste a `curl` command + response
-4. **For metrics:** Show a `curl localhost:9090/metrics | grep <metric_name>` sample
-5. **For extraction/transformation logic with no running service:** Write a script that fetches real upstream data (e.g. a third-party OpenAPI schema) and pipes it through the actual module — paste the script + its output
+- **Every box names a command and the outcome that command should show** — the sanity box included. It is the one that tends to get written as "a normal request still works", with no way for the next person to run it.
+- **A check that takes several calls is still a command.** Write the loop or the sequence — `for i in $(seq 1 5); do curl -s -o /dev/null -w '%{http_code} ' "$DEV_API/" -H 'x-api-key: <key>'; done` → `200 200 200 429 429` — rather than "send more requests than the limit allows".
+- **You will not know dev's real values, and that is not a reason to fall back to prose.** Write the command with the blank left in it — `$DEV_API`, `<api-key>`, `<job-id>`, `$RATE_LIMIT_MAX` — because a command with one blank to fill beats a sentence the next person has to reconstruct a command from. The boxes that decay into description are almost always the ones where a value was unknown, and that is precisely where the reader needs the shape of the call.
+- A green pipeline never settles a box — nothing in CI runs the deployed image.
+- Omit the section only when nothing about the change reaches a deployed environment.
 
 ## Process
 
-1. Read the git diff: `git diff origin/main...HEAD`
-2. **Pick the form** — check the file list against the table above before writing anything. `git diff --name-only origin/main...HEAD` is usually enough to classify it.
-3. Group changes by component/concern
-4. Write Motivation — explain the business/engineering need
-5. Write Implementation — 2–3 bullets; cut anything the diff already makes obvious. Skip for config-only.
-6. Gather Proof of Work — run the workflow, capture output. **Skip the section entirely for docs-only and config-only**; do not replace it with a placeholder.
-7. Decide on `## Verify on dev` — check the deploy-shaped list. Include it with commands, or omit the heading.
-8. **Cut.** Word-count the draft; over ~600, remove rather than rewrite until it fits the budget table.
-9. Format using `gh pr edit --body` or `gh pr create --body`
+1. **Look for a repo PR template** (`.github/pull_request_template.md` and the other paths above). Found one → its headings and order are the description's shape; say so in the report and fill it in with the guidance below.
+2. Read the git diff: `git diff origin/main...HEAD`
+3. **Pick the form** — only when there is no template. Check the file list against the table above before writing anything; `git diff --name-only origin/main...HEAD` is usually enough to classify it.
+4. Group changes by component/concern
+5. Write Motivation — plain words for a product reader, no acronyms, 2–3 sentences
+6. Write Implementation — 2–4 bullets, one per implementation file, each tied to what the PR is for; no test files. Skip for config-only.
+7. Gather Proof of Work — **run it locally both ways** and paste the before/after output. **Skip the section entirely for docs-only and config-only**; do not replace it with a placeholder.
+8. Write `## Verify on dev` — healthy, sane, then the local check repeated on dev, each box with its command. Omit only when nothing reaches a deployed environment.
+9. **Cut.** Word-count the prose (pasted output doesn't count); over ~600, remove rather than rewrite until it fits the budget table.
+10. Format using `gh pr edit --body` or `gh pr create --body`
 
 ## Common Mistakes
 
 | Mistake | Fix |
 |---------|-----|
-| Motivation describes what, not why | Start with the consequence of NOT having the change |
-| Over-long Implementation narrating the diff | Cut to 2–3 bullets; the code is the spec, say only what isn't obvious |
-| Reflexively adding `###` subsections | Default to a flat list; subsections only for genuinely distinct components |
-| "Tests pass" or unit test results in Proof of Work | Capture actual runtime output or workflow run ID; never mention tests |
-| Implementation is a file list | Describe behavior, not files |
-| Missing entire sections | All three required — *unless* the diff is docs-only (no Proof of Work) or config-only (Motivation only). Check the form table first |
-| No proof and no script, on a PR that runs something | Block merge — write a script if live invocation isn't possible, but never leave the section empty |
+| Implementation names files with no link to the feature | Keep the path, add what that file does for this PR — the link is the point |
+| "Tests pass", lint, or typecheck results in Proof of Work | Delete the line and run the code instead — paste what it printed |
+| Proof of Work shows only the new behavior | Run the base branch the same way and paste that too; without the *before*, nothing is proven |
+| "I tested it locally" with nothing attached | Name the command and show its output, or write a script and show that |
+| No proof and no script, on a PR that runs something | Block merge — a script is the fallback when live invocation is impossible, never an empty section |
 | A Proof of Work section reading "N/A", "docs only", or "✅ lint passes" | Delete the heading. An empty section is worse than an absent one — it implies evidence nobody gathered |
-| Full structure on a docs-only PR | Classify the diff before drafting; a docs PR that narrates its own bullet list back as "proof" is the usual symptom |
-| Short form on a PR that mixes docs and code | The short forms apply only when the excluded section would be genuinely empty, not when it's inconvenient to gather |
-| A long description where every sentence is individually defensible | Length is the defect. Word-count it, cut to the budget table — a reviewer skims a wall and misses the load-bearing line |
-| Re-arguing in prose what a code comment beside the change already says | One line and a pointer; the comment is the durable home for that reasoning |
-| A paragraph per rejected alternative | One clause names the alternative and why not. More than that is a design doc |
-| Bold lead-ins used as de-facto subsections to fit more in | That's the length budget being dodged. Consolidate into 2–3 bullets |
-| Deploy-shaped change with no `## Verify on dev` | Add it — otherwise nobody, including the author next week, can tell what would count as the change working |
-| `## Verify on dev` bullets like "verify metrics work" | Every bullet pairs an observable outcome with the command that observes it |
-| `## Verify on dev` added to a change with no deployed risk | Delete the heading — it implies a verification nobody intends to run |
+| Ignoring a PR template the repo already has | Look before drafting; its headings and order are the shape, this skill is how to fill them |
+| Deleting a template section that felt empty | Keep the heading, put one honest line under it — the team agreed on that section |
+| Missing entire sections, or the full structure on a docs-only PR | Check the form table first. All four are required *unless* the diff is docs-only (no Proof of Work) or config-only (Motivation only); a docs PR narrating its own bullet list back as "proof" is the usual symptom of skipping that check |
+| A deployed change with no `## Verify on dev` | Add it — otherwise nobody, including the author next week, can say what would count as this working after the deploy |
+| `## Verify on dev` bullets like "verify metrics work" | Every box pairs an observable outcome with the command that observes it |
+| `## Verify on dev` added to a change nothing deploys | Delete the heading — it implies a verification nobody intends to run |

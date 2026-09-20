@@ -1,6 +1,6 @@
 ---
 name: pr-review
-description: Use when asked to review one or more pull requests, given PR numbers or URLs to review, or asked whether a PR is safe to merge. Also use when a review must check that documentation still matches the code.
+description: Use when reviewing one or more pull requests named by number or URL, or when asked whether a PR is safe to merge. Fans out one subagent per PR in parallel, merges every finding into a single severity-sorted report with a documentation-drift check, and posts inline comments after one approval. Requires explicit PR targets — it never reviews the current branch. For re-checking comments an author says they already fixed, use pr-second-review instead.
 ---
 
 # Pull Request Review
@@ -23,10 +23,9 @@ Resolve each target to `owner/repo` + number before dispatching.
 
 Send all `Agent` calls in a **single message** so they run concurrently.
 
-Substitute the real absolute paths into the prompt — a subagent cannot expand
-`${CLAUDE_PLUGIN_ROOT}`. State the root itself too: `rubric.md` spells commands
-with `<PLUGIN_ROOT>` inline, so a subagent that only knows the five file paths
-hits a literal placeholder partway through.
+Substitute real absolute paths into the prompt — a subagent cannot expand
+`${CLAUDE_PLUGIN_ROOT}`, and the reference files spell commands with
+`<PLUGIN_ROOT>` inline.
 
 ```
 Agent({
@@ -34,6 +33,9 @@ Agent({
   model: "sonnet",
   subagent_type: "general-purpose",
   prompt: "Review pull request <owner/repo>#<n>.
+
+    Head SHA: <sha>  — already resolved, do not re-fetch it.
+    Changed files: <paths>
 
     Read these first, in order:
       <PLUGIN_ROOT>/skills/pr-review/references/rubric.md
@@ -48,21 +50,22 @@ Agent({
     Follow rubric.md exactly. Do not delegate further. Do not post anything —
     the caller posts after the user approves.
 
-    Budget: at most ~25 tool calls. Fetch the diff ONCE and work from it. Read at
-    most 3 surrounding source files and do at most 2 Notion searches. If you are
-    running long, return what you have rather than continuing.
+    Fetch the diff ONCE and work from it. rubric.md governs how deep to read —
+    a HIGH earns whatever reading makes it certain, a routine check earns the
+    cheapest look that settles it. If you are running long, return what you have
+    rather than continuing.
 
     Return the sections rubric.md's output contract specifies and nothing else."
 })
 ```
 
-Resolve the head SHA and changed-file list yourself before dispatching, and put
-them in the prompt — it saves the agent two calls and makes a stall easier to
-retry:
+Resolve the head SHA and changed-file list yourself before dispatching and fill
+them into the prompt's two slots — it saves each agent a call and makes a stall
+easier to retry:
 
 ```bash
 gh pr view <n> --repo <slug> --json headRefOid,files \
-  --jq '.headRefOid, (.files | length)'
+  --jq '.headRefOid, (.files[].path)'
 ```
 
 Do not review inline yourself. The orchestrator never loads the rubric; that is
@@ -109,10 +112,6 @@ Pass each PR's head SHA — the one you resolved in step 2 — through that skil
 `--head-sha`. A batch posts many comments per PR, and without it every single
 one pays for its own `gh pr view`.
 
-Every comment obeys the comment contract in `references/rubric.md`, which is
-the single source of truth for comment form — do not restate its rules here.
-
-## Gotchas
-
-- `gh pr review --approve` cannot approve your own PR.
-- Docs alignment never writes to Notion. It reports drift; you decide.
+Post each subagent's comment text as-is — it already follows the comment
+contract in `references/rubric.md`, and rewording it here loses the file:line
+anchoring that contract exists to produce.

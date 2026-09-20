@@ -9,8 +9,10 @@ Delete every comment the code can carry itself, and rename whatever the comment 
 propping up. Comments go stale; names do not.
 
 The governing rule is **Self-Documenting Code Over Comments** in
-`~/.claude/rules/code.md`. Read that file — do not work from memory of it. Full
-rationale lives in `~/.claude/rules-reference.md`.
+`~/.claude/rules/code.md`. Read that file — do not work from memory of it. It is
+also where the config-file and vendor-naming cases live (**Comments Name the
+Mechanism, Not Today's Provider**), so apply those from the rule file rather than
+from this skill. Full rationale: `~/.claude/rules-reference.md`.
 
 ## Scope
 
@@ -40,30 +42,29 @@ For each comment, in order:
 
 ## Delete on sight
 
+Beyond what `code.md` lists, these are the ones it does not name:
+
 - Restatements of the next line (`// increment the counter`).
-- Restatements of a type, zod schema, decorator, or field name.
 - Section banners (`// ---- helpers ----`), file-header summaries, `@param`/`@returns`
   JSDoc that adds nothing a signature does not already state.
 - Commented-out code — git has it.
-- Narration of *what* over *why*.
-- Bare ticket refs with no explanation (`// ABC-123`).
-- Comments describing behaviour that the code no longer has. These are the reason
-  the rule exists; flag them loudly, since a stale comment is worse than none.
+- Comments describing behaviour that the code no longer has.
 
-Config counts as code here — `.env.example`, Helm values, CI YAML, Terraform. Keep
-only what the file cannot show: hidden behaviour of the consuming tool, a key that is
-inert unless mirrored elsewhere, an upstream-bug workaround. Delete the rest.
+A stale comment is the failure mode this skill exists for, so it earns its own
+section in the closing report: the behaviour the comment claimed, and the line
+that disproves it. Code that changed without its reader is worth the user's
+attention beyond the pruning itself.
 
-**Docs are not comments.** README/CLAUDE.md/ADR prose is the right home for the
-context you are stripping out of code. When deleting a comment that carries real
-architectural reasoning, move it to the docs rather than dropping it.
+When a comment you are deleting carries real architectural reasoning, move it to
+the README or `CLAUDE.md` rather than dropping it — docs are the maintained home
+for the context you are stripping out of code.
 
 ## Applying
 
 Edit directly — this skill fixes, it does not just report. A rename must land
-everywhere the name is used; run the repo's typecheck/lint (`npm run typecheck`,
-`npm run lint`, or the equivalent) afterwards, since renames break callers and a
-deleted comment never does.
+everywhere the name is used; run whatever typecheck and lint the repo's own
+manifest defines afterwards, since renames break callers and a deleted comment
+never does.
 
 Never change behaviour. If removing a comment tempts a refactor beyond renaming and
 extraction, stop and raise it instead.
@@ -71,4 +72,5 @@ extraction, stop and raise it instead.
 ## Reporting
 
 Close with a short list: comments deleted (grouped by reason), comments kept and why,
-and any rename that rippled beyond the diff. Say plainly if the code was already clean.
+any rename that rippled beyond the diff, and the stale comments separately as above.
+Say plainly if the code was already clean.
