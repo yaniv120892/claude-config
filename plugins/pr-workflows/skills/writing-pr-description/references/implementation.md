@@ -1,8 +1,5 @@
 # Implementation
 
-Read when the description carries a `## Implementation` section, or when filling a repo template's What / Changes / How slot.
-
-### Implementation
 
 Technical, and anchored on the files. **One bullet per implementation file** — or per tight group of files doing one job — naming the path and what it contributes to the feature, so a reviewer knows which file to open first and why.
 

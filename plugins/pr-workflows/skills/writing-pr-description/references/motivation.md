@@ -1,8 +1,5 @@
 # Motivation
 
-Read when the description carries a `## Motivation` section, or when filling a repo template's Why / Context / Background slot.
-
-### Motivation
 
 Answer: **Why does this change exist?** Write it for the product person reading the PR, not for the reviewer — they should get it on one read, without opening the diff and without asking what a word means.
 

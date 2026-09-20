@@ -1,7 +1,5 @@
 # Visualization — when the change has a shape
 
-Read when the change is **architectural, asynchronous, or crosses component boundaries**. Skip this file for anything local.
-
 Between Implementation and Proof of Work, add a diagram when prose would be bad at conveying blast radius. A picture answers "how much of the system does this touch, and how badly does it hurt if it is wrong" before the reviewer opens a file. GitHub renders Mermaid in PR bodies, so the diagram lives in the description itself — no image to commit, and it stays readable in both themes.
 
 **Add one when:**

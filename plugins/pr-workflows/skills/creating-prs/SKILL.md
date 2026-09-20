@@ -157,11 +157,10 @@ confirmation.
 |---------|-----|
 | Title missing the conventional-commit type | Follow the pattern exactly — the title drives automation |
 | Combining dev+prod in one pull request | Separate branches, separate requests |
-| No motivation section | Add 2–4 sentences on product/engineering value |
 | Generic description ("Added changes") | Be specific about what changed and why |
 | Lowercase issue key `(abc-20)` | Uppercase: `(ABC-20)` |
 | Missing colon after the scope | `(ID):` not `(ID)` |
-| No proof of work | Run a real flow and paste the output; otherwise write the ⚠️ missing note |
+| Description written without the sub-skill | `writing-pr-description` owns Motivation, Implementation, Proof of Work and Verify on dev — their length caps and the no-proof rule included |
 | `chore` for a shippable change | `chore` skips the release pipeline — use `fix` |
 | Blocking on a ticket in a project with no tracker | Use the scopeless title form |
 
@@ -170,8 +169,6 @@ confirmation.
 - ❌ "I'll just push and open it manually"
 - ❌ "The title doesn't need the type, it's obvious"
 - ❌ "Combining dev and prod saves time"
-- ❌ "Motivation is self-explanatory"
-- ❌ "Tests passing is proof enough"
 
 **All of these mean:** pause and follow the skill.
 

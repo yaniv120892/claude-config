@@ -1,8 +1,5 @@
 # Proof of Work
 
-Read when the change does something at runtime — never for docs-only or config-only. Also the guidance for a repo template's Testing / Evidence / Screenshots slot.
-
-### Proof of Work
 
 **Run it, and paste what happened — both ways.** The reviewer should be able to see what the code does wrong without this PR and what it does instead with it, from output you actually produced on your machine.
 
@@ -30,11 +27,11 @@ done in 41s, peak RSS 412MB
 **Not proven locally:** the dev pod is capped at 4Gi, half this laptop's headroom.
 ````
 
-- **No sentence about the tests belongs here, including as a footnote after real evidence.** The shape to catch yourself writing is "Also ran/added the new `x.test.ts` (`→ ok`)", tacked on at the end because it felt generous. The reviewer sees that file in the diff and its result in CI, so it tells them nothing new, while implying the suite was part of what proved the change. Cut the sentence — what you ran above already carries the section.
+- **Tests are not evidence anywhere in the description** (Core principle). The shape to catch yourself writing here is "Also ran/added the new `x.test.ts` (`→ ok`)", tacked on after real output because it felt generous — or the same sentence relocated to a risk note. Cut it; what you ran above already carries the section.
 - **Both halves, same command.** One-sided output proves the code runs, not that it fixes anything.
 - **Say how you ran it** — the command, the script, the endpoint — so a reviewer can reproduce it. Paste a short script inline in a fenced block, or commit it and name the path.
 - **Paste real output**, trimmed to the lines carrying the claim. A description of the output is not the output.
-- **Close with `**Not proven locally:**`** naming what the run could not reach. `## Verify on dev` opens with that same thought as its `**Only dev can prove:**` line — write it once and carry it down, rather than saying it twice in different words.
+- **Close with `**Not proven locally:**`** naming what the run could not reach. `## Verify on dev` opens with that same line as its `**Only dev can prove:**` — carry it down as-is rather than rewording it.
 - Where there is genuinely no *before* — a brand-new endpoint — the 404 from the base branch is the before. Show it.
 
 **What counts as the run:**

@@ -1,10 +1,7 @@
 # Verify on dev
 
-Read when the change ships inside a deployed service. Also the guidance for a repo template's QA / Rollout / Post-deploy slot. It builds on Proof of Work's `**Not proven locally:**` line, so read that file first.
 
-### Verify on dev
-
-Acceptance criteria for after the merge deploys: what someone opens, runs, and looks at to call this change good on dev. The thinking already happened while gathering proof — this is the `**Not proven locally:**` line carried down and turned into a checklist, plus the sanity checks that say the service survived the deploy at all. The framing line here restates that gap for a reader who starts at this heading; it does not need new words for the same idea.
+Acceptance criteria for after the merge deploys: what someone opens, runs, and looks at to call this change good on dev. The thinking already happened while gathering proof — this is the `**Not proven locally:**` line carried down and turned into a checklist, plus the sanity checks that say the service survived the deploy at all. The framing line is that same gap in the same words.
 
 **Include it whenever the change ships inside a deployed service.** It is always at least these three, in this order:
 
