@@ -59,7 +59,39 @@ common_dir=$(git -C "$directory" rev-parse --path-format=absolute --git-common-d
 repository=$(git -C "$directory" rev-parse --show-toplevel 2>/dev/null) || exit 0
 branch=$(git -C "$directory" branch --show-current 2>/dev/null)
 
-read -r -d '' reason <<REASON
+# A remote container is cloned fresh for one task and discarded after it, and it
+# cannot hold a linked worktree, so requiring one there refuses every edit. What
+# the guard is really protecting — that work never accumulates on the default
+# branch — still has to hold, so the container is excused from the worktree rule
+# only while it is on a feature branch. On the default branch it still refuses,
+# which is what pushes the session onto a branch before it writes anything
+# rather than at commit time. Setting CLAUDE_WORKTREE_GUARD explicitly wins.
+if [ -n "${CLAUDE_CODE_REMOTE:-}" ] && [ -z "${CLAUDE_WORKTREE_GUARD:-}" ]; then
+  default_branch=$(git -C "$directory" symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null)
+  default_branch=${default_branch#origin/}
+  if [ -z "$default_branch" ]; then
+    for candidate in main master; do
+      if git -C "$directory" rev-parse --verify --quiet "refs/remotes/origin/$candidate" >/dev/null; then
+        default_branch=$candidate
+        break
+      fi
+    done
+  fi
+  # No resolvable default branch means nothing to protect the work from.
+  [ -z "$default_branch" ] && exit 0
+  [ "$branch" != "$default_branch" ] && exit 0
+
+  read -r -d '' reason <<REASON
+Blocked: ${target} is on ${branch}, the default branch of ${repository}.
+
+Work goes on its own branch and reaches ${branch} through a pull request, so cut one before editing:
+
+  git -C ${repository} fetch origin && git -C ${repository} checkout -b <type>/<slug> origin/${default_branch}
+
+To edit the default branch anyway, re-run with CLAUDE_WORKTREE_GUARD=off.
+REASON
+else
+  read -r -d '' reason <<REASON
 Blocked: ${target} is in the main checkout of ${repository}${branch:+ (on ${branch})}, not a worktree.
 
 Code changes belong in a worktree branched from a freshly fetched default branch. Create one, then edit there:
@@ -69,6 +101,7 @@ Code changes belong in a worktree branched from a freshly fetched default branch
 
 To edit the main checkout anyway, re-run with CLAUDE_WORKTREE_GUARD=off.
 REASON
+fi
 
 jq -n --arg reason "$reason" \
   '{hookSpecificOutput: {hookEventName: "PreToolUse",
