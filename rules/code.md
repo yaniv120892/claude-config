@@ -14,7 +14,7 @@ paths:
   - "**/*.prisma"
   - "**/*.sh"
   - "**/*.bash"
-description: Language-agnostic craft rules: comments, naming, control flow, error handling, guards.
+description: "Language-agnostic craft rules: comments, naming, control flow, error handling, guards."
 ---
 
 # Writing Code — Craft Rules
