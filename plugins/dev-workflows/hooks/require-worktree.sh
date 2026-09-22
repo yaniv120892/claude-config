@@ -24,13 +24,6 @@ target=$(printf '%s' "$payload" | jq -r '.tool_input.file_path // .tool_input.no
 # it protects would be impossible.
 [ "${CLAUDE_WORKTREE_GUARD:-on}" = "off" ] && exit 0
 
-# A remote container is cloned fresh for one task, on a branch the session was
-# handed, and discarded afterwards. The isolation a worktree buys — keeping
-# feature work off a long-lived checkout's default branch — is already what the
-# container is, so demanding one here blocks every edit and buys nothing.
-# Setting the guard explicitly still wins, so CLAUDE_WORKTREE_GUARD=on restores it.
-[ -n "${CLAUDE_CODE_REMOTE:-}" ] && [ -z "${CLAUDE_WORKTREE_GUARD:-}" ] && exit 0
-
 # A file reached through a symlink must be judged by where it physically lives,
 # not by the path used to reach it: ~/.claude/shared-rules.md is a symlink into
 # the claude-config checkout, and editing it edits that repository.
@@ -66,7 +59,39 @@ common_dir=$(git -C "$directory" rev-parse --path-format=absolute --git-common-d
 repository=$(git -C "$directory" rev-parse --show-toplevel 2>/dev/null) || exit 0
 branch=$(git -C "$directory" branch --show-current 2>/dev/null)
 
-read -r -d '' reason <<REASON
+# A remote container is cloned fresh for one task and discarded after it, and it
+# cannot hold a linked worktree, so requiring one there refuses every edit. What
+# the guard is really protecting — that work never accumulates on the default
+# branch — still has to hold, so the container is excused from the worktree rule
+# only while it is on a feature branch. On the default branch it still refuses,
+# which is what pushes the session onto a branch before it writes anything
+# rather than at commit time. Setting CLAUDE_WORKTREE_GUARD explicitly wins.
+if [ -n "${CLAUDE_CODE_REMOTE:-}" ] && [ -z "${CLAUDE_WORKTREE_GUARD:-}" ]; then
+  default_branch=$(git -C "$directory" symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null)
+  default_branch=${default_branch#origin/}
+  if [ -z "$default_branch" ]; then
+    for candidate in main master; do
+      if git -C "$directory" rev-parse --verify --quiet "refs/remotes/origin/$candidate" >/dev/null; then
+        default_branch=$candidate
+        break
+      fi
+    done
+  fi
+  # No resolvable default branch means nothing to protect the work from.
+  [ -z "$default_branch" ] && exit 0
+  [ "$branch" != "$default_branch" ] && exit 0
+
+  read -r -d '' reason <<REASON
+Blocked: ${target} is on ${branch}, the default branch of ${repository}.
+
+Work goes on its own branch and reaches ${branch} through a pull request, so cut one before editing:
+
+  git -C ${repository} fetch origin && git -C ${repository} checkout -b <type>/<slug> origin/${default_branch}
+
+To edit the default branch anyway, re-run with CLAUDE_WORKTREE_GUARD=off.
+REASON
+else
+  read -r -d '' reason <<REASON
 Blocked: ${target} is in the main checkout of ${repository}${branch:+ (on ${branch})}, not a worktree.
 
 Code changes belong in a worktree branched from a freshly fetched default branch. Create one, then edit there:
@@ -76,6 +101,7 @@ Code changes belong in a worktree branched from a freshly fetched default branch
 
 To edit the main checkout anyway, re-run with CLAUDE_WORKTREE_GUARD=off.
 REASON
+fi
 
 jq -n --arg reason "$reason" \
   '{hookSpecificOutput: {hookEventName: "PreToolUse",
