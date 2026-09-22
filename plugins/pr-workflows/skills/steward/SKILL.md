@@ -1,11 +1,11 @@
 ---
 name: steward
-description: House posture for driving a pull request to green — what to do on red CI, merge conflicts, review threads, and when standing down is allowed. Use whenever watching, babysitting, or stewarding a PR: on every CI failure, review comment, or conflict event, and at every scheduled check-in on an open pull request. Also the canonical source for each repo's `.claude/skills/steward/SKILL.md`.
+description: House posture for driving a pull request (GitLab: merge request) to green — what to do on red CI, merge conflicts, review threads, and when standing down is allowed. Use whenever watching, babysitting, or stewarding a PR (GitLab: MR): on every CI failure, review comment, or conflict event, and at every scheduled check-in on an open PR. Also the canonical source for each repo's `.claude/skills/steward/SKILL.md`.
 ---
 
 # PR Steward
 
-The posture for any pull request this session opened or was asked to drive.
+The posture for any pull request — GitLab merge requests included — this session opened or was asked to drive.
 Remote sessions read this file from a repo's `.claude/skills/steward/SKILL.md`
 on PR events; the copy in each app repo is synced from this plugin.
 
