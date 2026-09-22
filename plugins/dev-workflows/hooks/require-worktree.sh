@@ -24,6 +24,13 @@ target=$(printf '%s' "$payload" | jq -r '.tool_input.file_path // .tool_input.no
 # it protects would be impossible.
 [ "${CLAUDE_WORKTREE_GUARD:-on}" = "off" ] && exit 0
 
+# A remote container is cloned fresh for one task, on a branch the session was
+# handed, and discarded afterwards. The isolation a worktree buys — keeping
+# feature work off a long-lived checkout's default branch — is already what the
+# container is, so demanding one here blocks every edit and buys nothing.
+# Setting the guard explicitly still wins, so CLAUDE_WORKTREE_GUARD=on restores it.
+[ -n "${CLAUDE_CODE_REMOTE:-}" ] && [ -z "${CLAUDE_WORKTREE_GUARD:-}" ] && exit 0
+
 # A file reached through a symlink must be judged by where it physically lives,
 # not by the path used to reach it: ~/.claude/shared-rules.md is a symlink into
 # the claude-config checkout, and editing it edits that repository.
