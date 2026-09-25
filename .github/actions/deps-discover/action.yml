@@ -1,0 +1,38 @@
+name: Discover dependency upgrade candidates
+description: >-
+  Lists the outdated npm packages a run may open pull requests for — security
+  fixes first, lockstep families as one entry, prereleases skipped, packages
+  with an open or rejected PR left out — as a scalar-only job matrix.
+inputs:
+  github_token:
+    description: Token that can list the repository's pull requests.
+    required: true
+  max_new_prs:
+    description: How many candidates one run may open pull requests for.
+    default: '4'
+  max_open_prs:
+    description: Open nothing new while this many deps/* pull requests are open.
+    default: '8'
+outputs:
+  candidates:
+    description: JSON array of matrix entries (slug, branch, title, level, security, packages, advisories).
+    value: ${{ steps.discover.outputs.candidates }}
+  count:
+    description: Number of candidates selected for this run.
+    value: ${{ steps.discover.outputs.count }}
+runs:
+  using: composite
+  steps:
+    - id: discover
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github_token }}
+        MAX_NEW_PRS: ${{ inputs.max_new_prs }}
+        MAX_OPEN_PRS: ${{ inputs.max_open_prs }}
+      run: |
+        gh pr list --state all --limit 500 --json number,title,state,headRefName > "$RUNNER_TEMP/pull-requests.json"
+        node "$GITHUB_ACTION_PATH/discover.mjs" \
+          --pull-requests "$RUNNER_TEMP/pull-requests.json" \
+          --max-new "$MAX_NEW_PRS" \
+          --max-open "$MAX_OPEN_PRS" \
+          --output "$RUNNER_TEMP/deps-candidates.json"

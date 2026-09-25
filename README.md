@@ -77,6 +77,24 @@ python3 ~/.claude/plugins/.../pr-workflows/lib/github.py
 Scripts resolve `${CLAUDE_PLUGIN_ROOT}` when installed and fall back to walking up
 to the plugin root when run straight from a clone, so both work.
 
+## GitHub workflows (the third route)
+
+Some automation runs on GitHub rather than in a session, and reaches a repo by
+`uses:` rather than by plugin or symlink. `.github/workflows/deps-upgrade.yml` is
+a reusable workflow: each app repo's own `deps-upgrade.yml` calls it daily with
+the list of checks a dependency bump must pass, and it does the rest — the
+`deps-discover` action (`.github/actions/`) lists outdated packages without a
+model, security fixes first, lockstep families as one entry, prereleases skipped,
+anything with an open or rejected PR left out; `deps-bump` writes the target
+versions into `package.json` keeping each range style; then one
+`anthropics/claude-code-action` session per candidate researches the jump, runs
+the checks, fixes what broke, and opens the pull request from inside the step,
+because the App token it pushes with is revoked when the step ends.
+
+Callers pin `@main`, the same "fetched, stays current" terms as the plugins.
+The discovery and bump logic is pure and covered:
+`node --test .github/actions/deps-discover/discover.test.mjs .github/actions/deps-bump/bump.test.mjs`.
+
 ## Rules (the non-plugin half)
 
 `shared-rules.md` loads on every prompt and holds only what is universal:
@@ -101,6 +119,8 @@ Verify what actually loaded in a session with `/context`.
 
 ```
 .claude-plugin/marketplace.json   the marketplace manifest
+.github/workflows/                reusable workflows the app repos call
+.github/actions/                  the composite actions those workflows use
 plugins/<name>/                   one directory per plugin
   .claude-plugin/plugin.json      plugin manifest
   skills/ commands/ hooks/ lib/ references/

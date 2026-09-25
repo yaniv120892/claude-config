@@ -1,0 +1,25 @@
+name: Bump dependency specs
+description: >-
+  Writes one candidate's target versions into package.json, keeping each
+  package's range style, and runs npm install. A failed install is reported
+  through the `install` output rather than failing the step, so the model
+  step that follows can diagnose it.
+inputs:
+  packages:
+    description: JSON array of { name, section, spec } as the discover action emits it.
+    required: true
+outputs:
+  install:
+    description: "'ok' or 'failed'."
+    value: ${{ steps.bump.outputs.install }}
+  install_log:
+    description: Path of the captured npm install output.
+    value: ${{ steps.bump.outputs.install_log }}
+runs:
+  using: composite
+  steps:
+    - id: bump
+      shell: bash
+      env:
+        PACKAGES: ${{ inputs.packages }}
+      run: node "$GITHUB_ACTION_PATH/bump.mjs"
