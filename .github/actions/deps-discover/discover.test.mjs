@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import {
   classifyAgainstPullRequests,
   groupCandidates,
+  listDirectDependencies,
   orderGroups,
   parseBumpTitle,
   planCandidates,
@@ -206,6 +207,12 @@ test('a branch for a package whose name extends the slug belongs to that other p
   assert.equal(classifyAgainstPullRequests(next, nextAuth).status, 'eligible');
   const ownNext = [{ number: 4, state: 'OPEN', title: 'chore(deps): bump next from 15.5.24 to 16.0.0', headRefName: 'deps/next-16.0.0' }];
   assert.equal(classifyAgainstPullRequests(next, ownNext).status, 'skipped');
+  const compat = [{ number: 5, state: 'OPEN', title: 'feat: react 18 compat', headRefName: 'deps/next-18-compat-2.0.0' }];
+  assert.equal(classifyAgainstPullRequests(next, compat).status, 'eligible');
+});
+
+test('a lockfile without a packages map fails loudly instead of reading as up to date', () => {
+  assert.throws(() => listDirectDependencies({ dependencies: { a: '^1' } }, { lockfileVersion: 1 }), /lockfileVersion 2/);
 });
 
 test('an exact-pinned @types partner follows its package within the major', async () => {

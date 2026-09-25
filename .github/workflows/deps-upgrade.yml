@@ -61,10 +61,16 @@ jobs:
           node-version: 22
           cache: npm
 
+      # A remote branch with no pull request is a run that pushed and then
+      # failed to open one; discovery would have skipped it otherwise.
       - name: Create the upgrade branch
         env:
           BRANCH: ${{ matrix.branch }}
-        run: git switch -c "$BRANCH"
+        run: |
+          if git ls-remote --exit-code --heads origin "$BRANCH" >/dev/null; then
+            git push origin --delete "$BRANCH"
+          fi
+          git switch -c "$BRANCH"
 
       - id: bump
         uses: yaniv120892/claude-config/.github/actions/deps-bump@main

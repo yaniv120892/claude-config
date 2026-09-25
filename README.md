@@ -1,8 +1,8 @@
 # claude-config
 
 Portable Claude Code configuration that travels between machines. This repo is
-**both a plugin marketplace and a small dotfiles install**, because Claude Code
-splits configuration into two halves that install differently.
+**a plugin marketplace, a small dotfiles install, and a home for reusable GitHub
+workflows**, because each reaches a repo by a different route.
 
 Everything here is **project-agnostic** — nothing is tied to a particular
 employer, forge, or issue tracker — and **no secrets are tracked**.
@@ -13,6 +13,7 @@ employer, forge, or issue tracker — and **no secrets are tracked**.
 | --- | --- | --- |
 | Skills, commands, hooks | **Plugins** (5) | Plugins are the supported mechanism: versioned, per-profile toggles, `/plugin update`, namespaced, and installing one never touches your existing skills |
 | Global rules, settings, keybindings, statusline | **Symlinks** via `install.sh` | Plugins cannot provide always-loaded `CLAUDE.md` instructions, `paths:`-scoped `rules/*.md`, `settings.json`, or a statusline |
+| Reusable workflows and composite actions | **`uses:`** from a repo's own workflow | Runs on GitHub, not in a session — see *GitHub workflows* below |
 
 ## Install on a new machine
 
@@ -83,9 +84,12 @@ Some automation runs on GitHub rather than in a session, and reaches a repo by
 `uses:` rather than by plugin or symlink. `.github/workflows/deps-upgrade.yml` is
 a reusable workflow: an app repo's own `deps-upgrade.yml` calls it daily with the
 list of checks a dependency bump must pass, and one pull request per outdated
-package comes back, for a human to review: the model step can create a pull
-request and nothing else (`gh pr merge`, `gh pr review` and `gh pr edit` are
-denied in its settings). The `deps-discover` and `deps-bump` actions under
+package comes back, for a human to review. The model step is told to open the
+pull request and stop, and `gh pr merge`, `gh pr review`, `gh pr edit` and a
+force push are denied in its settings; that is a guardrail, since the step can
+run `npm`, `node` and `git`. What enforces it is a ruleset on the app repo's
+default branch requiring a pull request and a review, with no bypass. The
+`deps-discover` and `deps-bump` actions under
 `.github/actions/` are the model-free half; each `action.yml` says what it does.
 
 Callers pin `@main`, the same "fetched, stays current" terms as the plugins.

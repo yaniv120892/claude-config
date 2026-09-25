@@ -4,13 +4,23 @@ import { appendFileSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
-import { bumpLevel, highestStable, highestStableWithinRange, isPrerelease, parseVersion } from './semver.mjs';
+import {
+  bumpLevel,
+  compareVersions,
+  highestStable,
+  highestStableWithinRange,
+  isPrerelease,
+  parseVersion,
+} from './semver.mjs';
 
 const execFileAsync = promisify(execFile);
 
 export const BRANCH_PREFIX = 'deps/';
 
+const TYPES_SCOPE = '@types/';
+const PULL_REQUEST_STATE = { open: 'OPEN', closed: 'CLOSED' };
 const LEVEL_RANK = { patch: 0, minor: 1, major: 2 };
+const REGISTRY_FETCH_CONCURRENCY = 8;
 
 // Packages released together, so one pull request moves the whole set. A family
 // matches its leader, its `members` and any name under its `prefixes`; the
@@ -35,6 +45,10 @@ export const LOCKSTEP_FAMILIES = [
   { slug: 'ai-sdk', label: 'ai', leader: 'ai', prefixes: ['@ai-sdk/'] },
 ];
 
+// The shape every upgrade PR title takes, dependabot's included, so a title
+// names a package and a target version structurally rather than by prose.
+const BUMP_TITLE = /\bbump (\S+) from (\S+) to (\S+)/i;
+
 export function slugify(packageName) {
   return packageName
     .replace(/^@/, '')
@@ -55,10 +69,10 @@ export function findFamily(packageName) {
 
 // `@types/foo` pairs with `foo`, and `@types/scope__name` with `@scope/name`.
 export function typesBaseName(packageName) {
-  if (!packageName.startsWith('@types/')) {
+  if (!packageName.startsWith(TYPES_SCOPE)) {
     return packageName;
   }
-  const bare = packageName.slice('@types/'.length);
+  const bare = packageName.slice(TYPES_SCOPE.length);
   return bare.includes('__') ? `@${bare.replace('__', '/')}` : bare;
 }
 
@@ -69,20 +83,19 @@ export function rangePrefix(spec) {
   return /^\d/.test(spec) ? '' : null;
 }
 
-// The shape every upgrade PR title takes, dependabot's included, so a title
-// names a package and a target version structurally rather than by prose.
-const BUMP_TITLE = /\bbump (\S+) from (\S+) to (\S+)/i;
-
 export function parseBumpTitle(title) {
   const match = BUMP_TITLE.exec(title);
   return match ? { name: match[1], to: match[3] } : null;
 }
 
 export function listDirectDependencies(packageJson, lockfile) {
+  if (!lockfile.packages) {
+    throw new Error('package-lock.json has no "packages" map: lockfileVersion 2 or later is required');
+  }
   const direct = [];
   for (const section of ['dependencies', 'devDependencies']) {
     for (const [name, spec] of Object.entries(packageJson[section] ?? {})) {
-      const locked = lockfile.packages?.[`node_modules/${name}`];
+      const locked = lockfile.packages[`node_modules/${name}`];
       if (!locked?.version) {
         continue;
       }
@@ -104,7 +117,9 @@ export function resolveTarget(dependency, metadata, audit, { stayInRange = false
   const fixIsInRange = audit.vulnerabilities?.[dependency.name]?.fixAvailable === true;
   const prefix = rangePrefix(dependency.spec) || (stayInRange ? '^' : '');
   const inRange = highestStableWithinRange(versions, dependency.current, prefix);
-  if ((stayInRange || (isSecurityFix(audit, dependency.name) && fixIsInRange)) && inRange && isNewer(inRange, dependency.current)) {
+  const wantsInRange = stayInRange || (isSecurityFix(audit, dependency.name) && fixIsInRange);
+  const takesInRangeTarget = wantsInRange && inRange !== null && isNewer(inRange, dependency.current);
+  if (takesInRangeTarget) {
     return inRange;
   }
   if (stayInRange) {
@@ -112,17 +127,6 @@ export function resolveTarget(dependency, metadata, audit, { stayInRange = false
   }
   const target = isPrerelease(latest) ? highestStable(versions) : latest;
   return target && isNewer(target, dependency.current) ? target : null;
-}
-
-function isNewer(candidate, current) {
-  const left = parseVersion(candidate);
-  const right = parseVersion(current);
-  for (const part of ['major', 'minor', 'patch']) {
-    if (left[part] !== right[part]) {
-      return left[part] > right[part];
-    }
-  }
-  return left.prerelease.length === 0 && right.prerelease.length > 0;
 }
 
 export function collectAdvisories(audit, packageName) {
@@ -151,12 +155,6 @@ export function isSecurityFix(audit, packageName) {
   return Boolean(entry?.isDirect && entry.fixAvailable);
 }
 
-function groupKey(packageName) {
-  const base = typesBaseName(packageName);
-  const family = findFamily(base);
-  return family ? `family:${family.slug}` : `pair:${base}`;
-}
-
 export function groupCandidates(upgrades) {
   const groups = new Map();
   for (const upgrade of upgrades) {
@@ -169,65 +167,12 @@ export function groupCandidates(upgrades) {
   return [...groups.values()].map(describeGroup);
 }
 
-function describeGroup(packages) {
-  const sorted = [...packages].sort((left, right) => left.name.localeCompare(right.name));
-  const family = findFamily(typesBaseName(sorted[0].name));
-  const leader =
-    sorted.find((item) => item.name === family?.leader) ??
-    sorted.find((item) => !item.name.startsWith('@types/')) ??
-    sorted[0];
-  const slug = sorted.length === 1 || !family ? slugify(leader.name) : family.slug;
-  const level = sorted.reduce(
-    (highest, item) => (LEVEL_RANK[item.level] > LEVEL_RANK[highest] ? item.level : highest),
-    'patch',
-  );
-  return {
-    slug,
-    branch: `${BRANCH_PREFIX}${slug}-${leader.to}`,
-    title: buildTitle(family, sorted, leader),
-    level,
-    security: sorted.some((item) => item.security),
-    advisories: dedupeById(sorted.flatMap((item) => item.advisories)),
-    packages: sorted.map(({ advisories: _advisories, security: _security, level: _level, ...item }) => item),
-  };
-}
-
-function buildTitle(family, packages, leader) {
-  const sameJump = packages.every((item) => item.from === leader.from && item.to === leader.to);
-  if (sameJump) {
-    const names = family && packages.length > 2 ? family.label : joinNames(packages.map((item) => item.name));
-    return `chore(deps): bump ${names} from ${leader.from} to ${leader.to}`;
-  }
-  const others = packages.length - 1;
-  return `chore(deps): bump ${leader.name} from ${leader.from} to ${leader.to} and ${others} lockstep ${others === 1 ? 'package' : 'packages'}`;
-}
-
-function joinNames(names) {
-  if (names.length <= 2) {
-    return names.join(' and ');
-  }
-  return `${names.slice(0, -1).join(', ')} and ${names.at(-1)}`;
-}
-
-function dedupeById(advisories) {
-  const byId = new Map();
-  for (const advisory of advisories) {
-    byId.set(advisory.id, advisory);
-  }
-  return [...byId.values()];
-}
-
-// `deps/next-16.3.6` is next's branch; `deps/next-auth-5.0.0` is not.
-function branchIsFor(headRefName, slug) {
-  return headRefName.startsWith(`${BRANCH_PREFIX}${slug}-`) && /^\d/.test(headRefName.slice(BRANCH_PREFIX.length + slug.length + 1));
-}
-
 export function classifyAgainstPullRequests(group, pullRequests) {
   const slugs = [group.slug, ...group.packages.map((item) => slugify(item.name))];
   const bumpOf = (pullRequest) => parseBumpTitle(pullRequest.title);
   const open = pullRequests.find(
     (pullRequest) =>
-      pullRequest.state === 'OPEN' &&
+      pullRequest.state === PULL_REQUEST_STATE.open &&
       (slugs.some((slug) => branchIsFor(pullRequest.headRefName, slug)) ||
         group.packages.some((item) => item.name === bumpOf(pullRequest)?.name)),
   );
@@ -236,7 +181,7 @@ export function classifyAgainstPullRequests(group, pullRequests) {
   }
   const rejected = pullRequests.find(
     (pullRequest) =>
-      pullRequest.state === 'CLOSED' &&
+      pullRequest.state === PULL_REQUEST_STATE.closed &&
       (pullRequest.headRefName === group.branch ||
         group.packages.some((item) => pullRequest.headRefName === `${BRANCH_PREFIX}${slugify(item.name)}-${item.to}`) ||
         group.packages.some((item) => item.name === bumpOf(pullRequest)?.name && item.to === bumpOf(pullRequest)?.to)),
@@ -262,7 +207,10 @@ export function orderGroups(groups) {
 export async function planCandidates({ packageJson, lockfile, fetchMetadata, audit, pullRequests, limits }) {
   const dependencies = listDirectDependencies(packageJson, lockfile);
   const [metadataByName, resolvedAudit] = await Promise.all([
-    mapWithConcurrency(dependencies, 8, async (dependency) => [dependency.name, await fetchMetadata(dependency.name)]),
+    mapWithConcurrency(dependencies, REGISTRY_FETCH_CONCURRENCY, async (dependency) => [
+      dependency.name,
+      await fetchMetadata(dependency.name),
+    ]),
     audit,
   ]);
 
@@ -300,7 +248,7 @@ export async function planCandidates({ packageJson, lockfile, fetchMetadata, aud
   }
 
   const openDepsPullRequests = pullRequests.filter(
-    (pullRequest) => pullRequest.state === 'OPEN' && pullRequest.headRefName.startsWith(BRANCH_PREFIX),
+    (pullRequest) => pullRequest.state === PULL_REQUEST_STATE.open && pullRequest.headRefName.startsWith(BRANCH_PREFIX),
   ).length;
   const budget = openDepsPullRequests >= limits.maxOpenPullRequests ? 0 : limits.maxNewPullRequests;
   const deferredReason =
@@ -368,6 +316,70 @@ export function renderSummary(plan) {
   return `${lines.join('\n')}\n`;
 }
 
+function isNewer(candidate, current) {
+  return compareVersions(candidate, current) > 0;
+}
+
+function groupKey(packageName) {
+  const base = typesBaseName(packageName);
+  const family = findFamily(base);
+  return family ? `family:${family.slug}` : `pair:${base}`;
+}
+
+function describeGroup(packages) {
+  const sorted = [...packages].sort((left, right) => left.name.localeCompare(right.name));
+  const family = findFamily(typesBaseName(sorted[0].name));
+  const leader =
+    sorted.find((item) => item.name === family?.leader) ??
+    sorted.find((item) => !item.name.startsWith(TYPES_SCOPE)) ??
+    sorted[0];
+  const slug = sorted.length === 1 || !family ? slugify(leader.name) : family.slug;
+  const level = sorted.reduce(
+    (highest, item) => (LEVEL_RANK[item.level] > LEVEL_RANK[highest] ? item.level : highest),
+    'patch',
+  );
+  return {
+    slug,
+    branch: `${BRANCH_PREFIX}${slug}-${leader.to}`,
+    title: buildTitle(family, sorted, leader),
+    level,
+    security: sorted.some((item) => item.security),
+    advisories: dedupeById(sorted.flatMap((item) => item.advisories)),
+    packages: sorted.map(({ advisories: _advisories, security: _security, level: _level, ...item }) => item),
+  };
+}
+
+function buildTitle(family, packages, leader) {
+  const sameJump = packages.every((item) => item.from === leader.from && item.to === leader.to);
+  if (sameJump) {
+    const names = family && packages.length > 2 ? family.label : joinNames(packages.map((item) => item.name));
+    return `chore(deps): bump ${names} from ${leader.from} to ${leader.to}`;
+  }
+  const others = packages.length - 1;
+  return `chore(deps): bump ${leader.name} from ${leader.from} to ${leader.to} and ${others} lockstep ${others === 1 ? 'package' : 'packages'}`;
+}
+
+function joinNames(names) {
+  if (names.length <= 2) {
+    return names.join(' and ');
+  }
+  return `${names.slice(0, -1).join(', ')} and ${names.at(-1)}`;
+}
+
+function dedupeById(advisories) {
+  const byId = new Map();
+  for (const advisory of advisories) {
+    byId.set(advisory.id, advisory);
+  }
+  return [...byId.values()];
+}
+
+// `deps/next-16.3.6` is next's branch; `deps/next-auth-5.0.0` is not.
+function branchIsFor(headRefName, slug) {
+  const prefix = `${BRANCH_PREFIX}${slug}-`;
+  return headRefName.startsWith(prefix) && /^\d+\.\d+\.\d+/.test(headRefName.slice(prefix.length));
+}
+
 async function mapWithConcurrency(items, concurrency, worker) {
   const results = new Map();
   let nextIndex = 0;
@@ -406,13 +418,16 @@ async function runNpmAudit() {
 // The abbreviated registry document carries the tags and the version list
 // and nothing else, a few KB where the full one runs to megabytes. A package
 // the registry does not serve (a git or file dependency, a private scope) is
-// left alone rather than failing the run.
+// left alone; any other failure is the registry's and fails the run.
 async function fetchRegistryMetadata(registry, packageName) {
   const url = new URL(packageName.replace('/', '%2F'), registry.endsWith('/') ? registry : `${registry}/`);
   const response = await fetch(url, { headers: { accept: 'application/vnd.npm.install-v1+json' } });
-  if (!response.ok) {
-    process.stderr.write(`skipping ${packageName}: registry answered ${response.status} for ${url}\n`);
+  if (response.status === 404) {
+    process.stderr.write(`skipping ${packageName}: not served by ${registry}\n`);
     return null;
+  }
+  if (!response.ok) {
+    throw new Error(`registry answered ${response.status} for ${packageName} (${url})`);
   }
   const document = await response.json();
   return { latest: document['dist-tags']?.latest, versions: Object.keys(document.versions ?? {}) };
