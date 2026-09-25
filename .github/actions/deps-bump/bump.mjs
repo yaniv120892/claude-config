@@ -2,7 +2,8 @@
 import { spawnSync } from 'node:child_process';
 import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 // Outside the working tree, so it can never ride along in the commit.
 const INSTALL_LOG = join(process.env.RUNNER_TEMP ?? tmpdir(), 'deps-install.log');
@@ -36,6 +37,7 @@ function main() {
   }
 }
 
-if (import.meta.main) {
+const invokedDirectly = process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href;
+if (invokedDirectly) {
   main();
 }

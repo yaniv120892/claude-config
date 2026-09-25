@@ -83,11 +83,12 @@ jobs:
           : > "$RESULTS"
           while IFS= read -r command; do
             [ -z "$command" ] && continue
-            if output=$(bash -c "$command" 2>&1); then
+            if output=$(bash -c "$command" 2>&1 </dev/null); then
               printf '### `%s` — passed\n\n' "$command" >> "$RESULTS"
             else
+              status=$?
               failures=$((failures + 1))
-              printf '### `%s` — FAILED (exit %s)\n\n```\n%s\n```\n\n' "$command" "$?" "$(printf '%s' "$output" | tail -n 80)" >> "$RESULTS"
+              printf '### `%s` — FAILED (exit %s)\n\n```\n%s\n```\n\n' "$command" "$status" "$(printf '%s' "$output" | tail -n 80)" >> "$RESULTS"
             fi
           done <<< "$CHECK_COMMANDS"
           echo "failures=$failures" >> "$GITHUB_OUTPUT"

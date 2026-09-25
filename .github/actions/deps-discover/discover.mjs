@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 import { execFile } from 'node:child_process';
 import { appendFileSync, readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 import { bumpLevel, highestStable, highestStableWithinRange, isPrerelease, parseVersion } from './semver.mjs';
 
@@ -100,7 +102,8 @@ export function resolveTarget(dependency, metadata, audit, { stayInRange = false
   }
   const versions = metadata.versions ?? [];
   const fixIsInRange = audit.vulnerabilities?.[dependency.name]?.fixAvailable === true;
-  const inRange = highestStableWithinRange(versions, dependency.current, rangePrefix(dependency.spec));
+  const prefix = rangePrefix(dependency.spec) || (stayInRange ? '^' : '');
+  const inRange = highestStableWithinRange(versions, dependency.current, prefix);
   if ((stayInRange || (isSecurityFix(audit, dependency.name) && fixIsInRange)) && inRange && isNewer(inRange, dependency.current)) {
     return inRange;
   }
@@ -214,18 +217,19 @@ function dedupeById(advisories) {
   return [...byId.values()];
 }
 
+// `deps/next-16.3.6` is next's branch; `deps/next-auth-5.0.0` is not.
+function branchIsFor(headRefName, slug) {
+  return headRefName.startsWith(`${BRANCH_PREFIX}${slug}-`) && /^\d/.test(headRefName.slice(BRANCH_PREFIX.length + slug.length + 1));
+}
+
 export function classifyAgainstPullRequests(group, pullRequests) {
-  const memberBranchPrefixes = group.packages.map((item) => `${BRANCH_PREFIX}${slugify(item.name)}-`);
-  const namesTargetOf = (title) => {
-    const bump = parseBumpTitle(title);
-    return bump ? group.packages.find((item) => item.name === bump.name) : undefined;
-  };
+  const slugs = [group.slug, ...group.packages.map((item) => slugify(item.name))];
+  const bumpOf = (pullRequest) => parseBumpTitle(pullRequest.title);
   const open = pullRequests.find(
     (pullRequest) =>
       pullRequest.state === 'OPEN' &&
-      (pullRequest.headRefName.startsWith(`${BRANCH_PREFIX}${group.slug}-`) ||
-        memberBranchPrefixes.some((prefix) => pullRequest.headRefName.startsWith(prefix)) ||
-        namesTargetOf(pullRequest.title) !== undefined),
+      (slugs.some((slug) => branchIsFor(pullRequest.headRefName, slug)) ||
+        group.packages.some((item) => item.name === bumpOf(pullRequest)?.name)),
   );
   if (open) {
     return { status: 'skipped', reason: `open PR #${open.number} (${open.headRefName})` };
@@ -234,8 +238,8 @@ export function classifyAgainstPullRequests(group, pullRequests) {
     (pullRequest) =>
       pullRequest.state === 'CLOSED' &&
       (pullRequest.headRefName === group.branch ||
-        group.packages.some((item, index) => pullRequest.headRefName === `${memberBranchPrefixes[index]}${item.to}`) ||
-        parseBumpTitle(pullRequest.title)?.to === namesTargetOf(pullRequest.title)?.to),
+        group.packages.some((item) => pullRequest.headRefName === `${BRANCH_PREFIX}${slugify(item.name)}-${item.to}`) ||
+        group.packages.some((item) => item.name === bumpOf(pullRequest)?.name && item.to === bumpOf(pullRequest)?.to)),
   );
   if (rejected) {
     return { status: 'skipped', reason: `PR #${rejected.number} for this version was closed without merging` };
@@ -257,11 +261,10 @@ export function orderGroups(groups) {
 
 export async function planCandidates({ packageJson, lockfile, fetchMetadata, audit, pullRequests, limits }) {
   const dependencies = listDirectDependencies(packageJson, lockfile);
-  const [metadata, resolvedAudit] = await Promise.all([
-    Promise.all(dependencies.map(async (dependency) => [dependency.name, await fetchMetadata(dependency.name)])),
+  const [metadataByName, resolvedAudit] = await Promise.all([
+    mapWithConcurrency(dependencies, 8, async (dependency) => [dependency.name, await fetchMetadata(dependency.name)]),
     audit,
   ]);
-  const metadataByName = new Map(metadata);
 
   const upgrades = [];
   const unsupportedSpecs = [];
@@ -365,26 +368,51 @@ export function renderSummary(plan) {
   return `${lines.join('\n')}\n`;
 }
 
-async function runNpmJson(args) {
-  try {
-    const { stdout } = await execFileAsync('npm', args, { maxBuffer: 64 * 1024 * 1024 });
-    return JSON.parse(stdout || '{}');
-  } catch (error) {
-    // npm audit exits 1 whenever anything is vulnerable and still prints the report.
-    if (error.stdout) {
-      return JSON.parse(error.stdout);
+async function mapWithConcurrency(items, concurrency, worker) {
+  const results = new Map();
+  let nextIndex = 0;
+  const lanes = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+    while (nextIndex < items.length) {
+      const item = items[nextIndex];
+      nextIndex += 1;
+      const [key, value] = await worker(item);
+      results.set(key, value);
     }
-    throw error;
+  });
+  await Promise.all(lanes);
+  return results;
+}
+
+// npm audit exits 1 whenever anything is vulnerable and still prints the
+// report; an unreachable advisory endpoint also exits 1 but prints an error
+// object, which must not read as "no vulnerabilities".
+async function runNpmAudit() {
+  let stdout;
+  try {
+    ({ stdout } = await execFileAsync('npm', ['audit', '--json'], { maxBuffer: 64 * 1024 * 1024 }));
+  } catch (error) {
+    if (!error.stdout) {
+      throw error;
+    }
+    stdout = error.stdout;
   }
+  const report = JSON.parse(stdout || '{}');
+  if (!report.vulnerabilities) {
+    throw new Error(`npm audit returned no report: ${JSON.stringify(report.error ?? report)}`);
+  }
+  return report;
 }
 
 // The abbreviated registry document carries the tags and the version list
-// and nothing else, a few KB where the full one runs to megabytes.
+// and nothing else, a few KB where the full one runs to megabytes. A package
+// the registry does not serve (a git or file dependency, a private scope) is
+// left alone rather than failing the run.
 async function fetchRegistryMetadata(registry, packageName) {
-  const url = new URL(packageName.replace('/', '%2F'), registry);
+  const url = new URL(packageName.replace('/', '%2F'), registry.endsWith('/') ? registry : `${registry}/`);
   const response = await fetch(url, { headers: { accept: 'application/vnd.npm.install-v1+json' } });
   if (!response.ok) {
-    throw new Error(`registry answered ${response.status} for ${packageName} (${url})`);
+    process.stderr.write(`skipping ${packageName}: registry answered ${response.status} for ${url}\n`);
+    return null;
   }
   const document = await response.json();
   return { latest: document['dist-tags']?.latest, versions: Object.keys(document.versions ?? {}) };
@@ -398,7 +426,7 @@ async function main() {
     packageJson: readJson('package.json'),
     lockfile: readJson('package-lock.json'),
     fetchMetadata: (packageName) => fetchRegistryMetadata(registry, packageName),
-    audit: runNpmJson(['audit', '--json']),
+    audit: runNpmAudit(),
     pullRequests: process.env.PULL_REQUESTS_FILE ? readJson(process.env.PULL_REQUESTS_FILE) : [],
     limits: {
       maxNewPullRequests: Number(process.env.MAX_NEW_PRS ?? 4),
@@ -416,6 +444,7 @@ async function main() {
   }
 }
 
-if (import.meta.main) {
+const invokedDirectly = process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href;
+if (invokedDirectly) {
   await main();
 }

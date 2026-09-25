@@ -196,6 +196,40 @@ test('a PR for the same target version closed without merging means the version 
   assert.equal(classifyAgainstPullRequests(group, olderVersionRejected).status, 'eligible');
   const otherPackageClosed = [{ number: 91, state: 'CLOSED', title: 'chore(deps): bump zod from 3.25.76 to 3.10.1', headRefName: 'deps/zod-3.10.1' }];
   assert.equal(classifyAgainstPullRequests(group, otherPackageClosed).status, 'eligible');
+  const abandonedFeature = [{ number: 12, state: 'CLOSED', title: 'feat: abandoned idea', headRefName: 'feat/abandoned' }];
+  assert.equal(classifyAgainstPullRequests(group, abandonedFeature).status, 'eligible');
+});
+
+test('a branch for a package whose name extends the slug belongs to that other package', () => {
+  const next = groupCandidates([upgrade('next', '15.5.24', '16.3.6')])[0];
+  const nextAuth = [{ number: 3, state: 'OPEN', title: 'chore(deps): bump next-auth from 4.0.0 to 5.0.0', headRefName: 'deps/next-auth-5.0.0' }];
+  assert.equal(classifyAgainstPullRequests(next, nextAuth).status, 'eligible');
+  const ownNext = [{ number: 4, state: 'OPEN', title: 'chore(deps): bump next from 15.5.24 to 16.0.0', headRefName: 'deps/next-16.0.0' }];
+  assert.equal(classifyAgainstPullRequests(next, ownNext).status, 'skipped');
+});
+
+test('an exact-pinned @types partner follows its package within the major', async () => {
+  const packageJson = { dependencies: { react: '^19.1.0' }, devDependencies: { '@types/react': '19.1.9' } };
+  const lockfile = lockfileFor({ react: '19.1.0', '@types/react': '19.1.9' });
+  const registry = {
+    react: { latest: '19.3.0', versions: ['19.1.0', '19.3.0'] },
+    '@types/react': { latest: '19.3.0', versions: ['19.1.9', '19.3.0'] },
+  };
+  const limits = { maxNewPullRequests: 4, maxOpenPullRequests: 8 };
+  const plan = await planCandidates({ packageJson, lockfile, fetchMetadata: async (name) => registry[name], audit: noAudit, pullRequests: [], limits });
+  assert.deepEqual(
+    plan.report[0].packages.map((item) => [item.name, item.spec]),
+    [['@types/react', '19.3.0'], ['react', '^19.3.0']],
+  );
+});
+
+test('a package the registry does not serve is left alone, not a failed run', async () => {
+  const packageJson = { dependencies: { 'my-fork': 'github:me/my-fork', axios: '^1.9.0' } };
+  const lockfile = lockfileFor({ 'my-fork': '1.0.0', axios: '1.9.0' });
+  const registry = { axios: { latest: '1.20.0', versions: ['1.9.0', '1.20.0'] } };
+  const limits = { maxNewPullRequests: 4, maxOpenPullRequests: 8 };
+  const plan = await planCandidates({ packageJson, lockfile, fetchMetadata: async (name) => registry[name] ?? null, audit: noAudit, pullRequests: [], limits });
+  assert.deepEqual(plan.report.map((group) => group.slug), ['axios']);
 });
 
 test('the plan honours the per-run budget and the open-PR ceiling', async () => {
