@@ -4,14 +4,16 @@ import {
   classifyAgainstPullRequests,
   groupCandidates,
   orderGroups,
+  parseBumpTitle,
   planCandidates,
   rangePrefix,
   resolveTarget,
-  titleMentions,
   toMatrixEntries,
   typesBaseName,
 } from './discover.mjs';
-import { bumpLevel, compareVersions, highestStable } from './semver.mjs';
+import { bumpLevel, compareVersions, highestStable, highestStableWithinRange } from './semver.mjs';
+
+const noAudit = { vulnerabilities: {} };
 
 function lockfileFor(versions) {
   const packages = {};
@@ -43,32 +45,81 @@ test('semver helpers order releases and rank prereleases below their release', (
   assert.equal(bumpLevel('15.5.24', '16.3.6'), 'major');
   assert.equal(bumpLevel('1.57.0', '1.71.0'), 'minor');
   assert.equal(bumpLevel('4.5.0', '4.5.1'), 'patch');
+  assert.equal(bumpLevel('0.2.1', '0.24.1'), 'major');
+  assert.equal(bumpLevel('0.2.1', '0.2.9'), 'patch');
+});
+
+test('a range admits what npm install could move to without a spec change', () => {
+  const versions = ['4.18.2', '4.21.2', '4.22.3', '5.0.0', '5.2.1', '5.3.0-beta.1'];
+  assert.equal(highestStableWithinRange(versions, '4.21.2', '^'), '4.22.3');
+  assert.equal(highestStableWithinRange(versions, '4.21.2', '~'), '4.21.2');
+  assert.equal(highestStableWithinRange(versions, '4.21.2', ''), null);
+  assert.equal(highestStableWithinRange(['0.2.1', '0.2.9', '0.24.1'], '0.2.1', '^'), '0.2.9');
 });
 
 test('a prerelease latest tag falls back to the highest stable published version', () => {
   const dependency = { name: 'prisma', spec: '^6.9.0', section: 'devDependencies', current: '6.19.3' };
   const versions = ['6.19.3', '7.10.0', '8.0.0-rc.17', '8.1.0-dev.7'];
-  assert.equal(resolveTarget(dependency, { latest: '8.0.0-rc.17', versions }), '7.10.0');
-  assert.equal(resolveTarget(dependency, { latest: '6.19.3', versions }), null);
-  assert.equal(resolveTarget(dependency, undefined), null);
+  assert.equal(resolveTarget(dependency, { latest: '8.0.0-rc.17', versions }, noAudit), '7.10.0');
+  assert.equal(resolveTarget(dependency, { latest: '6.19.3', versions }, noAudit), null);
+  assert.equal(resolveTarget(dependency, undefined, noAudit), null);
 });
 
-test('the range style of the existing spec is preserved', () => {
+test('a security fix reachable inside the current range targets that, not the next major', () => {
+  const dependency = { name: 'express', spec: '^4.18.2', section: 'dependencies', current: '4.21.2' };
+  const metadata = { latest: '5.2.1', versions: ['4.21.2', '4.22.3', '5.2.1'] };
+  const inRange = { vulnerabilities: { express: { isDirect: true, fixAvailable: true, via: [] } } };
+  assert.equal(resolveTarget(dependency, metadata, inRange), '4.22.3');
+  const onlyMajor = { vulnerabilities: { express: { isDirect: true, fixAvailable: { name: 'express', version: '5.2.1', isSemVerMajor: true }, via: [] } } };
+  assert.equal(resolveTarget(dependency, metadata, onlyMajor), '5.2.1');
+  const pinned = { ...dependency, spec: '4.21.2' };
+  assert.equal(resolveTarget(pinned, metadata, inRange), '5.2.1');
+  const alreadyAtRangeTop = { ...dependency, current: '4.22.3' };
+  assert.equal(resolveTarget(alreadyAtRangeTop, metadata, inRange), '5.2.1');
+  assert.equal(resolveTarget(dependency, metadata, inRange, { stayInRange: true }), '4.22.3');
+  assert.equal(resolveTarget(alreadyAtRangeTop, metadata, inRange, { stayInRange: true }), null);
+});
+
+test('the @types partner of an in-range security fix stays in range too', async () => {
+  const packageJson = { dependencies: { express: '^4.18.2' }, devDependencies: { '@types/express': '^4.17.21' } };
+  const lockfile = lockfileFor({ express: '4.21.2', '@types/express': '4.17.23' });
+  const registry = {
+    express: { latest: '5.2.1', versions: ['4.21.2', '4.22.3', '5.2.1'] },
+    '@types/express': { latest: '5.0.6', versions: ['4.17.23', '4.17.25', '5.0.6'] },
+  };
+  const audit = Promise.resolve({ vulnerabilities: { express: { isDirect: true, fixAvailable: true, via: [] } } });
+  const limits = { maxNewPullRequests: 4, maxOpenPullRequests: 8 };
+  const plan = await planCandidates({ packageJson, lockfile, fetchMetadata: async (name) => registry[name], audit, pullRequests: [], limits });
+  assert.deepEqual(
+    plan.report[0].packages.map((item) => [item.name, item.to]),
+    [['@types/express', '4.17.25'], ['express', '4.22.3']],
+  );
+  assert.equal(plan.report[0].level, 'minor');
+});
+
+test('the range style of the existing spec is preserved, and anything else is left alone', () => {
   assert.equal(rangePrefix('^7.3.9'), '^');
   assert.equal(rangePrefix('~1.2.3'), '~');
   assert.equal(rangePrefix('15.5.24'), '');
-  assert.equal(rangePrefix('>=1.0.0'), '^');
+  assert.equal(rangePrefix('>=1.0.0'), null);
+  assert.equal(rangePrefix('*'), null);
 });
 
-test('@types packages pair with the package they type', () => {
+test('@types packages follow the package they type, into its family when it has one', () => {
   assert.equal(typesBaseName('@types/pg'), 'pg');
   assert.equal(typesBaseName('@types/babel__core'), '@babel/core');
   assert.equal(typesBaseName('pg'), 'pg');
-  const groups = groupCandidates([upgrade('pg', '8.16.0', '8.23.0'), upgrade('@types/pg', '8.15.0', '8.21.0')]);
-  assert.equal(groups.length, 1);
-  assert.equal(groups[0].slug, 'pg');
-  assert.equal(groups[0].branch, 'deps/pg-8.23.0');
-  assert.equal(groups[0].title, 'chore(deps): bump pg from 8.16.0 to 8.23.0 and 1 lockstep package');
+  const [pair] = groupCandidates([upgrade('pg', '8.16.0', '8.23.0'), upgrade('@types/pg', '8.15.0', '8.21.0')]);
+  assert.equal(pair.slug, 'pg');
+  assert.equal(pair.branch, 'deps/pg-8.23.0');
+  assert.equal(pair.title, 'chore(deps): bump pg from 8.16.0 to 8.23.0 and 1 lockstep package');
+  const [react] = groupCandidates([
+    upgrade('@types/react', '19.1.9', '19.3.0'),
+    upgrade('react-dom', '19.1.0', '19.3.0'),
+    upgrade('react', '19.1.0', '19.3.0'),
+  ]);
+  assert.equal(react.slug, 'react');
+  assert.equal(react.branch, 'deps/react-19.3.0');
 });
 
 test('lockstep families become one candidate led by the family leader', () => {
@@ -113,11 +164,11 @@ test('security fixes come first, then patch, minor, major, alphabetical within a
   );
 });
 
-test('title matching is whole-name, so react does not match react-dom or @types/react', () => {
-  assert.ok(titleMentions('build(deps): bump react from 19.1.0 to 19.3.0', 'react'));
-  assert.ok(!titleMentions('build(deps): bump react-dom from 19.1.0 to 19.3.0', 'react'));
-  assert.ok(!titleMentions('build(deps): bump @types/react from 19.1.0 to 19.3.0', 'react'));
-  assert.ok(titleMentions('chore(deps): bump @mui/material from 7.3.11 to 9.4.0', '@mui/material'));
+test('a bump title names its package and target structurally, so prose cannot match', () => {
+  assert.deepEqual(parseBumpTitle('build(deps): bump react from 19.1.0 to 19.3.0'), { name: 'react', to: '19.3.0' });
+  assert.deepEqual(parseBumpTitle('chore(deps): bump @mui/* from 7.3.11 to 9.4.0'), { name: '@mui/*', to: '9.4.0' });
+  assert.equal(parseBumpTitle('feat: next round of import fixes'), null);
+  assert.equal(parseBumpTitle('build(deps): bump the minor-and-patch group with 3 updates'), null);
 });
 
 test('an open PR for the package skips it, whoever opened it', () => {
@@ -128,7 +179,10 @@ test('an open PR for the package skips it, whoever opened it', () => {
   assert.equal(classifyAgainstPullRequests(group, dependabot).status, 'skipped');
   const ownEarlierRun = [{ number: 5, state: 'OPEN', title: 'chore(deps): bump @mui/* from 7.3.11 to 9.3.0', headRefName: 'deps/mui-9.3.0' }];
   assert.equal(classifyAgainstPullRequests(group, ownEarlierRun).status, 'skipped');
-  const unrelated = [{ number: 6, state: 'OPEN', title: 'feat(imports): flag card fees', headRefName: 'feat/flag-card-fees' }];
+  const unrelated = [
+    { number: 6, state: 'OPEN', title: 'feat(imports): flag card fees', headRefName: 'feat/flag-card-fees' },
+    { number: 7, state: 'OPEN', title: 'build(deps): bump react-dom from 19.1.0 to 19.3.0', headRefName: 'dependabot/npm_and_yarn/react-dom-19.3.0' },
+  ];
   assert.equal(classifyAgainstPullRequests(group, unrelated).status, 'eligible');
 });
 
@@ -140,23 +194,26 @@ test('a PR for the same target version closed without merging means the version 
   assert.equal(classifyAgainstPullRequests(group, merged).status, 'eligible');
   const olderVersionRejected = [{ number: 90, state: 'CLOSED', title: 'chore(deps): bump recharts from 2.15.4 to 3.9.0', headRefName: 'deps/recharts-3.9.0' }];
   assert.equal(classifyAgainstPullRequests(group, olderVersionRejected).status, 'eligible');
+  const otherPackageClosed = [{ number: 91, state: 'CLOSED', title: 'chore(deps): bump zod from 3.25.76 to 3.10.1', headRefName: 'deps/zod-3.10.1' }];
+  assert.equal(classifyAgainstPullRequests(group, otherPackageClosed).status, 'eligible');
 });
 
 test('the plan honours the per-run budget and the open-PR ceiling', async () => {
   const packageJson = {
-    dependencies: { a: '^1.0.0', b: '~1.0.0', c: '1.0.0', d: '^1.0.0', e: '^1.0.0', next: '15.0.0' },
+    dependencies: { a: '^1.0.0', b: '~1.0.0', c: '1.0.0', d: '^1.0.0', e: '^1.0.0', f: '>=1.0.0', next: '15.0.0' },
   };
-  const lockfile = lockfileFor({ a: '1.0.0', b: '1.0.0', c: '1.0.0', d: '1.0.0', e: '1.0.0', next: '15.0.0' });
+  const lockfile = lockfileFor({ a: '1.0.0', b: '1.0.0', c: '1.0.0', d: '1.0.0', e: '1.0.0', f: '1.0.0', next: '15.0.0' });
   const registry = {
     a: { latest: '1.0.1', versions: ['1.0.0', '1.0.1'] },
     b: { latest: '1.1.0', versions: ['1.0.0', '1.1.0'] },
     c: { latest: '2.0.0', versions: ['1.0.0', '2.0.0'] },
     d: { latest: '1.0.2', versions: ['1.0.0', '1.0.2'] },
     e: { latest: '1.0.0', versions: ['1.0.0'] },
+    f: { latest: '1.5.0', versions: ['1.0.0', '1.5.0'] },
     next: { latest: '15.0.1', versions: ['15.0.0', '15.0.1'] },
   };
   const fetchMetadata = async (name) => registry[name];
-  const audit = {
+  const audit = Promise.resolve({
     vulnerabilities: {
       next: {
         isDirect: true,
@@ -164,7 +221,7 @@ test('the plan honours the per-run budget and the open-PR ceiling', async () => 
         via: [{ source: 1, title: 'next: something bad', severity: 'high', url: 'https://github.com/advisories/GHSA-xxxx' }],
       },
     },
-  };
+  });
   const limits = { maxNewPullRequests: 2, maxOpenPullRequests: 8 };
   const plan = await planCandidates({ packageJson, lockfile, fetchMetadata, audit, pullRequests: [], limits });
   assert.deepEqual(
@@ -177,6 +234,7 @@ test('the plan honours the per-run budget and the open-PR ceiling', async () => 
       ['c', 'deferred'],
     ],
   );
+  assert.deepEqual(plan.unsupportedSpecs, ['f (>=1.0.0)']);
   assert.equal(plan.selected[0].advisories[0].id, 'GHSA-xxxx');
   assert.deepEqual(plan.selected[0].packages[0], {
     name: 'next',

@@ -1,12 +1,8 @@
 #!/usr/bin/env node
-// Rewrites the package.json specs for one upgrade candidate, keeping each
-// package's range style, then regenerates the lockfile. A failed install is
-// reported, not thrown: the Claude step that follows reads the log and decides.
 import { spawnSync } from 'node:child_process';
 import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { join } from 'node:path';
 
 // Outside the working tree, so it can never ride along in the commit.
 const INSTALL_LOG = join(process.env.RUNNER_TEMP ?? tmpdir(), 'deps-install.log');
@@ -40,7 +36,6 @@ function main() {
   }
 }
 
-const invokedDirectly = process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href;
-if (invokedDirectly) {
+if (import.meta.main) {
   main();
 }

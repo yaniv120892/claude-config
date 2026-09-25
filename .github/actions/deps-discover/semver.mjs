@@ -40,6 +40,31 @@ export function highestStable(versions) {
   return stable.reduce((best, version) => (compareVersions(version, best) > 0 ? version : best));
 }
 
+// The versions a `^`/`~` spec anchored at `current` admits: what `npm install`
+// could move to without the spec changing.
+export function highestStableWithinRange(versions, current, prefix) {
+  const anchor = parseVersion(current);
+  if (!anchor || prefix === '') {
+    return null;
+  }
+  const admitted = versions.filter((version) => {
+    const parsed = parseVersion(version);
+    if (!parsed) {
+      return false;
+    }
+    switch (prefix) {
+      case '^':
+        return anchor.major === 0 ? parsed.major === 0 && parsed.minor === anchor.minor : parsed.major === anchor.major;
+      case '~':
+        return parsed.major === anchor.major && parsed.minor === anchor.minor;
+      default:
+        return false;
+    }
+  });
+  return highestStable(admitted);
+}
+
+// Below 1.0.0 a minor bump is the breaking one, so it ranks as major.
 export function bumpLevel(from, to) {
   const fromParsed = parseVersion(from);
   const toParsed = parseVersion(to);
@@ -50,7 +75,7 @@ export function bumpLevel(from, to) {
     return 'major';
   }
   if (fromParsed.minor !== toParsed.minor) {
-    return 'minor';
+    return fromParsed.major === 0 ? 'major' : 'minor';
   }
   return 'patch';
 }

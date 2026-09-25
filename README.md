@@ -81,15 +81,10 @@ to the plugin root when run straight from a clone, so both work.
 
 Some automation runs on GitHub rather than in a session, and reaches a repo by
 `uses:` rather than by plugin or symlink. `.github/workflows/deps-upgrade.yml` is
-a reusable workflow: each app repo's own `deps-upgrade.yml` calls it daily with
-the list of checks a dependency bump must pass, and it does the rest — the
-`deps-discover` action (`.github/actions/`) lists outdated packages without a
-model, security fixes first, lockstep families as one entry, prereleases skipped,
-anything with an open or rejected PR left out; `deps-bump` writes the target
-versions into `package.json` keeping each range style; then one
-`anthropics/claude-code-action` session per candidate researches the jump, runs
-the checks, fixes what broke, and opens the pull request from inside the step,
-because the App token it pushes with is revoked when the step ends.
+a reusable workflow: an app repo's own `deps-upgrade.yml` calls it daily with the
+list of checks a dependency bump must pass, and one pull request per outdated
+package comes back. The `deps-discover` and `deps-bump` actions under
+`.github/actions/` are the model-free half; each `action.yml` says what it does.
 
 Callers pin `@main`, the same "fetched, stays current" terms as the plugins.
 The discovery and bump logic is pure and covered:
