@@ -83,7 +83,9 @@ Some automation runs on GitHub rather than in a session, and reaches a repo by
 `uses:` rather than by plugin or symlink. `.github/workflows/deps-upgrade.yml` is
 a reusable workflow: an app repo's own `deps-upgrade.yml` calls it daily with the
 list of checks a dependency bump must pass, and one pull request per outdated
-package comes back. The `deps-discover` and `deps-bump` actions under
+package comes back, for a human to review: the model step can create a pull
+request and nothing else (`gh pr merge`, `gh pr review` and `gh pr edit` are
+denied in its settings). The `deps-discover` and `deps-bump` actions under
 `.github/actions/` are the model-free half; each `action.yml` says what it does.
 
 Callers pin `@main`, the same "fetched, stays current" terms as the plugins.
