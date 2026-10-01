@@ -98,12 +98,9 @@ The discovery and bump logic is pure and covered:
 
 ## Skill evals
 
-Unit tests cover the scripts, but not whether a skill fires on the right prompt
-or does the right thing once it has. Each skill can carry `evals/evals.json`:
-trigger cases (should this prompt fire it?) and behavior cases (run it against a
-fixture repo, then check the result). `python3 evals/run.py --harness claude` or
-`--harness codex` runs the same cases on either harness. They cost model calls,
-so CI only validates the files. See `evals/README.md`.
+Each skill can carry `evals/evals.json`: prompts that should and shouldn't fire it,
+and runs against a fixture repo with checks on the result. `evals/run.py` runs
+them on Claude Code or Codex; `evals/README.md` covers how.
 
 ## Rules (the non-plugin half)
 

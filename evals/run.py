@@ -1,25 +1,18 @@
 #!/usr/bin/env python3
 """Run skill evals against an agent harness: Claude Code or Codex.
 
-Each skill keeps its cases in `<skill>/evals/evals.json`, beside its SKILL.md, so
-the cases travel with the skill. Two kinds of case:
-
-- trigger:  one prompt, and whether the skill should fire on it. Tools that act
-            are blocked, so a trigger run only shows what the agent reached for.
-- behavior: a prompt run against a throwaway fixture repo, then checks on the
-            agent's final message and on the repo it left behind.
-
-The same cases run on every harness. A case that passes on one and fails on the
-other is a portability bug in the skill, not in the case.
+Each skill keeps its cases in `<skill>/evals/evals.json`, beside its SKILL.md.
+evals/README.md covers the case format and how each harness is isolated.
 
 Usage:
   python3 evals/run.py --validate
   python3 evals/run.py --harness claude --skill pr-review
-  python3 evals/run.py --harness codex --kind trigger --runs 3
+  python3 evals/run.py --harness codex --kind trigger --runs 3 --jobs 4
   python3 evals/run.py --harness claude --dry-run
 """
 
 import argparse
+import concurrent.futures
 import dataclasses
 import glob
 import json
@@ -29,17 +22,25 @@ import shutil
 import subprocess
 import sys
 import tempfile
-import time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RESULTS_DIR = os.path.join(ROOT, "evals", "results")
 HARNESSES = ("claude", "codex")
 KINDS = ("trigger", "behavior")
 CHECK_KEYS = ("final_matches", "final_not_matches", "max_lines", "run")
+CODEX_LAST_MESSAGE = ".eval-last-message"
 
 # A behavior run may call `gh`, and some skills post to GitHub. An unusable token
 # makes every such call fail instead of acting on the user's real account.
-SANDBOX_ENV = {"GH_TOKEN": "eval-sandbox-no-access", "GIT_TERMINAL_PROMPT": "0"}
+RUN_ENV = {
+    **os.environ,
+    "GH_TOKEN": "eval-sandbox-no-access",
+    "GIT_TERMINAL_PROMPT": "0",
+    "GIT_AUTHOR_NAME": "eval",
+    "GIT_AUTHOR_EMAIL": "eval@example.com",
+    "GIT_COMMITTER_NAME": "eval",
+    "GIT_COMMITTER_EMAIL": "eval@example.com",
+}
 CLAUDE_TRIGGER_BLOCKED = "Bash Edit Write NotebookEdit WebFetch WebSearch Agent"
 CLAUDE_BEHAVIOR_ALLOWED = "Bash Read Edit Write Glob Grep Skill Agent"
 
@@ -47,9 +48,14 @@ CLAUDE_BEHAVIOR_ALLOWED = "Bash Read Edit Write Glob Grep Skill Agent"
 @dataclasses.dataclass
 class Skill:
     name: str
-    plugin: str
+    plugin_dir: str
     skill_dir: str
+    sibling_names: list[str]
     cases: list[dict]
+
+    @property
+    def plugin(self) -> str:
+        return os.path.basename(self.plugin_dir)
 
 
 @dataclasses.dataclass
@@ -58,6 +64,7 @@ class Transcript:
     skills_invoked: set[str]
     exit_code: int
     log_path: str
+    workdir: str
 
 
 def discover(skill_filter: list[str] | None) -> list[Skill]:
@@ -78,8 +85,14 @@ def discover(skill_filter: list[str] | None) -> list[Skill]:
             continue
         with open(path, encoding="utf-8") as handle:
             spec = json.load(handle)
-        plugin = os.path.basename(os.path.dirname(os.path.dirname(skill_dir)))
-        skills.append(Skill(name, plugin, skill_dir, spec.get("cases", [])))
+        skills_root = os.path.dirname(skill_dir)
+        skills.append(Skill(
+            name=name,
+            plugin_dir=os.path.dirname(skills_root),
+            skill_dir=skill_dir,
+            sibling_names=sorted(os.listdir(skills_root)),
+            cases=spec.get("cases", []),
+        ))
     return skills
 
 
@@ -119,11 +132,30 @@ def validate(skill: Skill) -> list[str]:
     return errors
 
 
+def validate_all(skills: list[Skill]) -> list[str]:
+    """Validate every skill's cases.
+
+    Args:
+        skills: The skills to check.
+
+    Returns:
+        Every problem found, across all of them.
+    """
+    return [error for skill in skills for error in validate(skill)]
+
+
+def git(workdir: str, *args: str) -> None:
+    """Run one git command in a workdir, as the eval identity, failing loudly.
+
+    Args:
+        workdir: The repo to run in.
+        *args: The git arguments.
+    """
+    subprocess.run(["git", *args], cwd=workdir, env=RUN_ENV, check=True, capture_output=True)
+
+
 def prepare_workdir(skill: Skill, case: dict, harness: str) -> str:
     """Build the throwaway git repo a case runs in.
-
-    The fixture is copied in, then its `setup.sh`, if any, runs there from where it
-    sits, so the agent sees the state setup produced rather than the script.
 
     Args:
         skill: The skill under test.
@@ -134,32 +166,18 @@ def prepare_workdir(skill: Skill, case: dict, harness: str) -> str:
         The path of the prepared directory.
     """
     workdir = tempfile.mkdtemp(prefix=f"eval-{skill.name}-")
-    fixture = case.get("fixture")
-    if fixture:
-        # setup.sh stays out of the copy: it usually runs `git add -A`, which would
-        # commit the script itself and leave its removal as a dirty tree.
-        shutil.copytree(
-            os.path.join(skill.skill_dir, "evals", fixture), workdir,
-            dirs_exist_ok=True, ignore=shutil.ignore_patterns("setup.sh"),
-        )
-    git_env = {
-        **os.environ,
-        **SANDBOX_ENV,
-        "GIT_AUTHOR_NAME": "eval",
-        "GIT_AUTHOR_EMAIL": "eval@example.com",
-        "GIT_COMMITTER_NAME": "eval",
-        "GIT_COMMITTER_EMAIL": "eval@example.com",
-    }
-    setup = os.path.join(skill.skill_dir, "evals", fixture or "", "setup.sh")
-    if fixture and os.path.exists(setup):
-        subprocess.run(["bash", setup], cwd=workdir, env=git_env, check=True, capture_output=True)
+    if case.get("fixture"):
+        fixture_dir = os.path.join(skill.skill_dir, "evals", case["fixture"])
+        # setup.sh runs from the fixture rather than from the copy: it usually runs
+        # `git add -A`, which would otherwise commit the script itself.
+        shutil.copytree(fixture_dir, workdir, dirs_exist_ok=True, ignore=shutil.ignore_patterns("setup.sh"))
+        setup = os.path.join(fixture_dir, "setup.sh")
+        if os.path.exists(setup):
+            subprocess.run(["bash", setup], cwd=workdir, env=RUN_ENV, check=True, capture_output=True)
     if not os.path.isdir(os.path.join(workdir, ".git")):
-        subprocess.run(["git", "init", "--quiet", "-b", "main"], cwd=workdir, env=git_env, check=True)
-        subprocess.run(["git", "add", "-A"], cwd=workdir, env=git_env, check=True)
-        subprocess.run(
-            ["git", "commit", "--quiet", "--allow-empty", "-m", "init"],
-            cwd=workdir, env=git_env, check=True,
-        )
+        git(workdir, "init", "--quiet", "-b", "main")
+        git(workdir, "add", "-A")
+        git(workdir, "commit", "--quiet", "--allow-empty", "-m", "init")
     if harness == "codex":
         install_for_codex(skill, workdir)
     return workdir
@@ -177,9 +195,8 @@ def install_for_codex(skill: Skill, workdir: str) -> None:
     """
     target = os.path.join(workdir, ".agents", "skills")
     os.makedirs(target, exist_ok=True)
-    plugin_skills = os.path.join(ROOT, "plugins", skill.plugin, "skills")
-    for name in os.listdir(plugin_skills):
-        os.symlink(os.path.join(plugin_skills, name), os.path.join(target, name))
+    for name in skill.sibling_names:
+        os.symlink(os.path.join(skill.plugin_dir, "skills", name), os.path.join(target, name))
     with open(os.path.join(workdir, ".git", "info", "exclude"), "a", encoding="utf-8") as handle:
         handle.write("\n.agents/\n")
 
@@ -199,40 +216,36 @@ def build_command(harness: str, skill: Skill, case: dict, workdir: str, args: ar
     """
     prompt = case["prompt"]
     is_trigger = case["kind"] == "trigger"
+    model = ["--model", args.model] if args.model else []
     if harness == "claude":
         if case.get("invoke"):
             prompt = f"/{skill.plugin}:{skill.name} {prompt}"
         budget = args.budget or (0.5 if is_trigger else 3.0)
-        command = [
+        tools = (
+            ["--permission-mode", "default", "--disallowedTools", CLAUDE_TRIGGER_BLOCKED] if is_trigger
+            else ["--permission-mode", "acceptEdits", "--allowedTools", CLAUDE_BEHAVIOR_ALLOWED]
+        )
+        return [
             "claude", "-p", prompt,
-            "--plugin-dir", os.path.join(ROOT, "plugins", skill.plugin),
+            "--plugin-dir", skill.plugin_dir,
             # Project settings only, so plugins the user installed globally do
             # not load beside the checkout under test and blur which one fired.
             "--setting-sources", "project",
             "--output-format", "stream-json", "--verbose",
             "--no-session-persistence",
             "--max-budget-usd", str(budget),
+            *tools, *model,
         ]
-        if is_trigger:
-            command += ["--permission-mode", "default", "--disallowedTools", CLAUDE_TRIGGER_BLOCKED]
-        else:
-            command += ["--permission-mode", "acceptEdits", "--allowedTools", CLAUDE_BEHAVIOR_ALLOWED]
-    else:
-        if case.get("invoke"):
-            prompt = f"${skill.name} {prompt}"
-        command = [
-            "codex", "exec", "--json", "--ephemeral", "--skip-git-repo-check",
-            "-C", workdir,
-            "-s", "read-only" if is_trigger else "workspace-write",
-            "-o", os.path.join(workdir, ".eval-last-message"),
-            prompt,
-        ]
-    if args.model and harness == "claude":
-        command += ["--model", args.model]
-    elif args.model:
-        # Codex takes its prompt as the final positional, so options go before it.
-        command[-1:-1] = ["-m", args.model]
-    return command
+    if case.get("invoke"):
+        prompt = f"${skill.name} {prompt}"
+    return [
+        "codex", "exec", "--json", "--ephemeral", "--skip-git-repo-check",
+        "-C", workdir,
+        "-s", "read-only" if is_trigger else "workspace-write",
+        "-o", os.path.join(workdir, CODEX_LAST_MESSAGE),
+        *model,
+        prompt,
+    ]
 
 
 def parse_claude(log_path: str) -> tuple[str, set[str]]:
@@ -278,7 +291,7 @@ def parse_codex(log_path: str, workdir: str, skill_names: list[str]) -> tuple[st
             continue
         text = json.dumps(item)
         invoked.update(name for name in skill_names if f"{name}/SKILL.md" in text)
-    last_message = os.path.join(workdir, ".eval-last-message")
+    last_message = os.path.join(workdir, CODEX_LAST_MESSAGE)
     final = ""
     if os.path.exists(last_message):
         with open(last_message, encoding="utf-8") as handle:
@@ -308,44 +321,43 @@ def read_jsonl(path: str) -> list[dict]:
     return events
 
 
-def run_case(harness: str, skill: Skill, case: dict, args: argparse.Namespace, log_dir: str) -> tuple[Transcript, str]:
+def run_case(harness: str, skill: Skill, case: dict, attempt: int, args: argparse.Namespace, log_dir: str) -> Transcript:
     """Run one case once and capture what the agent did.
 
     Args:
         harness: "claude" or "codex".
         skill: The skill under test.
         case: The case to run.
+        attempt: Which repeat this is, numbered from 1.
         args: Parsed command-line options.
         log_dir: Where to keep the raw harness log.
 
     Returns:
-        The transcript, and the workdir the agent left behind.
+        What the agent did, and where it left the repo.
     """
     workdir = prepare_workdir(skill, case, harness)
     command = build_command(harness, skill, case, workdir, args)
-    log_path = os.path.join(log_dir, f"{harness}-{skill.name}-{case['id']}-{int(time.time() * 1000)}.jsonl")
+    log_path = os.path.join(log_dir, f"{harness}-{skill.name}-{case['id']}-{attempt}.jsonl")
     with open(log_path, "w", encoding="utf-8") as log:
         completed = subprocess.run(
-            command, cwd=workdir, env={**os.environ, **SANDBOX_ENV},
+            command, cwd=workdir, env=RUN_ENV,
             stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
             timeout=args.timeout, check=False,
         )
     if harness == "claude":
         final, invoked = parse_claude(log_path)
     else:
-        sibling_skills = os.listdir(os.path.join(ROOT, "plugins", skill.plugin, "skills"))
-        final, invoked = parse_codex(log_path, workdir, sibling_skills)
-    return Transcript(final, invoked, completed.returncode, log_path), workdir
+        final, invoked = parse_codex(log_path, workdir, skill.sibling_names)
+    return Transcript(final, invoked, completed.returncode, log_path, workdir)
 
 
-def grade(skill: Skill, case: dict, transcript: Transcript, workdir: str) -> list[str]:
+def grade(skill: Skill, case: dict, transcript: Transcript) -> list[str]:
     """Compare what the agent did against the case's expectations.
 
     Args:
         skill: The skill under test.
         case: The case that ran.
         transcript: What the agent did.
-        workdir: The repo the agent left behind.
 
     Returns:
         One message per failed expectation; empty when the case passed.
@@ -367,16 +379,41 @@ def grade(skill: Skill, case: dict, transcript: Transcript, workdir: str) -> lis
         elif key == "final_not_matches" and re.search(value, transcript.final):
             failures.append(f"final message matches /{value}/")
         elif key == "max_lines":
-            lines = len([line for line in transcript.final.strip().splitlines() if line.strip()])
+            lines = len([line for line in transcript.final.splitlines() if line.strip()])
             if lines > value:
                 failures.append(f"final message has {lines} non-blank lines, limit {value}")
         elif key == "run":
             completed = subprocess.run(
-                ["bash", "-c", value], cwd=workdir, capture_output=True, text=True, check=False
+                ["bash", "-c", value], cwd=transcript.workdir, capture_output=True, text=True, check=False
             )
             if completed.returncode != 0:
                 failures.append(f"check failed: {value}")
     return failures
+
+
+def run_and_grade(skill: Skill, case: dict, attempt: int, args: argparse.Namespace, log_dir: str) -> dict:
+    """Run one attempt of a case, grade it, and clean up after it.
+
+    Args:
+        skill: The skill under test.
+        case: The case to run.
+        attempt: Which repeat this is, numbered from 1.
+        args: Parsed command-line options.
+        log_dir: Where to keep the raw harness log.
+
+    Returns:
+        The result record written to results.json.
+    """
+    transcript = run_case(args.harness, skill, case, attempt, args, log_dir)
+    failures = grade(skill, case, transcript)
+    if not args.keep:
+        shutil.rmtree(transcript.workdir, ignore_errors=True)
+    return {
+        "harness": args.harness, "skill": skill.name, "case": case["id"],
+        "kind": case["kind"], "attempt": attempt, "failures": failures,
+        "skills_invoked": sorted(transcript.skills_invoked),
+        "final": transcript.final, "log": transcript.log_path,
+    }
 
 
 def main() -> int:
@@ -386,6 +423,7 @@ def main() -> int:
     parser.add_argument("--case", action="append", help="run only this case id; repeatable")
     parser.add_argument("--kind", choices=KINDS, help="run only this kind of case")
     parser.add_argument("--runs", type=int, default=1, help="repeat each case; trigger rates need several")
+    parser.add_argument("--jobs", type=int, default=1, help="runs in parallel; keep it under the provider's rate limit")
     parser.add_argument("--model", help="model override passed to the harness")
     parser.add_argument("--budget", type=float, help="claude only: max USD per run")
     parser.add_argument("--timeout", type=int, default=900, help="seconds per run")
@@ -395,50 +433,44 @@ def main() -> int:
     args = parser.parse_args()
 
     skills = discover(args.skill)
-    errors = [error for skill in skills for error in validate(skill)]
+    errors = validate_all(skills)
     if errors or args.validate:
         for error in errors:
             print(f"INVALID  {error}")
         print(f"{len(skills)} skills with evals, {len(errors)} problems")
         return 1 if errors else 0
 
-    os.makedirs(RESULTS_DIR, exist_ok=True)
-    log_dir = tempfile.mkdtemp(prefix="eval-logs-", dir=RESULTS_DIR)
-    results = []
-    for skill in skills:
-        for case in skill.cases:
-            if (args.kind and case["kind"] != args.kind) or (args.case and case["id"] not in args.case):
-                continue
-            if args.dry_run:
-                command = build_command(args.harness, skill, case, "<workdir>", args)
-                print(f"{skill.name}/{case['id']}: {subprocess.list2cmdline(command)}")
-                continue
-            passes = 0
-            for attempt in range(args.runs):
-                transcript, workdir = run_case(args.harness, skill, case, args, log_dir)
-                failures = grade(skill, case, transcript, workdir)
-                passes += not failures
-                status = "PASS" if not failures else "FAIL"
-                print(f"{status}  {skill.name}/{case['id']} run {attempt + 1}/{args.runs}")
-                for failure in failures:
-                    print(f"      {failure}")
-                if failures:
-                    print(f"      log: {transcript.log_path}")
-                if not args.keep:
-                    shutil.rmtree(workdir, ignore_errors=True)
-                results.append({
-                    "harness": args.harness, "skill": skill.name, "case": case["id"],
-                    "kind": case["kind"], "attempt": attempt + 1, "failures": failures,
-                    "skills_invoked": sorted(transcript.skills_invoked),
-                    "final": transcript.final, "log": transcript.log_path,
-                })
+    selected = [
+        (skill, case) for skill in skills for case in skill.cases
+        if (not args.kind or case["kind"] == args.kind) and (not args.case or case["id"] in args.case)
+    ]
     if args.dry_run:
+        for skill, case in selected:
+            command = build_command(args.harness, skill, case, "<workdir>", args)
+            print(f"{skill.name}/{case['id']}: {subprocess.list2cmdline(command)}")
         return 0
 
-    passed = sum(not result["failures"] for result in results)
+    os.makedirs(RESULTS_DIR, exist_ok=True)
+    log_dir = tempfile.mkdtemp(prefix="eval-logs-", dir=RESULTS_DIR)
+    attempts = [(skill, case, attempt) for skill, case in selected for attempt in range(1, args.runs + 1)]
+    results = []
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, args.jobs)) as pool:
+        futures = [pool.submit(run_and_grade, skill, case, attempt, args, log_dir) for skill, case, attempt in attempts]
+        for future in concurrent.futures.as_completed(futures):
+            result = future.result()
+            results.append(result)
+            status = "FAIL" if result["failures"] else "PASS"
+            print(f"{status}  {result['skill']}/{result['case']} run {result['attempt']}/{args.runs}", flush=True)
+            for failure in result["failures"]:
+                print(f"      {failure}")
+            if result["failures"]:
+                print(f"      log: {result['log']}")
+
+    results.sort(key=lambda result: (result["skill"], result["case"], result["attempt"]))
     summary_path = os.path.join(log_dir, "results.json")
     with open(summary_path, "w", encoding="utf-8") as handle:
         json.dump(results, handle, indent=2)
+    passed = sum(not result["failures"] for result in results)
     print(f"\n{passed}/{len(results)} runs passed on {args.harness}. Details: {summary_path}")
     return 0 if passed == len(results) else 1
 

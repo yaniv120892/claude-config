@@ -18,18 +18,12 @@ import run  # noqa: E402
 
 def main() -> int:
     skills = run.discover(None)
-    if not skills:
-        print("FAIL  no skill ships an evals/evals.json")
-        return 1
-    failures = 0
-    for skill in skills:
-        errors = run.validate(skill)
-        failures += len(errors)
-        for error in errors:
-            print(f"FAIL  {error}")
-        if not errors:
-            print(f"PASS  {skill.plugin}/{skill.name}: {len(skill.cases)} cases")
-    return 1 if failures else 0
+    errors = run.validate_all(skills) or ([] if skills else ["no skill ships an evals/evals.json"])
+    for error in errors:
+        print(f"FAIL  {error}")
+    if not errors:
+        print(f"PASS  {len(skills)} skills, {sum(len(skill.cases) for skill in skills)} cases")
+    return 1 if errors else 0
 
 
 if __name__ == "__main__":
