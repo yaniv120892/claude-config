@@ -24,8 +24,9 @@ Bump shared npm package versions across multiple repositories with lockfile veri
 Gather from the user:
 1. **Package name(s)** — e.g. `@acme/core-model`
 2. **Target version(s)** — e.g. `1.5.0`, `^2.0.0`, or `latest`
-3. **Target repos** — which repos need the bump (paths or names)
-4. **Package manager** per repo — `npm` (default) or `pnpm`
+
+The target repos, their paths, and each one's package manager (`npm` by default, or
+`pnpm`) come from the config below.
 
 ### Known packages and repos
 
