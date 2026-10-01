@@ -1,5 +1,7 @@
 ---
 name: pr-review
+argument-hint: <PR numbers or URLs> (one or more, required)
+allowed-tools: Bash(gh:*), Bash(git:*), Bash(python3:*), Read, Grep, Glob, Agent, Skill, mcp__notion__notion-search, mcp__notion__notion-fetch
 description: Use when reviewing one or more pull requests named by number or URL, or when asked whether a PR is safe to merge. Fans out one subagent per PR in parallel, merges every finding into a single severity-sorted report with a documentation-drift check, and posts inline comments after one approval. Requires explicit PR targets — it never reviews the current branch. For re-checking comments an author says they already fixed, use pr-second-review instead.
 ---
 
