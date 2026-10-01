@@ -11,13 +11,19 @@ report, you approve once, everything posts.
 
 ## Step 1 — Require explicit targets
 
-Collect every PR number or URL from the request. Accept several.
+A **target** is a PR number or URL. Collect every one from the request, accept
+several, and resolve each to `owner/repo` + number before dispatching.
 
-**If none were given, STOP and ask which PRs.** Never fall back to the current
-branch — it is routinely a different ticket, stale, or stacked under the change
-actually being reviewed.
+A branch, the current checkout, or local changes are not targets, even when the
+user names them outright ("review my current branch"). The current branch is
+routinely a different ticket, stale, or stacked under the change actually being
+reviewed. So with no target in the request, your whole reply is one question —
+which PRs? — and you read no code until it is answered:
 
-Resolve each target to `owner/repo` + number before dispatching.
+- Run `gh pr view --json number,url` once. If it finds an open PR for the
+  current branch, name it in the question, so a one-word yes confirms it.
+- When the ask was about local changes, add that `/code-review` reviews a diff
+  without a PR.
 
 ## Step 2 — Dispatch one subagent per PR, in parallel
 
