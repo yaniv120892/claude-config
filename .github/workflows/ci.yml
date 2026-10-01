@@ -18,3 +18,20 @@ jobs:
         with:
           node-version: 22
       - run: node --test .github/actions/deps-discover/discover.test.mjs .github/actions/deps-bump/bump.test.mjs
+
+  tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - name: Run the Python and hook tests
+        run: |
+          status=0
+          for test in tests/test_*.py plugins/*/tests/test_*.py settings/tests/test_*.py \
+                      plugins/*/tests/test-*.sh settings/tests/test-*.sh; do
+            case "$test" in *.py) run=python3 ;; *) run=bash ;; esac
+            echo "::group::$test"
+            "$run" "$test" || status=1
+            echo "::endgroup::"
+          done
+          exit "$status"

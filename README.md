@@ -122,6 +122,7 @@ Verify what actually loaded in a session with `/context`.
 .claude-plugin/marketplace.json   the marketplace manifest
 .github/workflows/                reusable workflows the app repos call
 .github/actions/                  the composite actions those workflows use
+tests/                            repo-wide checks, e.g. every plugin list matches the manifest
 plugins/<name>/                   one directory per plugin
   .claude-plugin/plugin.json      plugin manifest
   skills/ commands/ hooks/ lib/ references/

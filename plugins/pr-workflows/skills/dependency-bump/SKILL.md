@@ -3,10 +3,10 @@ name: dependency-bump
 disable-model-invocation: true
 description: >
   Bump shared npm package versions across multiple repos and verify lockfile integrity.
-  Use when the user wants to update a shared dependency (like @models/media-generation-model,
-  @models/core.common.model, or any shared package) across multiple repositories.
-  Trigger on phrases like "bump dependency", "update package version", "bump @models across repos",
-  "update shared package", or when a model package has been published and downstream repos need updating.
+  Use when the user wants to update a shared internal package (for example `@acme/core-model`)
+  across multiple repositories. Trigger on phrases like "bump dependency", "update package version",
+  "bump <package> across repos", "update shared package", or when a shared package has been
+  published and downstream repos need updating.
 ---
 
 # Cross-Repo Dependency Bump
@@ -15,34 +15,27 @@ Bump shared npm package versions across multiple repositories with lockfile veri
 
 ## When to Use
 
-- A shared package (`@models/media-generation-model`, `@models/core.common.model`, etc.) has been published with a new version
+- A shared package has been published with a new version
 - Downstream repos need to pick up the new version
-- After merging model package changes as part of a multi-repo workflow (like `add-error-code`)
+- After merging shared package changes as part of a multi-repo change
 
 ## Inputs
 
 Gather from the user:
-1. **Package name(s)** — e.g., `@models/media-generation-model`, `@models/core.common.model`
-2. **Target version(s)** — e.g., `1.5.0`, `^2.0.0`, or `latest`
-3. **Target repos** — which repos need the bump (paths or names)
-4. **Package manager** per repo — `npm` (default) or `pnpm`
+1. **Package name(s)** — e.g. `@acme/core-model`
+2. **Target version(s)** — e.g. `1.5.0`, `^2.0.0`, or `latest`
 
-### Common Shared Packages
+The target repos, their paths, and each one's package manager (`npm` by default, or
+`pnpm`) come from the config below.
 
-| Package | Typical Consumers |
-|---------|-------------------|
-| `@models/media-generation-model` | generate-footage-api, ai-workflow-engine |
-| `@models/core.common.model` | ai-workflow-engine, frontend-monorepo |
+### Known packages and repos
 
-### Common Repo Paths
-
-| Repo | Path | Package Manager |
-|------|------|-----------------|
-| generate-footage-api | `~/Develop/assetManagement/core-content-asset-management-generate-footage-api` | npm |
-| ai-workflow-engine | `~/Develop/ma-toolkit/ai-workflow-engine` | npm |
-| frontend-monorepo | `~/Develop/frontend-monorepo` | pnpm |
-| core-services-ai-models-service | `~/Develop/ma-toolkit/core-services-ai-models-service` | npm |
-| toolkit-chat-sessions-service | `~/Develop/ma-toolkit/toolkit-chat-sessions-service` | npm |
+Read `~/.claude/dependency-bump.config.json` (shape in `config.example.json` next to this
+file). It is machine-local and never committed. It maps each shared package to the repos
+that consume it, and each repo to its local path and package manager, so a bump of a known
+package needs only the version. On a package or repo it does not list, ask, then **append
+the entry** so the next bump does not ask again. With no config file, ask for everything
+and offer to create it.
 
 ## Process (per repo)
 
@@ -57,7 +50,7 @@ git checkout main && git pull origin main
 
 Find the dependency in `package.json` (could be in `dependencies` or `devDependencies`) and update to the target version.
 
-For monorepos (like frontend-monorepo), the dependency may be in a nested `package.json`:
+For monorepos, the dependency may be in a nested `package.json`:
 ```bash
 # Find which package.json files reference the dependency
 grep -r "{package_name}" --include="package.json" -l .
@@ -108,7 +101,7 @@ Include in each agent's prompt:
 - `model: "sonnet"`
 - Package name and target version
 - Repo path and package manager
-- Jira ticket number (for branch names and commit messages)
+- Issue key, if the project tracks one (for branch names and commit messages)
 - Instruction to run `reinstall.sh` to verify lockfile integrity
 - If your own task prompt already identifies you as the dispatched per-repo subagent, follow the Process directly rather than re-delegating.
 
@@ -121,11 +114,11 @@ After all repos are done, present a summary:
 
 | Repo | Package | Old Version | New Version | Lockfile | Lint | Build | Test |
 |------|---------|-------------|-------------|----------|------|-------|------|
-| generate-footage-api | @models/media-generation-model | 1.4.0 | 1.5.0 | OK | OK | OK | OK |
-| ai-workflow-engine | @models/core.common.model | 2.1.0 | 2.2.0 | OK | OK | OK | FAIL |
+| orders-api | @acme/core-model | 1.4.0 | 1.5.0 | OK | OK | OK | OK |
+| web-app | @acme/core-model | 1.4.0 | 1.5.0 | OK | OK | OK | FAIL |
 
 ### Issues
-- ai-workflow-engine: Test failure in error-code-mapper.spec.ts — new enum value not handled
+- web-app: Test failure in status-mapper.spec.ts — new enum value not handled
 ```
 
 ## Common Pitfalls
