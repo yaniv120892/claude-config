@@ -1,0 +1,39 @@
+{
+  "cases": [
+    {
+      "id": "safe-to-merge",
+      "kind": "trigger",
+      "prompt": "Is PR #123 in acme/widgets safe to merge?",
+      "expect_trigger": true
+    },
+    {
+      "id": "batch-of-urls",
+      "kind": "trigger",
+      "prompt": "Review these two: https://github.com/acme/widgets/pull/41 and https://github.com/acme/widgets/pull/42",
+      "expect_trigger": true
+    },
+    {
+      "id": "recheck-fixed-comments",
+      "kind": "trigger",
+      "prompt": "The author says they fixed my review comments on PR #57 in acme/widgets. Can you re-check them?",
+      "expect_trigger": false
+    },
+    {
+      "id": "uncommitted-changes",
+      "kind": "trigger",
+      "prompt": "Review my uncommitted changes before I commit them.",
+      "expect_trigger": false
+    },
+    {
+      "id": "no-target-asks",
+      "kind": "behavior",
+      "invoke": true,
+      "fixture": "fixtures/feature-branch",
+      "prompt": "review my current branch",
+      "checks": [
+        {"final_matches": "(?i)(which|what)\\b.{0,40}\\b(PR|pull request)s?\\b|PR (number|URL)|pull request (number|URL)"},
+        {"run": "test -z \"$(git status --porcelain)\""}
+      ]
+    }
+  ]
+}

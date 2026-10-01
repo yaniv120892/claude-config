@@ -19,3 +19,6 @@ __pycache__/
 # SDD orchestration scratch — session-local, never repo content.
 docs/superpowers/
 .superpowers/
+
+# Skill eval runs: raw harness logs and results.
+evals/results/

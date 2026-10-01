@@ -96,6 +96,15 @@ Callers pin `@main`, the same "fetched, stays current" terms as the plugins.
 The discovery and bump logic is pure and covered:
 `node --test .github/actions/deps-discover/discover.test.mjs .github/actions/deps-bump/bump.test.mjs`.
 
+## Skill evals
+
+Unit tests cover the scripts, but not whether a skill fires on the right prompt
+or does the right thing once it has. Each skill can carry `evals/evals.json`:
+trigger cases (should this prompt fire it?) and behavior cases (run it against a
+fixture repo, then check the result). `python3 evals/run.py --harness claude` or
+`--harness codex` runs the same cases on either harness. They cost model calls,
+so CI only validates the files. See `evals/README.md`.
+
 ## Rules (the non-plugin half)
 
 `shared-rules.md` loads on every prompt and holds only what is universal:
@@ -123,6 +132,7 @@ Verify what actually loaded in a session with `/context`.
 .github/workflows/                reusable workflows the app repos call
 .github/actions/                  the composite actions those workflows use
 tests/                            repo-wide checks, e.g. every plugin list matches the manifest
+evals/run.py                      skill evals, run against Claude Code or Codex
 plugins/<name>/                   one directory per plugin
   .claude-plugin/plugin.json      plugin manifest
   skills/ commands/ hooks/ lib/ references/
