@@ -404,13 +404,18 @@ def run_and_grade(skill: Skill, case: dict, attempt: int, args: argparse.Namespa
     Returns:
         The result record written to results.json.
     """
-    transcript = run_case(args.harness, skill, case, attempt, args, log_dir)
+    record = {"harness": args.harness, "skill": skill.name, "case": case["id"], "kind": case["kind"], "attempt": attempt}
+    # A run that times out or whose setup.sh fails becomes a failed result: raised
+    # from a worker, it would discard every other result while the queue drained.
+    try:
+        transcript = run_case(args.harness, skill, case, attempt, args, log_dir)
+    except (subprocess.SubprocessError, OSError) as error:
+        return {**record, "failures": [f"run did not complete: {error}"], "skills_invoked": [], "final": "", "log": ""}
     failures = grade(skill, case, transcript)
     if not args.keep:
         shutil.rmtree(transcript.workdir, ignore_errors=True)
     return {
-        "harness": args.harness, "skill": skill.name, "case": case["id"],
-        "kind": case["kind"], "attempt": attempt, "failures": failures,
+        **record, "failures": failures,
         "skills_invoked": sorted(transcript.skills_invoked),
         "final": transcript.final, "log": transcript.log_path,
     }
@@ -463,7 +468,7 @@ def main() -> int:
             print(f"{status}  {result['skill']}/{result['case']} run {result['attempt']}/{args.runs}", flush=True)
             for failure in result["failures"]:
                 print(f"      {failure}")
-            if result["failures"]:
+            if result["failures"] and result["log"]:
                 print(f"      log: {result['log']}")
 
     results.sort(key=lambda result: (result["skill"], result["case"], result["attempt"]))
