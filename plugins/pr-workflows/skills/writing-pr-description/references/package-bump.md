@@ -1,6 +1,6 @@
 # Package bump
 
-For PRs whose primary change is **bumping a shared package version** (e.g. `@models/core.common.model`) and updating call-sites to use a newly exported type or value, skip the full structure and use this compact format instead:
+For PRs whose primary change is **bumping a shared package version** (e.g. `@acme/core-model`) and updating call-sites to use a newly exported type or value, skip the full structure and use this compact format instead:
 
 ```markdown
 ## Motivation

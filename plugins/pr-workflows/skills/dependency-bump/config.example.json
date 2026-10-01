@@ -1,0 +1,12 @@
+{
+  "_comment": "Copy to ~/.claude/dependency-bump.config.json and fill in. That path is machine-local and never committed — this repo ships only the shape. The skill WRITES BACK to it as it learns new packages and repos.",
+
+  "packages": {
+    "@acme/core-model": { "consumers": ["orders-api", "web-app"] }
+  },
+
+  "repos": {
+    "orders-api": { "path": "~/Develop/orders-api", "packageManager": "npm" },
+    "web-app": { "path": "~/Develop/web-app", "packageManager": "pnpm" }
+  }
+}

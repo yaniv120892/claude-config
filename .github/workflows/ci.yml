@@ -18,3 +18,36 @@ jobs:
         with:
           node-version: 22
       - run: node --test .github/actions/deps-discover/discover.test.mjs .github/actions/deps-bump/bump.test.mjs
+
+  python:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Run the Python tests
+        run: |
+          status=0
+          for test in plugins/*/tests/test_*.py settings/tests/test_*.py; do
+            echo "::group::$test"
+            python3 "$test" || status=1
+            echo "::endgroup::"
+          done
+          exit "$status"
+
+  hooks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - name: Run the hook tests
+        run: |
+          status=0
+          for test in plugins/*/tests/test-*.sh settings/tests/test-*.sh; do
+            echo "::group::$test"
+            bash "$test" || status=1
+            echo "::endgroup::"
+          done
+          exit "$status"

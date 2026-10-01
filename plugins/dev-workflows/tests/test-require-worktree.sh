@@ -3,6 +3,9 @@
 # does not depend on which repos happen to be cloned on this machine. Covers the
 # main-checkout/linked-worktree split, both symlink shapes, and the escape hatch.
 HOOK_NAME=require-worktree.sh
+# The hook relaxes itself in a remote container and honors an explicit guard
+# setting; clear both so the cases below don't depend on where the test runs.
+unset CLAUDE_CODE_REMOTE CLAUDE_WORKTREE_GUARD
 source "$(dirname "${BASH_SOURCE[0]}")/harness.sh"
 
 sandbox=$(mktemp -d)

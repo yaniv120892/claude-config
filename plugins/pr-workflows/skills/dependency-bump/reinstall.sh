@@ -10,7 +10,7 @@
 #
 # Usage:
 #   reinstall.sh <repo-path> <package-name>
-#   reinstall.sh ~/Develop/ma-toolkit/ai-workflow-engine @models/media-generation-model
+#   reinstall.sh ~/Develop/orders-api @acme/core-model
 
 set -euo pipefail
 
