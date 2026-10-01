@@ -51,7 +51,12 @@ def installed_plugins(relative_path: str, marketplace: str) -> set[str]:
 def main() -> int:
     manifest = json.loads(read(".claude-plugin/marketplace.json"))
     expected = {plugin["name"] for plugin in manifest["plugins"]}
-    on_disk = set(os.listdir(os.path.join(ROOT, "plugins")))
+    plugins_dir = os.path.join(ROOT, "plugins")
+    on_disk = {
+        entry.name
+        for entry in os.scandir(plugins_dir)
+        if entry.is_dir() and not entry.name.startswith(".")
+    }
 
     sources = {"plugins/": on_disk}
     for relative_path in ("install.sh", "README.md"):
