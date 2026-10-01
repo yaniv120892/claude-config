@@ -87,8 +87,8 @@ A skill marked `disable-model-invocation: true` gets one trigger case with
 **Behavior cases.** These run the skill against a fixture and check the outcome.
 - `invoke: true` prefixes the prompt with the harness's explicit-invocation syntax.
 - `fixture` names a directory under `evals/`. It is copied into the temp repo. If it
-  holds a `setup.sh`, that script runs there and is then deleted, so the agent sees
-  the state the script built, not the script itself. Without a `setup.sh`, the
+  holds a `setup.sh`, that script runs in the temp repo but is never copied into it,
+  so the agent sees the state the script built, not the script itself. Without a `setup.sh`, the
   fixture is committed as a single initial commit.
 
 Checks, all of which must pass:

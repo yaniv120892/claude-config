@@ -122,8 +122,8 @@ def validate(skill: Skill) -> list[str]:
 def prepare_workdir(skill: Skill, case: dict, harness: str) -> str:
     """Build the throwaway git repo a case runs in.
 
-    The fixture is copied in and its `setup.sh`, if any, runs and is then removed,
-    so the agent sees the state setup produced rather than the script.
+    The fixture is copied in, then its `setup.sh`, if any, runs there from where it
+    sits, so the agent sees the state setup produced rather than the script.
 
     Args:
         skill: The skill under test.
@@ -136,7 +136,12 @@ def prepare_workdir(skill: Skill, case: dict, harness: str) -> str:
     workdir = tempfile.mkdtemp(prefix=f"eval-{skill.name}-")
     fixture = case.get("fixture")
     if fixture:
-        shutil.copytree(os.path.join(skill.skill_dir, "evals", fixture), workdir, dirs_exist_ok=True)
+        # setup.sh stays out of the copy: it usually runs `git add -A`, which would
+        # commit the script itself and leave its removal as a dirty tree.
+        shutil.copytree(
+            os.path.join(skill.skill_dir, "evals", fixture), workdir,
+            dirs_exist_ok=True, ignore=shutil.ignore_patterns("setup.sh"),
+        )
     git_env = {
         **os.environ,
         **SANDBOX_ENV,
@@ -145,10 +150,9 @@ def prepare_workdir(skill: Skill, case: dict, harness: str) -> str:
         "GIT_COMMITTER_NAME": "eval",
         "GIT_COMMITTER_EMAIL": "eval@example.com",
     }
-    setup = os.path.join(workdir, "setup.sh")
-    if os.path.exists(setup):
+    setup = os.path.join(skill.skill_dir, "evals", fixture or "", "setup.sh")
+    if fixture and os.path.exists(setup):
         subprocess.run(["bash", setup], cwd=workdir, env=git_env, check=True, capture_output=True)
-        os.remove(setup)
     if not os.path.isdir(os.path.join(workdir, ".git")):
         subprocess.run(["git", "init", "--quiet", "-b", "main"], cwd=workdir, env=git_env, check=True)
         subprocess.run(["git", "add", "-A"], cwd=workdir, env=git_env, check=True)
