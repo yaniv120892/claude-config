@@ -194,7 +194,16 @@ Set `phase: "ready-to-merge"`. Stop. Tell the user that after they merge, `/ship
 
 `/ship resume`: find the worktree, read `state.json`, and re-enter at the phase it names. A phase interrupted mid-flight re-runs from its start — phases are idempotent by design. Never guess at state; if `state.json` is missing or unreadable, say so and ask.
 
-`/ship status`: read `state.json` and `history`, report in five lines or fewer. Read nothing else.
+`/ship status`: read `state.json`, which holds `history`, and nothing else. Reply with
+these lines and nothing around them: no heading, no closing advice.
+
+```
+<slug> (<type>), phase <phase>
+Branch <branch> into <base>, PR <pr or "none yet">
+Done: <each completed phase from history, with its note if it has one>
+Next: <the phase after the current one>
+<only when the user must act: what, in one line>
+```
 
 ## Redo
 

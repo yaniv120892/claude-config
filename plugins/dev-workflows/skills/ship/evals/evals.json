@@ -1,0 +1,23 @@
+{
+  "cases": [
+    {
+      "id": "explicit-only",
+      "kind": "trigger",
+      "prompt": "Build a price-alerts feature end to end and get it ready to merge.",
+      "expect_trigger": false
+    },
+    {
+      "id": "status-reads-state",
+      "kind": "behavior",
+      "invoke": true,
+      "fixture": "fixtures/run-in-implement",
+      "prompt": "status",
+      "checks": [
+        {"final_matches": "(?i)implement"},
+        {"final_matches": "(?i)price.alerts"},
+        {"max_lines": 5},
+        {"run": "test -z \"$(git status --porcelain)\""}
+      ]
+    }
+  ]
+}

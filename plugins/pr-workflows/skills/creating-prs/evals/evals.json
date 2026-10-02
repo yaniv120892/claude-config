@@ -1,0 +1,22 @@
+{
+  "cases": [
+    {
+      "id": "explicit-only",
+      "kind": "trigger",
+      "prompt": "Open a pull request for this branch.",
+      "expect_trigger": false
+    },
+    {
+      "id": "title-without-tracker",
+      "kind": "behavior",
+      "invoke": true,
+      "fixture": "fixtures/pushed-fix",
+      "prompt": "Draft the pull request for this branch against main, but do not create it. Print the title on its own line, prefixed with `TITLE: `.",
+      "checks": [
+        {"final_matches": "(?m)^\\W*TITLE: `?(feat|fix|docs|refactor|perf|test|chore|build|ci|style)(\\([a-z0-9-]+\\))?!?: \\S"},
+        {"final_not_matches": "(?m)^\\W*TITLE: .*\\b[A-Z][A-Z0-9]+-\\d+\\b"},
+        {"run": "test -z \"$(git status --porcelain)\""}
+      ]
+    }
+  ]
+}
