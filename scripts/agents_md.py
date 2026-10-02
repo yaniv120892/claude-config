@@ -35,11 +35,17 @@ terms this way:
 | `AskUserQuestion` | Ask the user directly. List the options with your recommendation first. |
 | `/plugin:skill`, the `Skill` tool, "use the X skill" | Read skill X's `SKILL.md`, from `.agents/skills/X/` in the repo or `~/.agents/skills/X/`, and follow it. The user invokes one as `$X`. |
 | A repo's `CLAUDE.md` or `.claude/rules/` | Repo instructions, the same kind as `AGENTS.md`. Read them when present. |
+"""
 
-Claude Code enforces some of these rules with hooks, and none of them run here.
-Hold to them yourself: commit only on a branch, never on the default branch; and
-make edits in a git worktree, not in a repo's main checkout; and run the repo's
-own build, lint, typecheck and tests before every push.
+# Kept apart from HARNESS_NOTES because evals/run.py gives eval sandboxes the
+# notes alone: each sandbox is a throwaway checkout on main, where these rules
+# would forbid the very edits a case asks for.
+HOOK_RULES = """## Rules Claude Code enforces with hooks
+
+None of those hooks run here, so hold to their rules yourself: commit only on a
+branch, never on the default branch; make edits in a git worktree, not in a
+repo's main checkout; and run the repo's own build, lint, typecheck and tests
+before every push.
 """
 
 
@@ -141,7 +147,7 @@ def build(profile: str) -> str:
         The file's contents.
     """
     claude_md = read(os.path.join(ROOT, "profiles", profile, "CLAUDE.md"))
-    return "\n\n".join([MARKER, inline_imports(claude_md).strip(), rules_index().strip(), HARNESS_NOTES.strip()]) + "\n"
+    return "\n\n".join([MARKER, inline_imports(claude_md).strip(), rules_index().strip(), HARNESS_NOTES.strip(), HOOK_RULES.strip()]) + "\n"
 
 
 def main() -> int:

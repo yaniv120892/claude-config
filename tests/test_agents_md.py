@@ -26,6 +26,8 @@ def main() -> int:
             failures.append(f"{profile}: an @ import was left unresolved")
         if shared_rules_heading not in built:
             failures.append(f"{profile}: shared-rules.md was not inlined")
+    if "worktree" in agents_md.HARNESS_NOTES or "default branch" in agents_md.HARNESS_NOTES:
+        failures.append("HARNESS_NOTES carries a hook rule; eval sandboxes on main would obey it")
     # install.sh tells a generated AGENTS.md from a hand-written one by this text;
     # if the two drift, every install backs up the file it generated last time.
     with open(os.path.join(ROOT, "install.sh"), encoding="utf-8") as handle:
