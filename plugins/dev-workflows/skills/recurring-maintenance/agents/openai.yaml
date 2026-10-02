@@ -1,0 +1,4 @@
+# Codex reads invocation policy here; disable-model-invocation in SKILL.md is the
+# Claude Code equivalent. tests/test_codex_policy.py keeps the two in step.
+policy:
+  allow_implicit_invocation: false
