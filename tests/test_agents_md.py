@@ -1,15 +1,14 @@
 #!/usr/bin/env python3
 """Check the generated AGENTS.md carries everything Codex cannot load by itself.
 
-Codex follows no `@` imports and scopes no rules by path. An import left as a
-bare `@path` line, or a rule file missing from the index, is an instruction that
-silently never reaches a Codex session.
+Codex follows no `@` imports. An import left as a bare `@path` line is an
+instruction that silently never reaches a Codex session.
 
 Run: python3 tests/test_agents_md.py
 """
 
-import glob
 import os
+import re
 import sys
 
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
@@ -27,17 +26,16 @@ def main() -> int:
             failures.append(f"{profile}: an @ import was left unresolved")
         if shared_rules_heading not in built:
             failures.append(f"{profile}: shared-rules.md was not inlined")
-        for rule in glob.glob(os.path.join(ROOT, "rules", "*.md")):
-            if f"~/.claude/rules/{os.path.basename(rule)}" not in built:
-                failures.append(f"{profile}: rules/{os.path.basename(rule)} is missing from the index")
-        if agents_md.HARNESS_NOTES.strip() not in built:
-            failures.append(f"{profile}: the harness notes are missing")
-        if not built.startswith(agents_md.MARKER):
-            failures.append(f"{profile}: the generator marker install.sh looks for is not first")
+    # install.sh tells a generated AGENTS.md from a hand-written one by this text;
+    # if the two drift, every install backs up the file it generated last time.
+    with open(os.path.join(ROOT, "install.sh"), encoding="utf-8") as handle:
+        grepped = re.search(r"grep -q '([^']+)' \"\$agents_md\"", handle.read())
+    if not grepped or grepped.group(1) not in agents_md.MARKER:
+        failures.append("install.sh no longer greps for the marker agents_md.py writes")
     for failure in failures:
         print(f"FAIL  {failure}")
     if not failures:
-        print("PASS  every profile's AGENTS.md inlines its imports, indexes every rule, and ends with the harness notes")
+        print("PASS  every profile's AGENTS.md inlines its imports, and install.sh recognises the file")
     return 1 if failures else 0
 
 

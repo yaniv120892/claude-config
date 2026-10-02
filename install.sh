@@ -17,9 +17,8 @@
 #
 # For Claude Code this installs only the parts a plugin cannot carry: the
 # always-loaded global rules, the path-scoped rules/, settings, keybindings, and
-# the statusline. Skills, commands, and hooks ship as PLUGINS — see README.
-# Codex has no plugin marketplace for them, so there every skill is linked into
-# ~/.agents/skills/ and the rules are flattened into a generated AGENTS.md.
+# the statusline. Skills, commands, and hooks ship as PLUGINS. For Codex it links
+# the skills and generates AGENTS.md. README covers both.
 #
 # Anything already present is backed up to ~/.claude-config-backups/<timestamp>/
 # before being replaced. Existing skills are left completely alone.
@@ -38,7 +37,7 @@ while [ $# -gt 0 ]; do
     --target)  TARGET="${2:?--target needs a value}"; shift 2 ;;
     --dry-run) DRY_RUN=1; shift ;;
     --harness) HARNESS="${2:?--harness needs a value}"; shift 2 ;;
-    -h|--help) sed -n '2,26p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,/^$/{/^#/p;}' "$0"; exit 0 ;;
     *) echo "unknown argument: $1" >&2; exit 1 ;;
   esac
 done
