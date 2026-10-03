@@ -108,8 +108,13 @@ jobs:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           display_report: true
+          # Background agents would let the run report a result while /simplify's
+          # reviewers are still working, ending the step before their fixes land.
           settings: |
             {
+              "env": {
+                "CLAUDE_CODE_DISABLE_BACKGROUND_TASKS": "1"
+              },
               "permissions": {
                 "deny": [
                   "Read(./.env)",
@@ -126,7 +131,7 @@ jobs:
             }
           claude_args: |
             --max-turns 150
-            --allowedTools "Read,Glob,Grep,Edit,MultiEdit,Write,WebFetch,WebSearch,Bash(npm:*),Bash(npx:*),Bash(node:*),Bash(git:*),Bash(gh pr create:*)"
+            --allowedTools "Skill,Agent,Read,Glob,Grep,Edit,MultiEdit,Write,WebFetch,WebSearch,Bash(npm:*),Bash(npx:*),Bash(node:*),Bash(git:*),Bash(gh pr create:*)"
           prompt: |
             You are upgrading one npm dependency (or one lockstep family) in `${{ github.repository }}` and opening one pull request for it. Change only what the listed packages require.
 
@@ -155,12 +160,13 @@ jobs:
             ${{ inputs.check_commands }}
             ```
                A `build` that fails only because an environment variable is unset is not a regression: record it as such.
-            3. Commit package.json, package-lock.json and the files you changed with the message `${{ matrix.title }}`, then push: `git push -u origin ${{ matrix.branch }}`.
-            4. Write the pull request body to `${{ runner.temp }}/pr-body.md` and open it: `gh pr create --base ${{ github.ref_name }} --head ${{ matrix.branch }} --title "${{ matrix.title }}" --reviewer ${{ github.repository_owner }} --body-file ${{ runner.temp }}/pr-body.md` — add `--draft` if any check other than a missing-env build failure still fails.
-            5. Your final message is the pull request URL, or, when no pull request was opened, one paragraph on what blocked it.
+            3. Review your own changes: run `git add -A`, then `git diff --cached --name-only`. If it lists nothing but package.json and package-lock.json, skip this step. Otherwise, through the Skill tool, invoke the `simplify` skill and then the `code-review` skill with args `medium --fix`, each on `git diff --cached -- . ':!package.json' ':!package-lock.json'`. Keep a fix only inside a file that diff already touches, never weaken or skip a check to make one pass, then re-run every check. A correctness finding you leave unfixed is named in the pull request body and makes the pull request a draft.
+            4. Commit package.json, package-lock.json and the files you changed with the message `${{ matrix.title }}`, then push: `git push -u origin ${{ matrix.branch }}`.
+            5. Write the pull request body to `${{ runner.temp }}/pr-body.md` and open it: `gh pr create --base ${{ github.ref_name }} --head ${{ matrix.branch }} --title "${{ matrix.title }}" --reviewer ${{ github.repository_owner }} --body-file ${{ runner.temp }}/pr-body.md` — add `--draft` if any check other than a missing-env build failure still fails, or a correctness finding from step 3 is unfixed.
+            6. Your final message is the pull request URL, or, when no pull request was opened, one paragraph on what blocked it.
 
             ## Pull request body
-            Under 25 lines, these five headings and nothing else. Markdown, no HTML, no emoji.
+            Under 30 lines, these six headings and nothing else. Markdown, no HTML, no emoji.
 
             ```
             ## What changed
@@ -174,6 +180,9 @@ jobs:
 
             ## New features worth adopting
             <1–3 new APIs or options this codebase could use and the files where they would apply — suggestions only, not implemented>
+
+            ## Review
+            <"Skipped: only package.json and package-lock.json changed", or one line each for simplify and code-review: what it found and what was fixed, naming any finding left unfixed>
 
             ## Verification
             <one line per check, in the order above: the command and its final result; name a missing-env build failure as such>
