@@ -113,7 +113,13 @@ package comes back, for a human to review. The model step is told to open the
 pull request and stop, and `gh pr merge`, `gh pr review`, `gh pr edit` and a
 force push are denied in its settings; that is a guardrail, since the step can
 run `npm`, `node` and `git`. What enforces it is a ruleset on the app repo's
-default branch requiring a pull request and a review, with no bypass. The
+default branch requiring a pull request and a review, with no bypass. When an
+upgrade needed code changes, the model runs `/simplify` and `/code-review --fix`
+on them before committing, and a correctness finding it leaves unfixed opens the
+pull request as a draft; a bump that touches only `package.json` and the lockfile
+skips the review. Background tasks are disabled for that step, because
+`/simplify`'s reviewers would otherwise still be running when the run reports
+its result and the step ends. The
 `deps-discover` and `deps-bump` actions under
 `.github/actions/` are the model-free half; each `action.yml` says what it does.
 
