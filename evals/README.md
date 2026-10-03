@@ -33,7 +33,7 @@ Every case runs in a fresh temporary git repo, never in this checkout.
 
 | | Claude Code | Codex |
 | --- | --- | --- |
-| Skill source | `--plugin-dir plugins/<plugin>` from this checkout | the plugin's skills linked into the repo's `.agents/skills/` |
+| Skill source | `--plugin-dir plugins/<plugin>` from this checkout | the plugin's skills linked into the repo's `.agents/skills/`, and the harness notes from `scripts/agents_md.py` written to its `AGENTS.md`, as `install.sh --harness codex` does |
 | Your own config | user settings skipped (`--setting-sources project`), so globally installed plugins don't compete | your `~/.codex` config applies |
 | Trigger case | `Bash`, `Edit`, `Write`, `Agent` and web tools blocked | `-s read-only` |
 | Behavior case | tools allowed inside the temp repo | `-s workspace-write` |

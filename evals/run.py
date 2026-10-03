@@ -24,6 +24,9 @@ import sys
 import tempfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.join(ROOT, "scripts"))
+
+import agents_md  # noqa: E402
 RESULTS_DIR = os.path.join(ROOT, "evals", "results")
 HARNESSES = ("claude", "codex")
 KINDS = ("trigger", "behavior")
@@ -184,10 +187,11 @@ def prepare_workdir(skill: Skill, case: dict, harness: str) -> str:
 
 
 def install_for_codex(skill: Skill, workdir: str) -> None:
-    """Expose the skill's whole plugin to Codex through the repo's `.agents/skills/`.
+    """Set Codex up in the repo the way install.sh sets it up in a home directory.
 
-    Every sibling skill is linked, not just the one under test, so a trigger case
-    competes against the same near-misses it would in real use.
+    Every sibling skill is linked into `.agents/skills/`, not just the one under
+    test, so a trigger case competes against the same near-misses it would in real
+    use. `AGENTS.md` gets the same harness notes install.sh puts in the global one.
 
     Args:
         skill: The skill under test.
@@ -197,8 +201,10 @@ def install_for_codex(skill: Skill, workdir: str) -> None:
     os.makedirs(target, exist_ok=True)
     for name in skill.sibling_names:
         os.symlink(os.path.join(skill.plugin_dir, "skills", name), os.path.join(target, name))
+    with open(os.path.join(workdir, "AGENTS.md"), "a", encoding="utf-8") as handle:
+        handle.write(agents_md.HARNESS_NOTES)
     with open(os.path.join(workdir, ".git", "info", "exclude"), "a", encoding="utf-8") as handle:
-        handle.write("\n.agents/\n")
+        handle.write("\n.agents/\nAGENTS.md\n")
 
 
 def build_command(harness: str, skill: Skill, case: dict, workdir: str, args: argparse.Namespace) -> list[str]:
