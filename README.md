@@ -73,7 +73,7 @@ enforce, but nothing on Codex enforces them.
 | Plugin | Skills | What it does |
 | --- | --- | --- |
 | `pr-workflows` | 15 | GitHub pull request workflow: create, review (house rules plus a Fowler smell baseline, batched across PRs with a Notion docs-drift check), inline comments, CI verification, thread resolution, conflict fixing, the `steward` drive-to-green posture, feedback harvesting, posting a PR to Slack. Ships `/pr-review` and `lib/github.py` |
-| `dev-workflows` | 21 | `/ship` (scoping rounds through blind-QA'd PR, with a reproduce phase for bugs), brainstorming, plan writing and execution, TDD, subagent-driven development, worktree isolation, Docker-based service runs, drip-feed recurring maintenance, domain modeling (`CONTEXT.md` + ADRs), the `/flows` router, and the `wizard`/`research`/`retro`/`wait-what` helpers. Ships the pre-push quality-gate, post-merge cleanup, require-worktree, and default-branch-guard hooks |
+| `dev-workflows` | 21 | `/ship` (scoping rounds through blind-QA'd PR, with a reproduce phase for bugs), brainstorming, plan writing and execution, TDD, subagent-driven development, worktree isolation, Docker-based service runs, drip-feed recurring maintenance, domain modeling (`CONTEXT.md` + ADRs), the `/flows` router, and the `wizard`/`research`/`retro`/`wait-what` helpers. Ships the pre-push quality-gate, post-merge cleanup, require-worktree, and default-branch-guard hooks, and a SessionStart hook that loads the reply-style rule |
 | `issue-tracker` | 3 | Jira ticket creation and status transitions, with a cached per-project transition map. Also files Linear issues against a fixed Why/Repro/Fix/Done-when/Signals template |
 | `infra-workflows` | 2 | Helm env vars across GitOps registries, and AWS SSM SecureString provisioning with an account guard. Ships `provision_ssm.sh` |
 | `cmux` | 5 | cmux terminal multiplexer control: topology, workspaces, browser surface, notifications |
@@ -218,6 +218,8 @@ If a secret ever does get committed, rotate it — deleting the line is not enou
 that plugin's `version` in its `plugin.json` so `/plugin update` picks it up.
 
 **A rule** → decide scope first, per the protocol in `shared-rules.md`:
-every session → `shared-rules.md`; a language or file type → `rules/*.md` (needs
+every session → `shared-rules.md`, or a dev-workflows SessionStart hook when it
+must also reach cloud sessions, which load no `shared-rules.md`
+(`hooks/reply-style.md` is the example); a language or file type → `rules/*.md` (needs
 `paths:`); one project → that repo's `.claude/rules/`. Add the long-form version
 with worked examples to `rules-reference.md` either way.
