@@ -54,6 +54,15 @@ so a large rule set is paid for on every prompt whether or not it's relevant
 > Pattern: Always give the absolute path from the filesystem root when referencing a file.
 > Avoid: `./docs/foo.md`, bare `foo.md`, or anything relative to an assumed cwd.
 
+**Simplified Technical English in Replies** — the user switches between several parallel
+sessions and must re-orient fast; dense prose costs more than it saves
+> Pattern: Write chat replies in ASD-STE100 style: short sentences (≤20 words), common words,
+> one idea per sentence, active voice, simple tenses. Start with the current state and the
+> next step. Name files and commands exactly.
+> Avoid: Long compound sentences, passive voice, perfect tenses, idioms, and replies that
+> assume the user remembers earlier context. Commit messages, PR bodies and docs keep their
+> own house style.
+
 ## Verification
 
 **Proof of Work Is Not Regression Coverage** — a throwaway script proves the change worked once,
