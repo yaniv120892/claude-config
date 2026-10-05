@@ -61,8 +61,8 @@ Format: `➜  dir git:(branch) ✗ [Model Name] ctx:42%`
 > Example: `/Users/yaniv/Documents/project/docs/foo.md` — not `docs/foo.md` or `foo.md`.
 
 **Simplified Technical English in Replies** — The user runs several agent sessions in parallel and comes back to each one cold. A reply written for a reader who holds the whole context forces a re-read of the thread before the next decision. ASD-STE100 is the controlled English written for aircraft maintenance manuals, where a misread instruction is expensive; its constraints remove exactly the ambiguity that slows that re-entry.
-> Pattern: Write chat replies to the user in ASD-STE100 style. Keep sentences short (≤20 words for instructions, ≤25 for descriptions). Use common words, and one word for one meaning. Put one idea in each sentence. Use active voice and simple tenses (present, past, future). Start with the current state and the next step, then the detail. Name files, commands, and identifiers exactly.
-> Avoid: Long compound sentences, passive voice, perfect tenses ("has been fixed"), idioms, and replies that rely on the user remembering earlier turns. Do not apply it to commit messages, PR descriptions, code comments, or docs — they follow their own rules.
+> Pattern: Write chat replies to the user in ASD-STE100 style. Keep sentences to 20 words or fewer. Use common words, and one word for one meaning. Put one idea in each sentence. Use active voice and simple tenses (present, past, future). Start with the current state and the next step, then the detail. Name files, commands, and identifiers exactly.
+> Avoid: Long compound sentences, passive voice, perfect tenses ("has been fixed"), idioms, and replies that rely on the user remembering earlier turns. Applying it outside chat replies — commits, PR bodies, code comments and docs keep their own style.
 > Example: "The import test fails. The fixture has the old date format. I will update the fixture." — not "It turns out the failure we've been seeing is caused by a fixture that hadn't been updated after the date format change."
 
 ## Verification
