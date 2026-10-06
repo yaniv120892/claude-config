@@ -3,7 +3,7 @@ import { describe, expect, test } from 'claude-code/testing'
 
 import { slash } from './slash'
 
-import { isGitWrite } from '../hooks/git-write'
+import { changesPr, isGitWrite, runsGit } from '../hooks/git-write'
 
 // The cases settings/tests/test-require-git-approval.sh held for the shell
 // gate this mod replaced. Both halves matter: a gate that asks about reads
@@ -32,6 +32,17 @@ const WRITES = [
   'echo $(git push 2>&1)',
   'gh -R owner/repo pr merge 3',
   'bash -c "git push origin main"',
+  // Shell keywords and wrappers in front of the program.
+  'for b in a c; do git push origin $b; done',
+  'if git push; then echo ok; fi',
+  '! git commit -m x',
+  'timeout 60 git push',
+  'find . -name x -exec git commit -m x \\;',
+  // A line continuation between the options and the subcommand.
+  'git -C repo \\\n  push origin main',
+  'gh pr \\\n create',
+  // gh takes its flags anywhere.
+  'gh pr -R owner/repo merge 3',
 ]
 const READS = [
   'gh pr list --state merged',
@@ -64,6 +75,22 @@ describe('isGitWrite', () => {
       expect(isGitWrite(command)).toBe(false)
     })
   }
+})
+
+describe('what moves the PR and the band', () => {
+  test('changesPr: pushes and gh pr writes, not commits or reads', () => {
+    for (const command of ['git push', 'gh pr ready 51', 'gh pr close 51', 'gh pr comment 51 -b x', 'gh pr merge 3']) {
+      expect(changesPr(command)).toBe(true)
+    }
+    for (const command of ['git commit -m x', 'gh pr view 51', 'gh pr checks 51', 'ls']) {
+      expect(changesPr(command)).toBe(false)
+    }
+  })
+
+  test('runsGit: any git or gh call', () => {
+    expect(runsGit('cd x && git checkout main')).toBe(true)
+    expect(runsGit('ls -la && cat README.md')).toBe(false)
+  })
 })
 
 type Answer = 'Allow once' | 'Allow for this session' | 'Deny'

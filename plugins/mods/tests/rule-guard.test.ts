@@ -43,6 +43,26 @@ describe('blocked terms', () => {
 })
 
 describe('the guard', () => {
+  test('refuses a blocked term in a folder the marketplace repo has not made yet', { options: { blockedTerms: 'Acme' } }, async ($, on) => {
+    const written: string[] = []
+    on('session.cwd', () => ({ value: '/repo' }))
+    on('fs.stat', ($, e) => {
+      if (e.path !== '/repo') return { deny: 'ENOENT' }
+      return { value: { kind: 'dir', size: 0, mtimeMs: 0, isLink: false, realPath: '/repo' } }
+    })
+    on('fs.exists', ($, e) => ({ value: e.path === '/repo' || e.path === '/repo/.claude-plugin/marketplace.json' }))
+    on('process.run', () => ({
+      value: { exitCode: 0, stdout: '/repo\n', stderr: '', isStdoutTruncated: false, isStderrTruncated: false },
+    }))
+    on('tool.call', { tool: 'Write' }, ($, e) => {
+      written.push(e.file_path)
+      return { result: { type: 'create', filePath: e.file_path, content: e.content, structuredPatch: [], originalFile: null } }
+    })
+    const result = await $.tool.call({ tool: 'Write', file_path: 'plugins/new/skills/x/SKILL.md', content: 'Deploys to Acme.' })
+    expect(written).toEqual([])
+    expect(result.isError === true || result.deny !== undefined).toBe(true)
+  })
+
   // No git runs under `claude plugin test`, so the guard cannot see whether
   // the file is ignored and counts it as tracked: it fails closed.
   test('refuses a Write that puts a token in a file', async ($, on) => {

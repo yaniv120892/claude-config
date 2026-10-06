@@ -1,20 +1,23 @@
-// Which Bash commands the git write gate asks about.
+// Which Bash commands the git write gate asks about, and which ones may have
+// changed the branch's PR.
 //
 // The command is split into simple commands and words the way a shell would
-// (quotes, `;`, `&&`, `|`, `$(`, newlines), so global options such as
-// `git -C "$REPO" push` cannot hide the subcommand, and `gh pr view --json
-// mergeable` is not mistaken for a merge. A quoted word that holds a command of
-// its own (`bash -c "git push"`) is checked too, which errs toward asking when
-// a string merely mentions a write.
+// (quotes, `;`, `&&`, `|`, `$(`, newlines, line continuations). Every `git` or
+// `gh` word is then read as a program start, wherever it stands, so a keyword
+// (`do git push`), a wrapper (`timeout 60 git push`, `find -exec git commit`)
+// or a global option (`git -C "$REPO" push`) cannot hide a write. A quoted
+// word that holds a command of its own (`bash -c "git push"`) is read too.
+// Both err toward asking when text merely mentions a write.
 
 export const GATED_COMMANDS = ['git commit', 'git push', 'gh pr create', 'gh pr merge'] as const
 
 const SEPARATORS = new Set([';', '&', '|', '(', ')', '{', '}', '\n', '`'])
-// Prefixes that run the command after them: `sudo git push`, `env X=1 git push`.
-const WRAPPERS = new Set(['sudo', 'env', 'command', 'exec', 'nohup', 'time', 'xargs', 'nice'])
 const GIT_VALUE_OPTIONS = new Set(['-C', '-c', '--git-dir', '--work-tree', '--namespace', '--super-prefix', '--config-env'])
 const GH_VALUE_OPTIONS = new Set(['-R', '--repo'])
-const ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=/
+const GIT_WRITES = new Set(['commit', 'push'])
+const GH_PR_WRITES = new Set(['create', 'merge'])
+// What else a command does to a PR, so the status band rereads it.
+const GH_PR_CHANGES = new Set(['create', 'merge', 'ready', 'edit', 'close', 'reopen', 'review', 'comment'])
 
 type Word = { text: string; isQuoted: boolean }
 
@@ -46,6 +49,8 @@ export function splitCommands(command: string): Word[][] {
       isQuoted = true
       hasWord = true
       i = end
+    } else if (char === '\\' && command[i + 1] === '\n') {
+      i++
     } else if (char === '\\' && i + 1 < command.length) {
       word += command[i + 1]
       hasWord = true
@@ -69,48 +74,58 @@ export function splitCommands(command: string): Word[][] {
   return commands
 }
 
-/** The words after any `X=1` assignments and wrappers such as `sudo` or `env -i`. */
-function commandWords(words: readonly Word[]): string[] {
-  let start = 0
-  while (start < words.length) {
-    const text = words[start]?.text ?? ''
-    if (ASSIGNMENT.test(text)) {
-      start++
-    } else if (WRAPPERS.has(text)) {
-      start++
-      while (start < words.length && (words[start]?.text ?? '').startsWith('-')) start++
-    } else {
-      break
+/** The program's arguments with its options dropped; `scope` limits that to the leading ones. */
+function positionals(args: readonly string[], valueOptions: ReadonlySet<string>, scope: 'leading' | 'all'): string[] {
+  const kept: string[] = []
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i] ?? ''
+    const isOption = arg.startsWith('-') && (scope === 'all' || kept.length === 0)
+    if (!isOption) kept.push(arg)
+    else if (valueOptions.has(arg)) i++
+  }
+  return kept
+}
+
+type Call = { program: 'git'; subcommand: string | undefined } | { program: 'gh'; group: string | undefined; action: string | undefined }
+
+/** Every git and gh call in the command, quoted inner commands included. */
+function calls(command: string): Call[] {
+  const found: Call[] = []
+  for (const words of splitCommands(command)) {
+    const texts = words.map(word => word.text)
+    texts.forEach((text, index) => {
+      const name = text.split('/').pop()
+      if (name === 'git') {
+        found.push({ program: 'git', subcommand: positionals(texts.slice(index + 1), GIT_VALUE_OPTIONS, 'leading')[0] })
+      } else if (name === 'gh') {
+        // gh takes its flags anywhere: `gh pr -R owner/repo merge 3`.
+        const [group, action] = positionals(texts.slice(index + 1), GH_VALUE_OPTIONS, 'all')
+        found.push({ program: 'gh', group, action })
+      }
+    })
+    for (const word of words) {
+      if (word.isQuoted && /\s/.test(word.text)) found.push(...calls(word.text))
     }
   }
-  return words.slice(start).map(one => one.text)
-}
-
-/** The words after the program's global options, which may take a value. */
-function afterOptions(words: readonly string[], valueOptions: ReadonlySet<string>): string[] {
-  let index = 1
-  while (index < words.length && (words[index] ?? '').startsWith('-')) {
-    index += valueOptions.has(words[index] ?? '') ? 2 : 1
-  }
-  return words.slice(index)
-}
-
-function isWriteCommand(words: readonly Word[]): boolean {
-  const program = commandWords(words)
-  const name = (program[0] ?? '').split('/').pop()
-  if (name === 'git') {
-    const [subcommand] = afterOptions(program, GIT_VALUE_OPTIONS)
-    return subcommand === 'commit' || subcommand === 'push'
-  }
-  if (name === 'gh') {
-    const [group, action] = afterOptions(program, GH_VALUE_OPTIONS)
-    return group === 'pr' && (action === 'create' || action === 'merge')
-  }
-  return false
+  return found
 }
 
 export function isGitWrite(command: string): boolean {
-  return splitCommands(command).some(
-    words => isWriteCommand(words) || words.some(word => word.isQuoted && /\s/.test(word.text) && isGitWrite(word.text)),
+  return calls(command).some(call =>
+    call.program === 'git'
+      ? GIT_WRITES.has(call.subcommand ?? '')
+      : call.group === 'pr' && GH_PR_WRITES.has(call.action ?? ''),
   )
+}
+
+/** Whether the command may have changed the branch's PR: a push, or a gh pr write. */
+export function changesPr(command: string): boolean {
+  return calls(command).some(call =>
+    call.program === 'git' ? call.subcommand === 'push' : call.group === 'pr' && GH_PR_CHANGES.has(call.action ?? ''),
+  )
+}
+
+/** Whether the command runs git or gh at all, which may move the branch or the worktree. */
+export function runsGit(command: string): boolean {
+  return calls(command).length > 0
 }

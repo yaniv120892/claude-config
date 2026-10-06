@@ -95,7 +95,7 @@ link() {
 # runs from a ~/.claude path that is gone, and each plugin the repo's settings
 # enable that it never mentions (one it sets false is a profile's choice).
 check_kept_settings() {
-  python3 - "$1" "$REPO_DIR/settings/settings.json" <<'PY'
+  python3 - "$1" "$REPO_DIR/settings/settings.json" 2>/dev/null <<'PY' || say "  note:   could not check $1 (not JSON, or no python3) — compare it by hand"
 import json, os, re, sys
 
 kept, shipped = (json.load(open(path)) for path in sys.argv[1:3])
@@ -103,8 +103,11 @@ commands = [hook.get("command", "") for groups in kept.get("hooks", {}).values()
             for group in groups for hook in group.get("hooks", [])]
 commands.append(kept.get("statusLine", {}).get("command", ""))
 for command in commands:
-    for path in re.findall(r"(?:~|\$HOME)/\.claude/[^\s\"']+", command):
-        if not os.path.exists(os.path.expanduser(path.replace("$HOME", "~"))):
+    # Any spelling of a Claude config directory: ~, $HOME, ${HOME}, or absolute,
+    # and a second profile's ~/.claude-<name> as well as ~/.claude.
+    for path in re.findall(r"(?:~|\$\{?HOME\}?|/[^\s\"';]*)/\.claude[\w-]*/[^\s\"';]+", command):
+        expanded = re.sub(r"^(?:\$\{?HOME\}?)", "~", path)
+        if not os.path.exists(os.path.expanduser(expanded)):
             print(f"  stale:  {sys.argv[1]} runs {path}, which no longer exists — remove that entry")
 for plugin, is_enabled in shipped.get("enabledPlugins", {}).items():
     if is_enabled and plugin not in kept.get("enabledPlugins", {}):

@@ -3,7 +3,7 @@ import type { CommandSpec, EngineInterface as Engine, Register } from 'claude-co
 
 import type { Band, GitLocation, PrRead, PrThread } from '../types'
 import { credentialReason, findCredential, findTerm, parseTerms, termPattern, termReason } from './credentials'
-import { GATED_COMMANDS, isGitWrite } from './git-write'
+import { changesPr, GATED_COMMANDS, isGitWrite, runsGit } from './git-write'
 import {
   basename,
   CHECK,
@@ -147,15 +147,31 @@ async function readPr($: Engine): Promise<PrRead> {
 // The module's own, so a reload starts them over; that only drops a queued refresh.
 let isBandQueued = false
 let prInFlight: Promise<void> | null = null
+let isPrRereadWanted = false
 
-/** One PR read at a time; a caller during a read waits for that one. */
+/**
+ * One PR read at a time. A call during a read asks for one more after it, since
+ * the branch may have moved since that read began; it resolves after both.
+ */
 function refreshPr($: Engine): Promise<void> {
-  prInFlight ??= readPr($)
-    .then(found => storePr($, found))
-    .finally(() => {
-      prInFlight = null
-    })
+  if (prInFlight !== null) {
+    isPrRereadWanted = true
+    return prInFlight
+  }
+  prInFlight = (async () => {
+    do {
+      isPrRereadWanted = false
+      await storePr($, await readPr($))
+    } while (isPrRereadWanted)
+  })().finally(() => {
+    prInFlight = null
+  })
   return prInFlight
+}
+
+/** For refreshes no caller waits on: a failure goes to the debug log, not nowhere. */
+function inBackground($: Engine, work: Promise<void>): void {
+  work.catch(error => $.ui.log(`mods: ${String(error)}`, { to: 'debug' }))
 }
 
 /** Rereads the band; a branch switch rereads the PR too. */
@@ -166,7 +182,7 @@ async function refreshBand($: Engine): Promise<void> {
   const last = await read($, band)
   if (isSame(last, next)) return
   await update($, band, () => next)
-  if (last !== null && last.location.branch !== location.branch) void refreshPr($)
+  if (last !== null && last.location.branch !== location.branch) inBackground($, refreshPr($))
 }
 
 /** On a timer, off the tool call's path; calls close together share one refresh. */
@@ -175,7 +191,7 @@ function queueBandRefresh($: Engine): void {
   isBandQueued = true
   $.clock.after(BAND_SETTLE_MS, () => {
     isBandQueued = false
-    void refreshBand($)
+    inBackground($, refreshBand($))
   })
 }
 
@@ -197,16 +213,31 @@ const PR_ACTIONS = [
 
 /**
  * Where the path really lands, symlinks resolved (`~/.claude/rules` links
- * into this repo, and git sees the link's spelling as outside it): the file
- * when it exists, else its folder plus the name. Undefined when unplaceable.
+ * into this repo, and git sees the link's spelling as outside it): the closest
+ * part of it that exists, resolved, plus the rest, so a file in folders not
+ * made yet is placed too. Undefined when not even its root resolves.
  */
 async function placed($: Engine, path: string): Promise<string | undefined> {
-  const own = await $.fs.stat(path, { resolve: true }).catch(() => undefined)
-  if (own?.realPath !== undefined) return own.realPath
-  const cut = path.lastIndexOf('/')
-  const folder = cut < 0 ? '.' : path.slice(0, cut + 1)
-  const dir = await $.fs.stat(folder, { resolve: true }).catch(() => undefined)
-  return dir?.realPath === undefined ? undefined : `${dir.realPath.replace(/\/$/, '')}/${path.slice(cut + 1)}`
+  const absolute = path.startsWith('/') ? path : `${await $.session.cwd()}/${path}`
+  let existing = absolute
+  let rest = ''
+  for (;;) {
+    const found = await $.fs.stat(existing, { resolve: true }).catch(() => undefined)
+    if (found?.realPath !== undefined) return `${found.realPath.replace(/\/$/, '')}${rest}`
+    const cut = existing.lastIndexOf('/')
+    if (cut <= 0) return undefined
+    rest = `${existing.slice(cut)}${rest}`
+    existing = existing.slice(0, cut)
+  }
+}
+
+/** The closest folder above the file that exists, for git to run in. */
+async function existingFolder($: Engine, file: string): Promise<string> {
+  let folder = file.slice(0, file.lastIndexOf('/')) || '/'
+  while (folder !== '/' && !(await $.fs.exists(folder).catch(() => false))) {
+    folder = folder.slice(0, folder.lastIndexOf('/')) || '/'
+  }
+  return folder
 }
 
 /**
@@ -214,15 +245,17 @@ async function placed($: Engine, path: string): Promise<string | undefined> {
  * the guard cannot place, or a git that cannot run, counts as tracked, so the
  * guard fails closed.
  */
-async function isTracked($: Engine, file: string | undefined, folder: string): Promise<boolean> {
+async function isTracked($: Engine, file: string | undefined): Promise<boolean> {
   if (file === undefined) return true
+  const folder = await existingFolder($, file)
   const ran = await git($, folder, ['check-ignore', '-q', '--', file])
   // 0: ignored. 1: not ignored. 128: outside a work tree.
   return ran === null || ran.exitCode === 1
 }
 
-/** Whether the folder is in a plugin marketplace repo, which stays employer-agnostic. */
-async function isMarketplaceRepo($: Engine, folder: string): Promise<boolean> {
+/** Whether the file is in a plugin marketplace repo, which stays employer-agnostic. */
+async function isMarketplaceRepo($: Engine, file: string): Promise<boolean> {
+  const folder = await existingFolder($, file)
   const root = await git($, folder, ['rev-parse', '--show-toplevel'])
   if (root?.exitCode !== 0) return false
   return $.fs.exists(`${root.stdout}/.claude-plugin/marketplace.json`).catch(() => false)
@@ -235,9 +268,9 @@ async function guardEdit($: Engine, path: string, text: string, terms: RegExp | 
   if (credential === null && term === null) return null
 
   const file = await placed($, path)
-  const folder = file === undefined ? '.' : file.slice(0, file.lastIndexOf('/')) || '/'
-  if (credential !== null && (await isTracked($, file, folder))) return { deny: credentialReason(path, credential) }
-  if (term !== null && file !== undefined && (await isMarketplaceRepo($, folder))) return { deny: termReason(path, term) }
+  if (credential !== null && (await isTracked($, file))) return { deny: credentialReason(path, credential) }
+  // A file the guard cannot place may still land in a marketplace repo.
+  if (term !== null && (file === undefined || (await isMarketplaceRepo($, file)))) return { deny: termReason(path, term) }
   return null
 }
 
@@ -279,8 +312,11 @@ export const register: Register = (on, options) => {
     const started = await next(e)
     if (hasStatusBand) {
       // On timers, not in this dispatch, so the first prompt does not wait on git or gh.
-      $.clock.after(0, () => void refreshBand($).then(() => refreshPr($)))
-      $.clock.every(PR_POLL_MS, () => void refreshPr($))
+      $.clock.after(0, () => {
+        inBackground($, refreshBand($))
+        inBackground($, refreshPr($))
+      })
+      $.clock.every(PR_POLL_MS, () => inBackground($, refreshPr($)))
     }
     return started
   })
@@ -290,9 +326,10 @@ export const register: Register = (on, options) => {
     const refusal = hasGitGate ? await gateGitWrite($, e.command) : null
     if (refusal !== null) return refusal
     const ran = await next(e)
-    if (hasStatusBand) {
+    // Other commands that move the branch are caught when the turn ends.
+    if (hasStatusBand && runsGit(e.command)) {
       queueBandRefresh($)
-      if (isGitWrite(e.command)) $.clock.after(0, () => void refreshPr($))
+      if (changesPr(e.command)) $.clock.after(0, () => inBackground($, refreshPr($)))
     }
     return ran
   }).catch(($, e, next) =>
@@ -402,7 +439,7 @@ export const register: Register = (on, options) => {
     on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
       const { Box, Text, Button, Link } = $.ui.resolve(e)
       const last = await read($, prRead)
-      const refresh = <Button key="refresh" hotkey="r" label="Refresh" onPress={() => void refreshPr($)} />
+      const refresh = <Button key="refresh" hotkey="r" label="Refresh" onPress={() => inBackground($, refreshPr($))} />
 
       if (last?.pr == null) {
         return (
