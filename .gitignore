@@ -22,3 +22,8 @@ docs/superpowers/
 
 # Skill eval runs: raw harness logs and results.
 evals/results/
+
+# Written by Claude Code each time it loads a mod from a folder: this build's
+# API types and a tsconfig.json that points at them.
+plugins/*/.claude-plugin/types/
+plugins/*/tsconfig.json

@@ -1,0 +1,54 @@
+{
+  "name": "mods",
+  "description": "Function-hook mods for the Claude Code harness: a git write gate that asks the person, not the model; a status band with the location, model, context and the branch's PR; a /pr pane with buttons into the PR skills; a guard that refuses credentials in tracked files; the reply-style rule as a system-prompt section; and a /skill-tally of which skills actually fire. Each one has a switch in /config.",
+  "version": "0.1.0",
+  "author": { "name": "Yaniv Daye" },
+  "homepage": "https://github.com/yaniv120892/claude-config",
+  "repository": "https://github.com/yaniv120892/claude-config",
+  "keywords": ["mods", "hooks", "statusline", "git", "pull-request", "secrets"],
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "gitGate": {
+      "type": "boolean",
+      "title": "Git write gate",
+      "description": "Ask the person before git commit, git push, gh pr create and gh pr merge run",
+      "default": true
+    },
+    "statusBand": {
+      "type": "boolean",
+      "title": "Status band",
+      "description": "Show the location, branch, model, context use and the branch's PR above the prompt",
+      "default": true
+    },
+    "prPane": {
+      "type": "boolean",
+      "title": "PR pane",
+      "description": "Add /pr, a pane with the branch's PR checks, open review threads and the PR skills",
+      "default": true
+    },
+    "ruleGuard": {
+      "type": "boolean",
+      "title": "Rule guard",
+      "description": "Refuse edits that put a credential in a tracked file, or a blocked term in a marketplace repository",
+      "default": true
+    },
+    "blockedTerms": {
+      "type": "string",
+      "title": "Blocked terms",
+      "description": "Comma-separated terms, such as employer names, that the rule guard refuses in files of a repository with .claude-plugin/marketplace.json",
+      "default": ""
+    },
+    "replyStyle": {
+      "type": "boolean",
+      "title": "Reply style",
+      "description": "Add the Simplified Technical English reply rule to the system prompt",
+      "default": true
+    },
+    "skillTally": {
+      "type": "boolean",
+      "title": "Skill tally",
+      "description": "Count each skill that loads, across sessions, and show the counts with /skill-tally",
+      "default": true
+    }
+  }
+}

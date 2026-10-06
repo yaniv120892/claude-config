@@ -11,8 +11,8 @@ employer, forge, or issue tracker — and **no secrets are tracked**.
 
 | Half | Ships as | Why |
 | --- | --- | --- |
-| Skills, commands, hooks | **Plugins** (5) | Plugins are the supported mechanism: versioned, per-profile toggles, `/plugin update`, namespaced, and installing one never touches your existing skills |
-| Global rules, settings, keybindings, statusline | **Symlinks** via `install.sh` | Plugins cannot provide always-loaded `CLAUDE.md` instructions, `paths:`-scoped `rules/*.md`, `settings.json`, or a statusline |
+| Skills, commands, hooks, mods | **Plugins** (6) | Plugins are the supported mechanism: versioned, per-profile toggles, `/plugin update`, namespaced, and installing one never touches your existing skills |
+| Global rules, settings, keybindings | **Symlinks** via `install.sh` | Plugins cannot provide always-loaded `CLAUDE.md` instructions, `paths:`-scoped `rules/*.md`, or `settings.json` |
 | Reusable workflows and composite actions | **`uses:`** from a repo's own workflow | Runs on GitHub, not in a session — see *GitHub workflows* below |
 
 ## Install on a new machine
@@ -21,17 +21,18 @@ employer, forge, or issue tracker — and **no secrets are tracked**.
 git clone git@github.com:yaniv120892/claude-config.git ~/Develop/claude-config
 cd ~/Develop/claude-config
 
-# Half 1 — rules, settings, keybindings, statusline
+# Half 1 — rules, settings, keybindings
 ./install.sh --dry-run      # see exactly what would change
 ./install.sh                # personal profile → ~/.claude
 
-# Half 2 — skills, commands, hooks
+# Half 2 — skills, commands, hooks, mods
 claude
 /plugin marketplace add yaniv120892/claude-config
 /plugin install pr-workflows@yaniv-claude-config
 /plugin install dev-workflows@yaniv-claude-config
 /plugin install issue-tracker@yaniv-claude-config
 /plugin install infra-workflows@yaniv-claude-config
+/plugin install mods@yaniv-claude-config
 /plugin install cmux@yaniv-claude-config
 ```
 
@@ -64,8 +65,8 @@ A skill marked `disable-model-invocation: true` also carries an
 instead; `tests/test_codex_policy.py` keeps the two in step.
 
 What does not carry over: the hooks (the default-branch guard, the pre-push
-quality gate, the worktree guard), `settings.json`, keybindings, and the
-statusline. The generated `AGENTS.md` asks the agent to keep the rules the hooks
+quality gate, the worktree guard), the mods (the git write gate, the secret
+guard, the status band), `settings.json`, and keybindings. The generated `AGENTS.md` asks the agent to keep the rules the hooks
 enforce, but nothing on Codex enforces them.
 
 ## The plugins
@@ -73,9 +74,10 @@ enforce, but nothing on Codex enforces them.
 | Plugin | Skills | What it does |
 | --- | --- | --- |
 | `pr-workflows` | 15 | GitHub pull request workflow: create, review (house rules plus a Fowler smell baseline, batched across PRs with a Notion docs-drift check), inline comments, CI verification, thread resolution, conflict fixing, the `steward` drive-to-green posture, feedback harvesting, posting a PR to Slack. Ships `/pr-review` and `lib/github.py` |
-| `dev-workflows` | 21 | `/ship` (scoping rounds through blind-QA'd PR, with a reproduce phase for bugs), brainstorming, plan writing and execution, TDD, subagent-driven development, worktree isolation, Docker-based service runs, drip-feed recurring maintenance, domain modeling (`CONTEXT.md` + ADRs), the `/flows` router, and the `wizard`/`research`/`retro`/`wait-what` helpers. Ships the pre-push quality-gate, post-merge cleanup, require-worktree, and default-branch-guard hooks, and a SessionStart hook that loads the reply-style rule |
+| `dev-workflows` | 21 | `/ship` (scoping rounds through blind-QA'd PR, with a reproduce phase for bugs), brainstorming, plan writing and execution, TDD, subagent-driven development, worktree isolation, Docker-based service runs, drip-feed recurring maintenance, domain modeling (`CONTEXT.md` + ADRs), the `/flows` router, and the `wizard`/`research`/`retro`/`wait-what` helpers. Ships the pre-push quality-gate, post-merge cleanup, require-worktree, and default-branch-guard hooks |
 | `issue-tracker` | 3 | Jira ticket creation and status transitions, with a cached per-project transition map. Also files Linear issues against a fixed Why/Repro/Fix/Done-when/Signals template |
 | `infra-workflows` | 2 | Helm env vars across GitOps registries, and AWS SSM SecureString provisioning with an account guard. Ships `provision_ssm.sh` |
+| `mods` | 0 | Function-hook mods for the harness itself: the git write gate, the status band, `/pr`, the secret guard, the reply-style rule and `/skill-tally` — see *Mods* below |
 | `cmux` | 5 | cmux terminal multiplexer control: topology, workspaces, browser surface, notifications |
 
 Plugins that touch an employer's systems read their site-specific values — accounts,
@@ -102,6 +104,34 @@ python3 ~/.claude/plugins/.../pr-workflows/lib/github.py
 
 Scripts resolve `${CLAUDE_PLUGIN_ROOT}` when installed and fall back to walking up
 to the plugin root when run straight from a clone, so both work.
+
+### Mods
+
+`mods` is a plugin of function hooks: one TypeScript module,
+`plugins/mods/hooks/register.tsx`, that Claude Code loads into the session and
+calls on its own events. Each mod has a switch in `/config`, and all start on.
+
+| Mod | What it does | What it replaced |
+| --- | --- | --- |
+| Git write gate | Before `git commit`, `git push`, `gh pr create` or `gh pr merge` runs, asks the person in a dialog: allow once, allow for the session, or deny. The model cannot answer it, and a headless run is refused. `/git-gate reset` takes back a session approval | `settings/hooks/require-git-approval.sh`, which the model passed by adding `CLAUDE_GIT_OK=1` to the command |
+| Status band | Above the prompt, in the terminal and the desktop app: `➜  repo/dir git:(branch) ✗ [model] ctx:42%`, then a row for the branch's PR: failing, pending and passing checks, open review threads, conflicts, review decision. The PR is read through `gh` every 90 seconds and after each push | `statusline-command.sh` and the `statusLine` setting |
+| `/pr` | A pane with the PR's checks (failing first), its unresolved threads by file and line, and buttons that start `address-pr-feedback`, `verify-pr-state` and `finalize-pr` | — |
+| Secret guard | Refuses a Write, Edit or NotebookEdit that would put a credential (GitHub, AWS, Anthropic, OpenAI, Slack, Google, Linear, npm, a private key) in a file git tracks; a git-ignored file is fine. With `blockedTerms` set, it also refuses those terms in any repository with a `.claude-plugin/marketplace.json` | `rules/config.md` alone, which only loads when a config file is read |
+| Reply style | Adds `prompts/reply-style.md` to the system prompt as its own section, so compaction cannot drop it | dev-workflows' SessionStart hook |
+| `/skill-tally` | Counts each skill that loads, across sessions, and lists the plugin skills that never did: the live half of what the trigger evals predict | — |
+
+The function-hook API is early access, so CI checks the mods on a pinned Claude
+Code version (`.github/workflows/ci.yml`): `claude plugin validate`,
+`claude plugin test` and `tsc`. Develop one with
+`claude --plugin-dir plugins/mods`, which reloads the module on each save. A
+build of Claude Code older than function hooks loads none of this, the git
+write gate included.
+
+**Upgrading a machine that has the old pieces:** `install.sh` never overwrites a
+kept `settings.json`, so delete its `statusLine` block and the PreToolUse hook
+that runs `require-git-approval.sh` by hand; `install.sh` warns while either is
+there. Then delete the dangling `~/.claude/statusline-command.sh` and
+`~/.claude/hooks/require-git-approval.sh` links, and install `mods`.
 
 ## GitHub workflows (the third route)
 
@@ -170,7 +200,7 @@ rules/*.md                        → ~/.claude/rules/
 rules-reference.md                → ~/.claude/rules-reference.md
 profiles/<name>/CLAUDE.md         → <profile>/CLAUDE.md
 settings/settings.json            → <profile>/settings.json (copied)
-keybindings.json statusline-command.sh
+keybindings.json
 install.sh                        installs the non-plugin half, or the Codex setup
 scripts/agents_md.py              builds the Codex AGENTS.md from the profile
 ```
@@ -218,8 +248,8 @@ If a secret ever does get committed, rotate it — deleting the line is not enou
 that plugin's `version` in its `plugin.json` so `/plugin update` picks it up.
 
 **A rule** → decide scope first, per the protocol in `shared-rules.md`:
-every session → `shared-rules.md`, or a dev-workflows SessionStart hook when it
-must also reach cloud sessions, which load no `shared-rules.md`
-(`hooks/reply-style.md` is the example); a language or file type → `rules/*.md` (needs
+every session → `shared-rules.md`, or a section the `mods` plugin adds to the
+system prompt when it must also reach cloud sessions, which load no
+`shared-rules.md` (`plugins/mods/prompts/reply-style.md` is the example); a language or file type → `rules/*.md` (needs
 `paths:`); one project → that repo's `.claude/rules/`. Add the long-form version
 with worked examples to `rules-reference.md` either way.

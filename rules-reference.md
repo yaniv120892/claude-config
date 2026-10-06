@@ -46,12 +46,13 @@ When writing a rule, use this format:
 
 ## Status Line
 
-The status line is configured via `~/.claude/statusline-command.sh` (robbyrussell theme). It should always show:
-- Green arrow `➜` + cyan directory + git branch (red) with dirty marker (yellow `✗`)
-- Current model name in magenta (e.g. `[Claude Opus 4.6]`)
+The status line is the `mods` plugin's status band, drawn above the prompt by
+`plugins/mods/hooks/register.tsx` (robbyrussell theme). Its first row should always show:
+- Green arrow `➜` + cyan directory (`repo/worktree` when they differ) + git branch (red) with dirty marker (yellow `✗`)
+- Current model in magenta (e.g. `[claude-opus-5-5]`)
 - Context usage percentage, color-coded: green (<50%), yellow (50–74%), red (75%+)
 
-Format: `➜  dir git:(branch) ✗ [Model Name] ctx:42%`
+Format: `➜  dir git:(branch) ✗ [model] ctx:42%`. A second row shows the branch's PR, when it has one.
 
 ## Communication Preferences
 
@@ -81,7 +82,7 @@ Format: `➜  dir git:(branch) ✗ [Model Name] ctx:42%`
 > Note: Within a branch, commit as often as is useful. Granular commits are how you work; they are not what the base branch keeps. The squash is what reconciles those two, which is why a noisy working history is not a reason to avoid committing often.
 
 **Ship `claude-config` Changes; Never Leave Them Uncommitted** — `install.sh` symlinks this repo's files into `~/.claude` rather than copying them, which is what makes an edit take effect immediately — and is exactly why an uncommitted edit is invisible drift. The change is live on the machine that made it and exists nowhere else: not on the other profile, not on a new machine, not in any history that could later explain why the config behaves as it does. Because the symlink makes the change *work*, nothing prompts you to finish shipping it; the feedback loop that would normally catch an unfinished change is precisely what the symlink removes.
-> Pattern: Any change under `~/Develop/claude-config` — statusline, `shared-rules.md`, `rules/`, `settings/`, `keybindings.json`, `plugins/` — gets a branch, a PR, a squash-merge to `main`, and a `git pull --ff-only` on `main` afterwards so the symlink target matches `origin`. Treat this as standing authorization granted once: do it without asking, in the same session that made the change, rather than reporting the edit and waiting for permission.
+> Pattern: Any change under `~/Develop/claude-config` — `shared-rules.md`, `rules/`, `settings/`, `keybindings.json`, `plugins/` — gets a branch, a PR, a squash-merge to `main`, and a `git pull --ff-only` on `main` afterwards so the symlink target matches `origin`. Treat this as standing authorization granted once: do it without asking, in the same session that made the change, rather than reporting the edit and waiting for permission.
 > Avoid: Committing directly to `main` or force-pushing — the PR is what gives the change a title and a rationale worth reading later. Leaving the edit dirty "until the end of the session", which is how drift accumulates in the first place.
 > Corollary: Commit only the files your change touched. This repo tends to carry unrelated dirty files from earlier sessions; `git stash push <paths>` them, commit yours, then pop. Bundling someone else's unfinished rule into your PR mislabels it as reviewed.
 > Corollary: A skill, command, or agent created directly in `~/.claude/skills`, `~/.claude/commands`, or `~/.claude/agents` is **not** covered by the installer — it leaves those alone deliberately. Such a file is local-only and untracked no matter how many times the repo is committed. To ship it, move it into `plugins/<plugin>/` here and let the plugin deliver it. Because this failure is silent and easy to forget, the check for it belongs in tooling, not in memory.

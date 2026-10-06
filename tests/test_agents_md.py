@@ -27,7 +27,7 @@ def main() -> int:
         if shared_rules_heading not in built:
             failures.append(f"{profile}: shared-rules.md was not inlined")
         if "# Reply Style" not in built:
-            failures.append(f"{profile}: the reply-style hook text was not inlined")
+            failures.append(f"{profile}: the reply-style rule was not inlined")
     if "worktree" in agents_md.HARNESS_NOTES or "default branch" in agents_md.HARNESS_NOTES:
         failures.append("HARNESS_NOTES carries a hook rule; eval sandboxes on main would obey it")
     # install.sh tells a generated AGENTS.md from a hand-written one by this text;

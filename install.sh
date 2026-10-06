@@ -16,9 +16,10 @@
 #   ./install.sh --harness all
 #
 # For Claude Code this installs only the parts a plugin cannot carry: the
-# always-loaded global rules, the path-scoped rules/, settings, keybindings, and
-# the statusline. Skills, commands, and hooks ship as PLUGINS. For Codex it links
-# the skills and generates AGENTS.md. README covers both.
+# always-loaded global rules, the path-scoped rules/, settings, and keybindings.
+# Skills, commands, hooks, and the mods (the git write gate and the status band
+# among them) ship as PLUGINS. For Codex it links the skills and generates
+# AGENTS.md. README covers both.
 #
 # Anything already present is backed up to ~/.claude-config-backups/<timestamp>/
 # before being replaced. Existing skills are left completely alone.
@@ -101,16 +102,17 @@ install_claude() {
   link "$REPO_DIR/keybindings.json"             "$TARGET/keybindings.json"
   link "$REPO_DIR/profiles/$PROFILE/CLAUDE.md"  "$TARGET/CLAUDE.md"
 
-  # The exception: settings.json declares this PreToolUse hook itself, so no
-  # plugin owns it and nothing else would put it on disk. It is referenced as
-  # $HOME/.claude/hooks/, hence SHARED_HOME rather than TARGET.
-  link "$REPO_DIR/settings/hooks/require-git-approval.sh" \
-       "$SHARED_HOME/hooks/require-git-approval.sh"
-
   # settings.json is copied, not linked: Claude Code writes machine-local state
   # into it, which must not flow back into the repo.
   if [ -e "$TARGET/settings.json" ]; then
     say "  keep:   $TARGET/settings.json (exists — compare against settings/settings.json yourself)"
+    # The mods plugin replaced these two; a kept settings.json still runs them.
+    local retired
+    for retired in require-git-approval.sh statusline-command.sh; do
+      if grep -q "$retired" "$TARGET/settings.json"; then
+        say "  stale:  $TARGET/settings.json still runs $retired, which the mods plugin replaced — remove that entry"
+      fi
+    done
   else
     run cp "$REPO_DIR/settings/settings.json" "$TARGET/settings.json"
     say "  copy:   $TARGET/settings.json"
@@ -129,6 +131,7 @@ install_claude() {
   say "  /plugin install dev-workflows@yaniv-claude-config"
   say "  /plugin install issue-tracker@yaniv-claude-config"
   say "  /plugin install infra-workflows@yaniv-claude-config"
+  say "  /plugin install mods@yaniv-claude-config"
   say "  /plugin install cmux@yaniv-claude-config"
   say ""
 }
@@ -170,7 +173,6 @@ run mkdir -p "$SHARED_HOME"
 link "$REPO_DIR/shared-rules.md"    "$SHARED_HOME/shared-rules.md"
 link "$REPO_DIR/rules"              "$SHARED_HOME/rules"
 link "$REPO_DIR/rules-reference.md" "$SHARED_HOME/rules-reference.md"
-link "$REPO_DIR/statusline-command.sh" "$SHARED_HOME/statusline-command.sh"
 
 
 case "$HARNESS" in
