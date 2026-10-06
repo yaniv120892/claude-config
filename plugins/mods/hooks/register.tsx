@@ -27,7 +27,6 @@ const gitGrant = atom({ plugin: 'mods', key: 'gitGrant' } as const, false)
 const band = atom({ plugin: 'mods', key: 'band' } as const, null)
 const prRead = atom({ plugin: 'mods', key: 'prRead' } as const, null)
 
-
 const GIT_GATE_COMMAND: CommandSpec = {
   name: 'git-gate',
   description: 'Show the git write gate, or reset its session approval',
@@ -65,7 +64,6 @@ async function gateGitWrite($: Engine, command: string): Promise<{ deny: string 
   const note = answer === DENY ? '' : ` They said: ${answer}`
   return { deny: `BLOCKED: the user declined this git/gh write.${note} Do not retry it unless they ask.` }
 }
-
 
 const PR_POLL_MS = 90_000
 // Bash calls a few hundred milliseconds apart share one refresh.
@@ -186,7 +184,6 @@ function queueBandRefresh($: Engine): void {
   })
 }
 
-
 const PANE = 'mods-pr'
 const PR_COMMAND: CommandSpec = {
   name: 'pr',
@@ -197,7 +194,6 @@ const PR_ACTIONS = [
   { key: 'verify', hotkey: 'v', label: 'Verify state', prompt: '/pr-workflows:verify-pr-state' },
   { key: 'finalize', hotkey: 'f', label: 'Finalize', prompt: '/pr-workflows:finalize-pr' },
 ] as const
-
 
 /**
  * Where the path really lands, symlinks resolved (`~/.claude/rules` links
@@ -265,7 +261,6 @@ function guardFailed(isCalled: boolean, path: string, text: string): { deny: str
   return credential === null ? null : { deny: credentialReason(path, credential) }
 }
 
-
 const REPLY_STYLE_SECTION = 'mods:reply-style'
 // `bare` is the stripped prompt of `--bare`, which writes no styled replies.
 const NO_REPLY_TRAITS = new Set(['bare'])
@@ -275,7 +270,6 @@ const TALLY_COMMAND: CommandSpec = {
   description: 'Show how often each skill has loaded, across sessions',
   argumentHint: '[reset]',
 }
-
 
 // A /config change reloads this module, so a mod switched off registers nothing.
 export const register: Register = (on, options) => {
