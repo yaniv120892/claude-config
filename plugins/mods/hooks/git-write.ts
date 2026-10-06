@@ -1,13 +1,8 @@
-// Which Bash commands the git write gate asks about, and which ones may have
-// changed the branch's PR.
-//
-// The command is split into simple commands and words the way a shell would
-// (quotes, `;`, `&&`, `|`, `$(`, newlines, line continuations). Every `git` or
-// `gh` word is then read as a program start, wherever it stands, so a keyword
-// (`do git push`), a wrapper (`timeout 60 git push`, `find -exec git commit`)
-// or a global option (`git -C "$REPO" push`) cannot hide a write. A quoted
-// word that holds a command of its own (`bash -c "git push"`) is read too.
-// Both err toward asking when text merely mentions a write.
+// Commands are split into words the way a shell would, and every `git` or `gh`
+// word is read as a program start wherever it stands, so a keyword (`do git
+// push`), a wrapper (`timeout 60 git push`) or a global option (`git -C "$R"
+// push`) cannot hide a write. Text that merely mentions a write is asked about
+// too: a false ask costs a click, a false pass an unapproved push.
 
 export const GATED_COMMANDS = ['git commit', 'git push', 'gh pr create', 'gh pr merge'] as const
 
@@ -21,7 +16,6 @@ const GH_PR_CHANGES = new Set(['create', 'merge', 'ready', 'edit', 'close', 'reo
 
 type Word = { text: string; isQuoted: boolean }
 
-/** The command's simple commands, each as its words, quotes removed. */
 export function splitCommands(command: string): Word[][] {
   const commands: Word[][] = []
   let words: Word[] = []
@@ -74,7 +68,6 @@ export function splitCommands(command: string): Word[][] {
   return commands
 }
 
-/** The program's arguments with its options dropped; `scope` limits that to the leading ones. */
 function positionals(args: readonly string[], valueOptions: ReadonlySet<string>, scope: 'leading' | 'all'): string[] {
   const kept: string[] = []
   for (let i = 0; i < args.length; i++) {
@@ -88,7 +81,7 @@ function positionals(args: readonly string[], valueOptions: ReadonlySet<string>,
 
 type Call = { program: 'git'; subcommand: string | undefined } | { program: 'gh'; group: string | undefined; action: string | undefined }
 
-/** Every git and gh call in the command, quoted inner commands included. */
+/** Quoted inner commands (`bash -c "git push"`) included. */
 function calls(command: string): Call[] {
   const found: Call[] = []
   for (const words of splitCommands(command)) {
@@ -118,14 +111,12 @@ export function isGitWrite(command: string): boolean {
   )
 }
 
-/** Whether the command may have changed the branch's PR: a push, or a gh pr write. */
 export function changesPr(command: string): boolean {
   return calls(command).some(call =>
     call.program === 'git' ? call.subcommand === 'push' : call.group === 'pr' && GH_PR_CHANGES.has(call.action ?? ''),
   )
 }
 
-/** Whether the command runs git or gh at all, which may move the branch or the worktree. */
 export function runsGit(command: string): boolean {
   return calls(command).length > 0
 }

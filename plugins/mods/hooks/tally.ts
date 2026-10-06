@@ -1,5 +1,3 @@
-// The skill tally's stored shape and its /skill-tally report.
-
 export type Tally = Record<string, { count: number; lastUsed: string }>
 
 export function asTally(stored: unknown): Tally {
@@ -10,7 +8,6 @@ export function countSkill(tally: Tally, skill: string, now: string): Tally {
   return { ...tally, [skill]: { count: (tally[skill]?.count ?? 0) + 1, lastUsed: now } }
 }
 
-/** A markdown report: the counts, most used first, then the plugin skills never seen. */
 export function formatTally(tally: Tally, known: readonly string[]): string {
   const rows = Object.entries(tally).sort(([, a], [, b]) => b.count - a.count)
   const unused = known.filter(name => !(name in tally)).sort()

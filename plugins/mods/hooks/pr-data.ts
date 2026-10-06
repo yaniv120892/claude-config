@@ -1,4 +1,3 @@
-// Reading a PR out of gh's answers, and summing it up for the band and pane.
 import type { CheckState, PrCheck, PrThread, PullRequest } from '../types'
 import { truncate } from './text'
 
@@ -29,7 +28,6 @@ const SKIPPED = new Set(['SKIPPED', 'STALE'])
 const FAILING = new Set(['FAILURE', 'ERROR'])
 const NO_PR = /no pull requests? found|not a git repository|could not determine/i
 
-/** A check run or commit status from `statusCheckRollup`, as one state. */
 export function checkState(entry: Record<string, unknown>): CheckState {
   if (entry.__typename === 'StatusContext') {
     const state = String(entry.state)
@@ -44,7 +42,6 @@ export function checkState(entry: Record<string, unknown>): CheckState {
   return 'fail'
 }
 
-/** `gh pr view --json` output, less the review threads GraphQL has to supply. */
 export function parsePrView(json: string): Omit<PullRequest, 'threads'> {
   const view = JSON.parse(json) as Record<string, unknown>
   const rollup = Array.isArray(view.statusCheckRollup)
@@ -88,7 +85,6 @@ type ThreadsAnswer = {
   }
 }
 
-/** The unresolved review threads out of the GraphQL answer. */
 export function parseThreads(json: string): PrThread[] {
   const answer = JSON.parse(json) as ThreadsAnswer
   const nodes = answer.data?.repository?.pullRequest?.reviewThreads?.nodes ?? []
@@ -106,7 +102,7 @@ export function parseThreads(json: string): PrThread[] {
     })
 }
 
-/** gh's stderr when `gh pr view` failed: null when the branch simply has no PR. */
+/** Null when the branch simply has no PR, which is no error to show. */
 export function prViewError(stderr: string): string | null {
   return NO_PR.test(stderr) ? null : stderr.trim().split('\n')[0] || 'gh failed'
 }

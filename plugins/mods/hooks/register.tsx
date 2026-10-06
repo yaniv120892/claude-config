@@ -27,7 +27,6 @@ const gitGrant = atom({ plugin: 'mods', key: 'gitGrant' } as const, false)
 const band = atom({ plugin: 'mods', key: 'band' } as const, null)
 const prRead = atom({ plugin: 'mods', key: 'prRead' } as const, null)
 
-// ── git write gate ──────────────────────────────────────────────────────────
 
 const GIT_GATE_COMMAND: CommandSpec = {
   name: 'git-gate',
@@ -39,11 +38,8 @@ const SESSION = 'Allow for this session'
 const DENY = 'Deny'
 const SHOWN_COMMAND_LENGTH = 200
 
-/**
- * Asks the person, in a dialog the model cannot answer, before a gated git or
- * gh write runs. "Allow for this session" holds until `/git-gate reset` or the
- * session ends. Resolves the refusal, or null to run.
- */
+// The dialog is the person's to answer, never the model's. "Allow for this
+// session" holds until `/git-gate reset` or the session ends.
 async function gateGitWrite($: Engine, command: string): Promise<{ deny: string } | null> {
   if (!isGitWrite(command) || (await read($, gitGrant))) return null
 
@@ -70,7 +66,6 @@ async function gateGitWrite($: Engine, command: string): Promise<{ deny: string 
   return { deny: `BLOCKED: the user declined this git/gh write.${note} Do not retry it unless they ask.` }
 }
 
-// ── status band and PR ──────────────────────────────────────────────────────
 
 const PR_POLL_MS = 90_000
 // Bash calls a few hundred milliseconds apart share one refresh.
@@ -105,12 +100,10 @@ async function readLocation($: Engine): Promise<GitLocation> {
   }
 }
 
-/** Stores what a PR read found, when it differs from the last read. */
 async function storePr($: Engine, found: PrRead): Promise<void> {
   if (!isSame(await read($, prRead), found)) await update($, prRead, () => found)
 }
 
-/** The branch's PR and its unresolved threads, through gh. */
 async function readPr($: Engine): Promise<PrRead> {
   const here = (await read($, band))?.location
   if (here !== undefined && here.branch === null) return { pr: null, error: null }
@@ -169,7 +162,6 @@ function refreshPr($: Engine): Promise<void> {
   return prInFlight
 }
 
-/** For refreshes no caller waits on: a failure goes to the debug log, not nowhere. */
 function inBackground($: Engine, work: Promise<void>): void {
   work.catch(error => $.ui.log(`mods: ${String(error)}`, { to: 'debug' }))
 }
@@ -185,7 +177,6 @@ async function refreshBand($: Engine): Promise<void> {
   if (last !== null && last.location.branch !== location.branch) inBackground($, refreshPr($))
 }
 
-/** On a timer, off the tool call's path; calls close together share one refresh. */
 function queueBandRefresh($: Engine): void {
   if (isBandQueued) return
   isBandQueued = true
@@ -195,21 +186,18 @@ function queueBandRefresh($: Engine): void {
   })
 }
 
-// ── /pr pane ────────────────────────────────────────────────────────────────
 
 const PANE = 'mods-pr'
 const PR_COMMAND: CommandSpec = {
   name: 'pr',
   description: "Show this branch's PR: checks, open review threads, and the PR skills",
 }
-// The pr-workflows skills each button hands the branch to.
 const PR_ACTIONS = [
   { key: 'address', hotkey: 'a', label: 'Address feedback', prompt: '/pr-workflows:address-pr-feedback' },
   { key: 'verify', hotkey: 'v', label: 'Verify state', prompt: '/pr-workflows:verify-pr-state' },
   { key: 'finalize', hotkey: 'f', label: 'Finalize', prompt: '/pr-workflows:finalize-pr' },
 ] as const
 
-// ── rule guard ──────────────────────────────────────────────────────────────
 
 /**
  * Where the path really lands, symlinks resolved (`~/.claude/rules` links
@@ -231,7 +219,6 @@ async function placed($: Engine, path: string): Promise<string | undefined> {
   }
 }
 
-/** The closest folder above the file that exists, for git to run in. */
 async function existingFolder($: Engine, file: string): Promise<string> {
   let folder = file.slice(0, file.lastIndexOf('/')) || '/'
   while (folder !== '/' && !(await $.fs.exists(folder).catch(() => false))) {
@@ -253,7 +240,6 @@ async function isTracked($: Engine, file: string | undefined): Promise<boolean> 
   return ran === null || ran.exitCode === 1
 }
 
-/** Whether the file is in a plugin marketplace repo, which stays employer-agnostic. */
 async function isMarketplaceRepo($: Engine, file: string): Promise<boolean> {
   const folder = await existingFolder($, file)
   const root = await git($, folder, ['rev-parse', '--show-toplevel'])
@@ -261,7 +247,6 @@ async function isMarketplaceRepo($: Engine, file: string): Promise<boolean> {
   return $.fs.exists(`${root.stdout}/.claude-plugin/marketplace.json`).catch(() => false)
 }
 
-/** Why an edit putting `text` into `path` is refused, or null to let it run. */
 async function guardEdit($: Engine, path: string, text: string, terms: RegExp | null): Promise<{ deny: string } | null> {
   const credential = findCredential(text)
   const term = findTerm(text, terms)
@@ -280,7 +265,6 @@ function guardFailed(isCalled: boolean, path: string, text: string): { deny: str
   return credential === null ? null : { deny: credentialReason(path, credential) }
 }
 
-// ── reply style, skill tally ────────────────────────────────────────────────
 
 const REPLY_STYLE_SECTION = 'mods:reply-style'
 // `bare` is the stripped prompt of `--bare`, which writes no styled replies.
@@ -292,10 +276,8 @@ const TALLY_COMMAND: CommandSpec = {
   argumentHint: '[reset]',
 }
 
-// ── wiring ──────────────────────────────────────────────────────────────────
 
-// Each mod has a switch in /config (the manifest's userConfig); all start on.
-// A change there reloads this module, so a mod that is off registers nothing.
+// A /config change reloads this module, so a mod switched off registers nothing.
 export const register: Register = (on, options) => {
   const isOn = (name: string): boolean => options[name] !== false
   const hasGitGate = isOn('gitGate')
@@ -321,7 +303,6 @@ export const register: Register = (on, options) => {
     return started
   })
 
-  // The git write gate before the call; the status band's refresh after it.
   on('tool.call', { tool: 'Bash' }, async ($, e, next) => {
     const refusal = hasGitGate ? await gateGitWrite($, e.command) : null
     if (refusal !== null) return refusal
@@ -513,7 +494,6 @@ export const register: Register = (on, options) => {
     })
   }
 
-  // The rule guard, on each tool that writes a file, by what it puts there.
   if (isOn('ruleGuard')) {
     on('tool.call', { tool: 'Write' }, async ($, e, next) => (await guardEdit($, e.file_path, e.content, blockedTerms)) ?? next(e))
       .catch(($, e, next) => guardFailed(next.called, e.file_path, e.content) ?? next(e))
@@ -523,8 +503,7 @@ export const register: Register = (on, options) => {
       .catch(($, e, next) => guardFailed(next.called, e.notebook_path, e.new_source) ?? next(e))
   }
 
-  // prompts/reply-style.md as a system-prompt section of its own. Unlike the
-  // SessionStart hook it replaces, it rides every request, so compaction cannot
+  // A section of every request, not one early message, so compaction cannot
   // drop it. Codex reads the same file through scripts/agents_md.py.
   if (isOn('replyStyle')) {
     let replyStyle: string | null = null
@@ -540,9 +519,8 @@ export const register: Register = (on, options) => {
     })
   }
 
-  // Counts each skill that loads, however it was asked for (typed as /name,
-  // the Skill tool, preloaded into a subagent), across sessions: the live half
-  // of what the trigger evals in evals/ predict.
+  // skill.prompt fires however a skill loads: typed as /name, the Skill tool,
+  // or preloaded into a subagent.
   if (isOn('skillTally')) {
     on('skill.prompt', async ($, e, next) => {
       const prompted = await next(e)

@@ -1,6 +1,3 @@
-// The session state the mods keep in $.state, and the shapes the status band
-// and the PR pane draw from.
-
 export type GitLocation = {
   /** The repository's name, or null outside a repository. */
   repo: string | null
@@ -35,14 +32,12 @@ export type PullRequest = {
   threads: PrThread[]
 }
 
-/** What the status band's first row draws. */
 export type Band = {
   location: GitLocation
   model: string
   contextPercent: number | null
 }
 
-/** The last read of the branch's PR: the PR, or why there is none to show. */
 export type PrRead = { pr: PullRequest | null; error: string | null }
 
 declare module 'claude-code' {

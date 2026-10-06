@@ -1,5 +1,3 @@
-// What gh and git answer in the tests, and the shape of a process result.
-
 export const PR_VIEW = {
   number: 51,
   title: 'feat(mods): add the mods plugin',

@@ -1,4 +1,3 @@
-// A slash command as the person types it at the prompt.
 export function slash(command: string, args = '') {
   return {
     command,

@@ -1,6 +1,3 @@
-// What the rule guard refuses: rules/config.md, "Secrets Never Live in a
-// Tracked File", and the blocked terms of an employer-agnostic repository.
-
 // Each pattern needs the credential's full length, so a placeholder such as
 // `ghp_xxx` passes.
 const CREDENTIALS: readonly { kind: string; pattern: RegExp }[] = [
@@ -37,14 +34,12 @@ export function parseTerms(option: unknown): string[] {
     .filter(Boolean)
 }
 
-/** One pattern for all the terms, as whole words, ignoring case; null for none. */
 export function termPattern(terms: readonly string[]): RegExp | null {
   if (terms.length === 0) return null
   const escaped = terms.map(term => term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
   return new RegExp(`(?:^|[^A-Za-z0-9_])(${escaped.join('|')})(?:[^A-Za-z0-9_]|$)`, 'i')
 }
 
-/** The first blocked term the text holds, as the text spells it. */
 export function findTerm(text: string, pattern: RegExp | null): string | null {
   return pattern?.exec(text)?.[1] ?? null
 }
