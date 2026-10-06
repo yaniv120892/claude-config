@@ -29,9 +29,11 @@ describe('the reply-style section', () => {
     expect(read[0]?.endsWith('/prompts/reply-style.md')).toBe(true)
   })
 
-  test('stays out of side calls that write no reply', async ($, on) => {
+  test('is counted by /context, and stays out of a --bare prompt', async ($, on) => {
     fakeEngine(on)
-    const { sections } = await $.prompt.compose({ ...COMPOSE, traits: ['analysis'] })
-    expect(sections.map(section => section.id)).toEqual(['intro'])
+    const measured = await $.prompt.compose({ ...COMPOSE, traits: ['analysis'] })
+    expect(measured.sections.map(section => section.id)).toEqual(['intro', 'mods:reply-style'])
+    const bare = await $.prompt.compose({ ...COMPOSE, traits: ['bare'] })
+    expect(bare.sections.map(section => section.id)).toEqual(['intro'])
   })
 })

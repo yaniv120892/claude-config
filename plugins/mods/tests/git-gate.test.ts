@@ -22,6 +22,16 @@ const WRITES = [
   'git status\ngit push',
   // The old escape hatch is gone: only the person approves now.
   'CLAUDE_GIT_OK=1 git commit -m "x"',
+  // Global options a character window used to lose the subcommand behind.
+  'git -C "$REPO" push',
+  'git -c core.sshCommand="ssh -i k" push origin HEAD',
+  'git -C /a/very/long/worktree/path/that/goes/on/and/on/for/a/while/yet push',
+  'git --no-pager -C repo commit -am wip',
+  'sudo -E git push',
+  'env GIT_TRACE=1 /usr/bin/git push',
+  'echo $(git push 2>&1)',
+  'gh -R owner/repo pr merge 3',
+  'bash -c "git push origin main"',
 ]
 const READS = [
   'gh pr list --state merged',
@@ -37,6 +47,10 @@ const READS = [
   'python3 -m py_compile lib/github.py && echo done',
   'sed -i "" s/old/new/ lib/github.py # commit_id stays',
   'gh search prs --owner someone --merged',
+  'git log --grep=push',
+  'git show HEAD:commit.txt',
+  "gh pr view 3 --json title -q '.title'",
+  'cat pushed.log # then git push later',
 ]
 
 describe('isGitWrite', () => {

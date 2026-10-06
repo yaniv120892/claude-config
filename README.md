@@ -127,11 +127,9 @@ Code version (`.github/workflows/ci.yml`): `claude plugin validate`,
 build of Claude Code older than function hooks loads none of this, the git
 write gate included.
 
-**Upgrading a machine that has the old pieces:** `install.sh` never overwrites a
-kept `settings.json`, so delete its `statusLine` block and the PreToolUse hook
-that runs `require-git-approval.sh` by hand; `install.sh` warns while either is
-there. Then delete the dangling `~/.claude/statusline-command.sh` and
-`~/.claude/hooks/require-git-approval.sh` links, and install `mods`.
+**Upgrading a machine that has the old pieces:** re-run `install.sh`. It removes
+the links to the deleted scripts and names each entry of your kept
+`settings.json` that still runs one, which you delete by hand.
 
 ## GitHub workflows (the third route)
 

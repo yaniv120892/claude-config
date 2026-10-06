@@ -46,13 +46,9 @@ When writing a rule, use this format:
 
 ## Status Line
 
-The status line is the `mods` plugin's status band, drawn above the prompt by
-`plugins/mods/hooks/register.tsx` (robbyrussell theme). Its first row should always show:
-- Green arrow `➜` + cyan directory (`repo/worktree` when they differ) + git branch (red) with dirty marker (yellow `✗`)
-- Current model in magenta (e.g. `[claude-opus-5-5]`)
-- Context usage percentage, color-coded: green (<50%), yellow (50–74%), red (75%+)
-
-Format: `➜  dir git:(branch) ✗ [model] ctx:42%`. A second row shows the branch's PR, when it has one.
+The status line is the `mods` plugin's status band (robbyrussell theme): `➜  dir
+git:(branch) ✗ [model] ctx:42%`, context colored green below 50%, yellow below 75%, red
+above. The README's *Mods* section has the rest.
 
 ## Communication Preferences
 

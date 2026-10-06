@@ -1,18 +1,28 @@
 // Reading a PR out of gh's answers, and summing it up for the band and pane.
 import type { CheckState, PrCheck, PrThread, PullRequest } from '../types'
+import { truncate } from './text'
 
 export const PR_FIELDS = 'number,title,url,state,isDraft,mergeable,reviewDecision,statusCheckRollup'
-export const THREADS_QUERY = `query($owner: String!, $name: String!, $number: Int!) {
-  repository(owner: $owner, name: $name) {
+// gh fills `{owner}` and `{repo}` from the current repository, as `gh pr view` does.
+export const THREADS_QUERY = `query($owner: String!, $repo: String!, $number: Int!) {
+  repository(owner: $owner, name: $repo) {
     pullRequest(number: $number) {
       reviewThreads(first: 100) {
-        nodes { isResolved path line comments(first: 1) { nodes { author { login } body url } } }
+        nodes { isResolved path line comments(first: 1) { nodes { author { login } body } } }
       }
     }
   }
 }`
 
-const PR_URL = /^https:\/\/[^/]+\/([^/]+)\/([^/]+)\/pull\/(\d+)/
+// In the order the pane lists them, worst first.
+export const CHECK = {
+  fail: { mark: '✗', color: 'red' },
+  pending: { mark: '…', color: 'yellow' },
+  pass: { mark: '✓', color: 'green' },
+  skipped: { mark: '-', color: 'gray' },
+} as const
+export const CHECK_STATES = Object.keys(CHECK) as CheckState[]
+
 const EXCERPT_LENGTH = 100
 const PASSING = new Set(['SUCCESS', 'NEUTRAL'])
 const SKIPPED = new Set(['SKIPPED', 'STALE'])
@@ -70,7 +80,7 @@ type ThreadsAnswer = {
             isResolved: boolean
             path: string
             line: number | null
-            comments: { nodes: { author: { login: string } | null; body: string; url: string }[] }
+            comments: { nodes: { author: { login: string } | null; body: string }[] }
           }[]
         }
       }
@@ -91,29 +101,20 @@ export function parseThreads(json: string): PrThread[] {
         path: thread.path,
         line: thread.line,
         author: first?.author?.login ?? 'ghost',
-        excerpt: firstLine.length > EXCERPT_LENGTH ? `${firstLine.slice(0, EXCERPT_LENGTH)}…` : firstLine,
-        url: first?.url ?? '',
+        excerpt: truncate(firstLine, EXCERPT_LENGTH),
       }
     })
 }
 
-/** `owner`, `name` and `number` out of a PR's URL, for the threads query. */
-export function prUrlParts(url: string): { owner: string; name: string; number: string } | null {
-  const [, owner, name, number] = PR_URL.exec(url) ?? []
-  return owner && name && number ? { owner, name, number } : null
-}
-
 /** gh's stderr when `gh pr view` failed: null when the branch simply has no PR. */
 export function prViewError(stderr: string): string | null {
-  return NO_PR.test(stderr) ? null : (stderr.trim().split('\n')[0] ?? 'gh failed')
+  return NO_PR.test(stderr) ? null : stderr.trim().split('\n')[0] || 'gh failed'
 }
 
-export function checksSummary(checks: readonly PrCheck[]): { failing: number; pending: number; passing: number } {
-  return {
-    failing: checks.filter(check => check.state === 'fail').length,
-    pending: checks.filter(check => check.state === 'pending').length,
-    passing: checks.filter(check => check.state === 'pass').length,
-  }
+export function countChecks(checks: readonly PrCheck[]): Record<CheckState, number> {
+  const counts = { fail: 0, pending: 0, pass: 0, skipped: 0 }
+  for (const check of checks) counts[check.state]++
+  return counts
 }
 
 export function contextColor(percent: number): string {
@@ -124,9 +125,4 @@ export function contextColor(percent: number): string {
 
 export function basename(path: string): string {
   return path.replace(/\/+$/, '').split('/').pop() ?? path
-}
-
-export function dirname(path: string): string {
-  const trimmed = path.replace(/\/+$/, '')
-  return trimmed.slice(0, trimmed.lastIndexOf('/')) || '/'
 }

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { findCredential, findTerm, parseTerms } from '../hooks/credentials'
+import { findCredential, findTerm, parseTerms, termPattern } from '../hooks/credentials'
 
 // Built at run time so this file holds no credential-shaped literal of its
 // own, for the guard or a push-protection scan to trip on.
@@ -34,8 +34,11 @@ describe('blocked terms', () => {
   })
 
   test('findTerm matches whole words, ignoring case', () => {
-    expect(findTerm('Deploys to the ACME cluster', ['Acme'])).toBe('Acme')
-    expect(findTerm('acmeish tooling', ['Acme'])).toBe(null)
+    const pattern = termPattern(['Acme', 'Globex Corp'])
+    expect(findTerm('Deploys to the ACME cluster', pattern)).toBe('ACME')
+    expect(findTerm('a globex corp service', pattern)).toBe('globex corp')
+    expect(findTerm('acmeish tooling', pattern)).toBe(null)
+    expect(findTerm('Acme', termPattern([]))).toBe(null)
   })
 })
 

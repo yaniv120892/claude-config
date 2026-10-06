@@ -17,9 +17,8 @@
 #
 # For Claude Code this installs only the parts a plugin cannot carry: the
 # always-loaded global rules, the path-scoped rules/, settings, and keybindings.
-# Skills, commands, hooks, and the mods (the git write gate and the status band
-# among them) ship as PLUGINS. For Codex it links the skills and generates
-# AGENTS.md. README covers both.
+# Skills, commands, hooks, and mods ship as PLUGINS. For Codex it links the
+# skills and generates AGENTS.md. README covers both.
 #
 # Anything already present is backed up to ~/.claude-config-backups/<timestamp>/
 # before being replaced. Existing skills are left completely alone.
@@ -92,6 +91,40 @@ link() {
   say "  link:   $destination -> $source"
 }
 
+# A kept settings.json outlives what this repo ships: warn about each command it
+# runs from a ~/.claude path that is gone, and each plugin the repo's settings
+# enable that it never mentions (one it sets false is a profile's choice).
+check_kept_settings() {
+  python3 - "$1" "$REPO_DIR/settings/settings.json" <<'PY'
+import json, os, re, sys
+
+kept, shipped = (json.load(open(path)) for path in sys.argv[1:3])
+commands = [hook.get("command", "") for groups in kept.get("hooks", {}).values()
+            for group in groups for hook in group.get("hooks", [])]
+commands.append(kept.get("statusLine", {}).get("command", ""))
+for command in commands:
+    for path in re.findall(r"(?:~|\$HOME)/\.claude/[^\s\"']+", command):
+        if not os.path.exists(os.path.expanduser(path.replace("$HOME", "~"))):
+            print(f"  stale:  {sys.argv[1]} runs {path}, which no longer exists — remove that entry")
+for plugin, is_enabled in shipped.get("enabledPlugins", {}).items():
+    if is_enabled and plugin not in kept.get("enabledPlugins", {}):
+        print(f"  stale:  {sys.argv[1]} does not enable {plugin} — install it and add it to enabledPlugins")
+PY
+}
+
+# Links into this repo whose file the repo has since deleted.
+prune_dangling_links() {
+  local dir link
+  for dir in "$@"; do
+    for link in "$dir"/*; do
+      if [ -L "$link" ] && [ ! -e "$link" ] && [[ "$(readlink "$link")" == "$REPO_DIR"* ]]; then
+        say "  prune:  $link (its target left the repo)"
+        run rm "$link"
+      fi
+    done
+  done
+}
+
 install_claude() {
   say ""
   say "Claude Code → $TARGET"
@@ -106,13 +139,7 @@ install_claude() {
   # into it, which must not flow back into the repo.
   if [ -e "$TARGET/settings.json" ]; then
     say "  keep:   $TARGET/settings.json (exists — compare against settings/settings.json yourself)"
-    # The mods plugin replaced these two; a kept settings.json still runs them.
-    local retired
-    for retired in require-git-approval.sh statusline-command.sh; do
-      if grep -q "$retired" "$TARGET/settings.json"; then
-        say "  stale:  $TARGET/settings.json still runs $retired, which the mods plugin replaced — remove that entry"
-      fi
-    done
+    check_kept_settings "$TARGET/settings.json"
   else
     run cp "$REPO_DIR/settings/settings.json" "$TARGET/settings.json"
     say "  copy:   $TARGET/settings.json"
@@ -173,6 +200,8 @@ run mkdir -p "$SHARED_HOME"
 link "$REPO_DIR/shared-rules.md"    "$SHARED_HOME/shared-rules.md"
 link "$REPO_DIR/rules"              "$SHARED_HOME/rules"
 link "$REPO_DIR/rules-reference.md" "$SHARED_HOME/rules-reference.md"
+prune_dangling_links "$SHARED_HOME" "$SHARED_HOME/hooks"
+[ "$TARGET" = "$SHARED_HOME" ] || prune_dangling_links "$TARGET"
 
 
 case "$HARNESS" in

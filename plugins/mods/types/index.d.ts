@@ -21,7 +21,6 @@ export type PrThread = {
   author: string
   /** The thread's first comment, first line only. */
   excerpt: string
-  url: string
 }
 
 export type PullRequest = {
@@ -36,19 +35,25 @@ export type PullRequest = {
   threads: PrThread[]
 }
 
+/** What the status band's first row draws. */
+export type Band = {
+  location: GitLocation
+  model: string
+  contextPercent: number | null
+}
+
+/** The last read of the branch's PR: the PR, or why there is none to show. */
+export type PrRead = { pr: PullRequest | null; error: string | null }
+
 declare module 'claude-code' {
   interface PluginState {
     mods: {
       /** True once the person chose "Allow for this session" at the git write gate. */
       gitGrant: boolean
-      location: GitLocation | null
-      model: string | null
-      contextPercent: number | null
-      pr: PullRequest | null
-      /** Why the PR could not be read (gh missing, not signed in); null when it was. */
-      prError: string | null
-      /** When the PR was last read, in ms since the epoch; 0 before the first read. */
-      prFetchedAt: number
+      /** Null until the band's first read. */
+      band: Band | null
+      /** Null until the PR's first read. */
+      prRead: PrRead | null
     }
   }
 }

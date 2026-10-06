@@ -1,36 +1,31 @@
 import { atom, read, update } from 'claude-code'
-import type { CommandSpec, EngineInterface, Register } from 'claude-code'
+import type { CommandSpec, EngineInterface as Engine, Register } from 'claude-code'
 
-import type { GitLocation, PrThread, PullRequest } from '../types'
-import { credentialReason, findCredential, findTerm, parseTerms, termReason } from './credentials'
-import { isGitWrite, movesPr, movesRepo } from './git-write'
+import type { Band, GitLocation, PrRead, PrThread } from '../types'
+import { credentialReason, findCredential, findTerm, parseTerms, termPattern, termReason } from './credentials'
+import { GATED_COMMANDS, isGitWrite } from './git-write'
 import {
   basename,
-  checksSummary,
+  CHECK,
+  CHECK_STATES,
   contextColor,
-  dirname,
+  countChecks,
   parsePrView,
   parseThreads,
   PR_FIELDS,
-  prUrlParts,
   prViewError,
   THREADS_QUERY,
 } from './pr-data'
 import { asTally, countSkill, formatTally } from './tally'
+import { truncate } from './text'
 
 // Every hook lives in this file: the engine follows `$` only into functions
 // declared beside the hook that passes it. The pure logic sits in the files
 // imported above, which is what the tests cover.
 
-type Engine = EngineInterface
-
 const gitGrant = atom({ plugin: 'mods', key: 'gitGrant' } as const, false)
-const location = atom({ plugin: 'mods', key: 'location' } as const, null)
-const model = atom({ plugin: 'mods', key: 'model' } as const, null)
-const contextPercent = atom({ plugin: 'mods', key: 'contextPercent' } as const, null)
-const pr = atom({ plugin: 'mods', key: 'pr' } as const, null)
-const prError = atom({ plugin: 'mods', key: 'prError' } as const, null)
-const prFetchedAt = atom({ plugin: 'mods', key: 'prFetchedAt' } as const, 0)
+const band = atom({ plugin: 'mods', key: 'band' } as const, null)
+const prRead = atom({ plugin: 'mods', key: 'prRead' } as const, null)
 
 // ── git write gate ──────────────────────────────────────────────────────────
 
@@ -45,21 +40,19 @@ const DENY = 'Deny'
 const SHOWN_COMMAND_LENGTH = 200
 
 /**
- * Asks the person, in a dialog the model cannot answer, before a git commit or
- * push or a gh pr create or merge runs. "Allow for this session" holds until
- * `/git-gate reset` or the session ends. Resolves the refusal, or null to run.
+ * Asks the person, in a dialog the model cannot answer, before a gated git or
+ * gh write runs. "Allow for this session" holds until `/git-gate reset` or the
+ * session ends. Resolves the refusal, or null to run.
  */
 async function gateGitWrite($: Engine, command: string): Promise<{ deny: string } | null> {
   if (!isGitWrite(command) || (await read($, gitGrant))) return null
 
-  const shown =
-    command.length > SHOWN_COMMAND_LENGTH ? `${command.slice(0, SHOWN_COMMAND_LENGTH)}…` : command
   let answer: string
   try {
-    answer = await $.ui.ask(`Claude wants to run a git/gh write:\n\n${shown}\n\nRun it?`, {
-      header: 'Git write',
-      options: [ONCE, SESSION, DENY],
-    })
+    answer = await $.ui.ask(
+      `Claude wants to run a git/gh write:\n\n${truncate(command, SHOWN_COMMAND_LENGTH)}\n\nRun it?`,
+      { header: 'Git write', options: [ONCE, SESSION, DENY] },
+    )
   } catch {
     return {
       deny:
@@ -80,87 +73,110 @@ async function gateGitWrite($: Engine, command: string): Promise<{ deny: string 
 // ── status band and PR ──────────────────────────────────────────────────────
 
 const PR_POLL_MS = 90_000
+// Bash calls a few hundred milliseconds apart share one refresh.
+const BAND_SETTLE_MS = 300
 
-// Each write is skipped when the value is unchanged, so a refresh that found
-// nothing new redraws nothing.
 function isSame(a: unknown, b: unknown): boolean {
   return JSON.stringify(a) === JSON.stringify(b)
 }
 
-async function git($: Engine, cwd: string, args: string[]): Promise<string | null> {
+/** git, without the optional index lock, so it never contends with the model's own git. */
+async function git($: Engine, cwd: string, args: string[]): Promise<{ exitCode: number; stdout: string } | null> {
   try {
-    const ran = await $.process.run(['git', ...args], { cwd, timeoutMs: 5000 })
-    return ran.exitCode === 0 ? ran.stdout.trim() : null
+    const ran = await $.process.run(['git', '--no-optional-locks', ...args], { cwd, timeoutMs: 5000 })
+    return { exitCode: ran.exitCode, stdout: ran.stdout.trim() }
   } catch {
     return null
   }
 }
 
 async function readLocation($: Engine): Promise<GitLocation> {
-  const cwd = await $.session.cwd()
-  const commonDir = await git($, cwd, ['rev-parse', '--path-format=absolute', '--git-common-dir'])
-  if (commonDir === null) return { repo: null, dir: basename(cwd), branch: null, isDirty: false }
-  const branch = await git($, cwd, ['branch', '--show-current'])
-  const porcelain = await git($, cwd, ['status', '--porcelain'])
+  const [cwd, repo] = await Promise.all([$.session.cwd(), $.session.repo()])
+  if (repo === null) return { repo: null, dir: basename(cwd), branch: null, isDirty: false }
+  const [branch, status] = await Promise.all([
+    git($, cwd, ['branch', '--show-current']),
+    git($, cwd, ['status', '--porcelain']),
+  ])
   return {
-    repo: basename(dirname(commonDir)),
+    repo: basename(repo.root),
     dir: basename(cwd),
-    branch: branch || null,
-    isDirty: Boolean(porcelain),
+    branch: branch?.exitCode === 0 && branch.stdout ? branch.stdout : null,
+    isDirty: Boolean(status?.stdout),
   }
 }
 
-/** The cheap half: the git location, the model and the context fill. */
-async function refreshLocal($: Engine): Promise<void> {
-  const here = await readLocation($)
-  if (!isSame(await read($, location), here)) await update($, location, () => here)
-  const modelName = await $.session.model()
-  if ((await read($, model)) !== modelName) await update($, model, () => modelName)
-  const { percent } = (await $.session.usage()).context
-  const rounded = percent === undefined ? null : Math.round(percent)
-  if ((await read($, contextPercent)) !== rounded) await update($, contextPercent, () => rounded)
+/** Stores what a PR read found, when it differs from the last read. */
+async function storePr($: Engine, found: PrRead): Promise<void> {
+  if (!isSame(await read($, prRead), found)) await update($, prRead, () => found)
 }
 
-/** Stores what a PR read found: the PR, or why there is none to show. */
-async function storePr($: Engine, found: PullRequest | null, error: string | null): Promise<void> {
-  if (!isSame(await read($, pr), found)) await update($, pr, () => found)
-  if ((await read($, prError)) !== error) await update($, prError, () => error)
-}
+/** The branch's PR and its unresolved threads, through gh. */
+async function readPr($: Engine): Promise<PrRead> {
+  const here = (await read($, band))?.location
+  if (here !== undefined && here.branch === null) return { pr: null, error: null }
 
-/** The network half: the branch's PR and its unresolved threads, through gh. */
-async function refreshPr($: Engine): Promise<void> {
-  const now = await $.clock.now()
-  await update($, prFetchedAt, () => now)
   const cwd = await $.session.cwd()
   let view
   try {
     view = await $.process.run(['gh', 'pr', 'view', '--json', PR_FIELDS], { cwd, timeoutMs: 15000 })
   } catch {
-    return storePr($, null, 'gh is not installed')
+    return { pr: null, error: 'gh is not installed' }
   }
-  if (view.exitCode !== 0) return storePr($, null, prViewError(view.stderr))
+  if (view.exitCode !== 0) return { pr: null, error: prViewError(view.stderr) }
 
   const parsed = parsePrView(view.stdout)
-  const parts = prUrlParts(parsed.url)
   let threads: PrThread[] = []
-  if (parts !== null) {
-    try {
-      const answer = await $.process.run(
-        [
-          'gh', 'api', 'graphql',
-          '-f', `query=${THREADS_QUERY}`,
-          '-F', `owner=${parts.owner}`,
-          '-F', `name=${parts.name}`,
-          '-F', `number=${parts.number}`,
-        ],
-        { cwd, timeoutMs: 15000 },
-      )
-      if (answer.exitCode === 0) threads = parseThreads(answer.stdout)
-    } catch {
-      // The checks still show; the threads read as none.
-    }
+  try {
+    const answer = await $.process.run(
+      [
+        'gh', 'api', 'graphql',
+        '-f', `query=${THREADS_QUERY}`,
+        '-F', 'owner={owner}',
+        '-F', 'repo={repo}',
+        '-F', `number=${parsed.number}`,
+      ],
+      { cwd, timeoutMs: 15000 },
+    )
+    if (answer.exitCode === 0) threads = parseThreads(answer.stdout)
+  } catch {
+    // The checks still show; the threads read as none.
   }
-  return storePr($, { ...parsed, threads }, null)
+  return { pr: { ...parsed, threads }, error: null }
+}
+
+// The module's own, so a reload starts them over; that only drops a queued refresh.
+let isBandQueued = false
+let prInFlight: Promise<void> | null = null
+
+/** One PR read at a time; a caller during a read waits for that one. */
+function refreshPr($: Engine): Promise<void> {
+  prInFlight ??= readPr($)
+    .then(found => storePr($, found))
+    .finally(() => {
+      prInFlight = null
+    })
+  return prInFlight
+}
+
+/** Rereads the band; a branch switch rereads the PR too. */
+async function refreshBand($: Engine): Promise<void> {
+  const [location, modelName, usage] = await Promise.all([readLocation($), $.session.model(), $.session.usage()])
+  const { percent } = usage.context
+  const next: Band = { location, model: modelName, contextPercent: percent === undefined ? null : Math.round(percent) }
+  const last = await read($, band)
+  if (isSame(last, next)) return
+  await update($, band, () => next)
+  if (last !== null && last.location.branch !== location.branch) void refreshPr($)
+}
+
+/** On a timer, off the tool call's path; calls close together share one refresh. */
+function queueBandRefresh($: Engine): void {
+  if (isBandQueued) return
+  isBandQueued = true
+  $.clock.after(BAND_SETTLE_MS, () => {
+    isBandQueued = false
+    void refreshBand($)
+  })
 }
 
 // ── /pr pane ────────────────────────────────────────────────────────────────
@@ -170,9 +186,6 @@ const PR_COMMAND: CommandSpec = {
   name: 'pr',
   description: "Show this branch's PR: checks, open review threads, and the PR skills",
 }
-const CHECK_ORDER = { fail: 0, pending: 1, pass: 2, skipped: 3 } as const
-const CHECK_MARK = { fail: '✗', pending: '…', pass: '✓', skipped: '-' } as const
-const CHECK_COLOR = { fail: 'red', pending: 'yellow', pass: 'green', skipped: 'gray' } as const
 // The pr-workflows skills each button hands the branch to.
 const PR_ACTIONS = [
   { key: 'address', hotkey: 'a', label: 'Address feedback', prompt: '/pr-workflows:address-pr-feedback' },
@@ -182,66 +195,63 @@ const PR_ACTIONS = [
 
 // ── rule guard ──────────────────────────────────────────────────────────────
 
-/** The closest directory at or above the file that exists, for git to run in. */
-async function existingDir($: Engine, file: string): Promise<string> {
-  let dir = dirname(file)
-  try {
-    while (dir !== '/' && !(await $.fs.exists(dir))) dir = dirname(dir)
-  } catch {
-    // Unreadable: git runs in the file's own directory and reports what it can.
-  }
-  return dir
+/**
+ * Where the path really lands, symlinks resolved (`~/.claude/rules` links
+ * into this repo, and git sees the link's spelling as outside it): the file
+ * when it exists, else its folder plus the name. Undefined when unplaceable.
+ */
+async function placed($: Engine, path: string): Promise<string | undefined> {
+  const own = await $.fs.stat(path, { resolve: true }).catch(() => undefined)
+  if (own?.realPath !== undefined) return own.realPath
+  const cut = path.lastIndexOf('/')
+  const folder = cut < 0 ? '.' : path.slice(0, cut + 1)
+  const dir = await $.fs.stat(folder, { resolve: true }).catch(() => undefined)
+  return dir?.realPath === undefined ? undefined : `${dir.realPath.replace(/\/$/, '')}/${path.slice(cut + 1)}`
 }
 
 /**
- * Whether git would track the file: inside a work tree and not ignored. A git
- * that cannot run counts as tracked, so the guard fails closed.
+ * Whether git would track the file: inside a work tree and not ignored. A file
+ * the guard cannot place, or a git that cannot run, counts as tracked, so the
+ * guard fails closed.
  */
-async function isTracked($: Engine, file: string, cwd: string): Promise<boolean> {
-  try {
-    const ran = await $.process.run(['git', 'check-ignore', '-q', '--', file], { cwd, timeoutMs: 5000 })
-    // 0: ignored. 1: not ignored. 128: outside a work tree.
-    return ran.exitCode === 1
-  } catch {
-    return true
-  }
+async function isTracked($: Engine, file: string | undefined, folder: string): Promise<boolean> {
+  if (file === undefined) return true
+  const ran = await git($, folder, ['check-ignore', '-q', '--', file])
+  // 0: ignored. 1: not ignored. 128: outside a work tree.
+  return ran === null || ran.exitCode === 1
 }
 
-/** Whether the directory is in a plugin marketplace repo, which stays employer-agnostic. */
-async function isMarketplaceRepo($: Engine, cwd: string): Promise<boolean> {
-  const root = await git($, cwd, ['rev-parse', '--show-toplevel'])
-  if (root === null) return false
-  try {
-    return await $.fs.exists(`${root}/.claude-plugin/marketplace.json`)
-  } catch {
-    return false
-  }
+/** Whether the folder is in a plugin marketplace repo, which stays employer-agnostic. */
+async function isMarketplaceRepo($: Engine, folder: string): Promise<boolean> {
+  const root = await git($, folder, ['rev-parse', '--show-toplevel'])
+  if (root?.exitCode !== 0) return false
+  return $.fs.exists(`${root.stdout}/.claude-plugin/marketplace.json`).catch(() => false)
 }
 
-/** When the guard broke: a credential still refuses the edit; anything else runs. */
+/** Why an edit putting `text` into `path` is refused, or null to let it run. */
+async function guardEdit($: Engine, path: string, text: string, terms: RegExp | null): Promise<{ deny: string } | null> {
+  const credential = findCredential(text)
+  const term = findTerm(text, terms)
+  if (credential === null && term === null) return null
+
+  const file = await placed($, path)
+  const folder = file === undefined ? '.' : file.slice(0, file.lastIndexOf('/')) || '/'
+  if (credential !== null && (await isTracked($, file, folder))) return { deny: credentialReason(path, credential) }
+  if (term !== null && file !== undefined && (await isMarketplaceRepo($, folder))) return { deny: termReason(path, term) }
+  return null
+}
+
+/** When the guard broke before the edit ran: a credential still refuses it. */
 function guardFailed(isCalled: boolean, path: string, text: string): { deny: string } | null {
   const credential = isCalled ? null : findCredential(text)
   return credential === null ? null : { deny: credentialReason(path, credential) }
 }
 
-/** Why an edit putting `text` into `path` is refused, or null to let it run. */
-async function guardEdit($: Engine, path: string, text: string, terms: readonly string[]): Promise<string | null> {
-  const credential = findCredential(text)
-  const term = terms.length > 0 ? findTerm(text, terms) : null
-  if (credential === null && term === null) return null
-
-  const file = path.startsWith('/') ? path : `${await $.session.cwd()}/${path}`
-  const dir = await existingDir($, file)
-  if (credential !== null && (await isTracked($, file, dir))) return credentialReason(path, credential)
-  if (term !== null && (await isMarketplaceRepo($, dir))) return termReason(path, term)
-  return null
-}
-
 // ── reply style, skill tally ────────────────────────────────────────────────
 
 const REPLY_STYLE_SECTION = 'mods:reply-style'
-// Side calls (summaries, classifiers) write no chat replies.
-const NO_REPLY_TRAITS = new Set(['analysis', 'bare'])
+// `bare` is the stripped prompt of `--bare`, which writes no styled replies.
+const NO_REPLY_TRAITS = new Set(['bare'])
 const TALLY_KEY = 'skillTally'
 const TALLY_COMMAND: CommandSpec = {
   name: 'skill-tally',
@@ -252,27 +262,24 @@ const TALLY_COMMAND: CommandSpec = {
 // ── wiring ──────────────────────────────────────────────────────────────────
 
 // Each mod has a switch in /config (the manifest's userConfig); all start on.
+// A change there reloads this module, so a mod that is off registers nothing.
 export const register: Register = (on, options) => {
   const isOn = (name: string): boolean => options[name] !== false
   const hasGitGate = isOn('gitGate')
   const hasStatusBand = isOn('statusBand')
-  const hasPrPane = isOn('prPane')
-  const hasRuleGuard = isOn('ruleGuard')
-  const hasReplyStyle = isOn('replyStyle')
-  const hasSkillTally = isOn('skillTally')
-  const blockedTerms = parseTerms(options.blockedTerms)
-  let replyStyle: string | null = null
+  const blockedTerms = termPattern(parseTerms(options.blockedTerms))
+  const commands = [
+    ...(hasGitGate ? [GIT_GATE_COMMAND] : []),
+    ...(isOn('prPane') ? [PR_COMMAND] : []),
+    ...(isOn('skillTally') ? [TALLY_COMMAND] : []),
+  ]
 
   on('session.start', async ($, e, next) => {
-    if (hasGitGate) await $.command.register(GIT_GATE_COMMAND)
-    if (hasPrPane) await $.command.register(PR_COMMAND)
-    if (hasSkillTally) await $.command.register(TALLY_COMMAND)
+    await Promise.all(commands.map(command => $.command.register(command)))
     const started = await next(e)
     if (hasStatusBand) {
-      await refreshLocal($)
-      // On timers, not in this dispatch: gh can take seconds, and a timer's
-      // work outlives the hook that set it.
-      $.clock.after(0, () => void refreshPr($))
+      // On timers, not in this dispatch, so the first prompt does not wait on git or gh.
+      $.clock.after(0, () => void refreshBand($).then(() => refreshPr($)))
       $.clock.every(PR_POLL_MS, () => void refreshPr($))
     }
     return started
@@ -283,9 +290,9 @@ export const register: Register = (on, options) => {
     const refusal = hasGitGate ? await gateGitWrite($, e.command) : null
     if (refusal !== null) return refusal
     const ran = await next(e)
-    if (hasStatusBand && movesRepo(e.command)) {
-      await refreshLocal($)
-      if (movesPr(e.command)) $.clock.after(0, () => void refreshPr($))
+    if (hasStatusBand) {
+      queueBandRefresh($)
+      if (isGitWrite(e.command)) $.clock.after(0, () => void refreshPr($))
     }
     return ran
   }).catch(($, e, next) =>
@@ -296,222 +303,226 @@ export const register: Register = (on, options) => {
       : { deny: `BLOCKED: the git write gate failed (${String(next.error)}), so the write did not run.` },
   )
 
-  on('command.run', { command: 'git-gate' }, async ($, e) => {
-    if (e.args.trim() === 'reset') {
-      await update($, gitGrant, () => false)
-      return { text: 'Git write gate: session approval revoked. The next write asks again.' }
-    }
-    return {
-      text: (await read($, gitGrant))
-        ? 'Git write gate: writes are approved for this session. /git-gate reset revokes that.'
-        : 'Git write gate: each git commit, git push, gh pr create and gh pr merge asks first.',
-    }
-  })
+  if (hasGitGate) {
+    on('command.run', { command: 'git-gate' }, async ($, e) => {
+      if (e.args.trim() === 'reset') {
+        await update($, gitGrant, () => false)
+        return { text: 'Git write gate: session approval revoked. The next write asks again.' }
+      }
+      return {
+        text: (await read($, gitGrant))
+          ? 'Git write gate: writes are approved for this session. /git-gate reset revokes that.'
+          : `Git write gate: each ${GATED_COMMANDS.join(', ')} asks first.`,
+      }
+    })
+  }
 
-  on('turn.complete', async ($, e, next) => {
-    const completed = await next(e)
-    if (hasStatusBand && e.agentId === undefined) await refreshLocal($)
-    return completed
-  })
+  if (hasStatusBand) {
+    on('turn.complete', async ($, e, next) => {
+      const completed = await next(e)
+      if (e.agentId === undefined) queueBandRefresh($)
+      return completed
+    })
 
-  // The old statusline's `➜  repo/dir git:(branch) ✗ [model] ctx:42%`, and a
-  // second row for the branch's PR: checks, open threads, merge state.
-  on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
-    const here = hasStatusBand ? await read($, location) : null
-    if (e.props.hasSurvey || here === null) return next(e)
+    on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
+      const shown = await read($, band)
+      if (e.props.hasSurvey || shown === null) return next(e)
 
-    const { Box, Text } = $.ui.resolve(e)
-    const modelName = await read($, model)
-    const percent = await read($, contextPercent)
-    const current = await read($, pr)
-    const checks = checksSummary(current?.checks ?? [])
-    const threads = current?.threads.length ?? 0
-    const place = here.repo !== null && here.repo !== here.dir ? `${here.repo}/${here.dir}` : here.dir
+      const { Box, Text } = $.ui.resolve(e)
+      const { location: here, model: modelName, contextPercent: percent } = shown
+      const current = (await read($, prRead))?.pr ?? null
+      const counts = countChecks(current?.checks ?? [])
+      const threads = current?.threads.length ?? 0
+      const place = here.repo !== null && here.repo !== here.dir ? `${here.repo}/${here.dir}` : here.dir
 
-    return (
-      <Box flexDirection="column">
-        <Text wrap="truncate-end">
-          <Text color="green" bold>
-            ➜{'  '}
-          </Text>
-          <Text color="cyan">{place}</Text>
-          {here.branch !== null && (
-            <Text>
-              {' '}
-              <Text color="blue" bold>
-                git:(
-              </Text>
-              <Text color="red">{here.branch}</Text>
-              <Text color="blue" bold>
-                )
-              </Text>
-              {here.isDirty && <Text color="yellow"> ✗</Text>}
-            </Text>
-          )}
-          {modelName !== null && <Text color="magenta"> [{modelName}]</Text>}
-          {percent !== null && <Text color={contextColor(percent)}> ctx:{percent}%</Text>}
-        </Text>
-        {current !== null && (
-          <Text wrap="truncate-end">
-            <Text dimColor>PR </Text>
-            <Text bold>#{current.number}</Text>
-            {current.isDraft && <Text dimColor> draft</Text>}
-            {current.state !== 'OPEN' && <Text color="magenta"> {current.state.toLowerCase()}</Text>}
-            {checks.failing > 0 && <Text color="red"> ✗{checks.failing}</Text>}
-            {checks.pending > 0 && <Text color="yellow"> …{checks.pending}</Text>}
-            {checks.passing > 0 && <Text color="green"> ✓{checks.passing}</Text>}
-            {threads > 0 && (
-              <Text color="yellow">
-                {' '}
-                · {threads} open thread{threads === 1 ? '' : 's'}
-              </Text>
-            )}
-            {current.mergeable === 'CONFLICTING' && <Text color="red"> · conflicts</Text>}
-            {current.reviewDecision === 'APPROVED' && <Text color="green"> · approved</Text>}
-            {current.reviewDecision === 'CHANGES_REQUESTED' && <Text color="red"> · changes requested</Text>}
-            <Text dimColor> · {current.title}</Text>
-          </Text>
-        )}
-      </Box>
-    )
-  })
-
-  on('command.run', { command: 'pr' }, async $ => {
-    await $.ui.open({ id: PANE, title: 'Pull request' })
-    await refreshPr($)
-    const current = await read($, pr)
-    return { text: current === null ? 'No PR for this branch yet.' : `PR #${current.number} is in the pane.` }
-  })
-
-  on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
-    const { Box, Text, Button, Link } = $.ui.resolve(e)
-    const current = await read($, pr)
-    const error = await read($, prError)
-    const fetchedAt = await read($, prFetchedAt)
-    const refresh = <Button key="refresh" hotkey="r" label="Refresh" onPress={() => void refreshPr($)} />
-
-    if (current === null) {
       return (
         <Box flexDirection="column">
-          <Text dimColor>{error ?? (fetchedAt === 0 ? 'Reading the PR…' : 'No PR for this branch.')}</Text>
-          {refresh}
+          <Text wrap="truncate-end">
+            <Text color="green" bold>
+              ➜{'  '}
+            </Text>
+            <Text color="cyan">{place}</Text>
+            {here.branch !== null && (
+              <Text>
+                {' '}
+                <Text color="blue" bold>
+                  git:(
+                </Text>
+                <Text color="red">{here.branch}</Text>
+                <Text color="blue" bold>
+                  )
+                </Text>
+                {here.isDirty && <Text color="yellow"> ✗</Text>}
+              </Text>
+            )}
+            <Text color="magenta"> [{modelName}]</Text>
+            {percent !== null && <Text color={contextColor(percent)}> ctx:{percent}%</Text>}
+          </Text>
+          {current !== null && (
+            <Text wrap="truncate-end">
+              <Text dimColor>PR </Text>
+              <Text bold>#{current.number}</Text>
+              {current.isDraft && <Text dimColor> draft</Text>}
+              {current.state !== 'OPEN' && <Text color="magenta"> {current.state.toLowerCase()}</Text>}
+              {(['fail', 'pending', 'pass'] as const).map(
+                state =>
+                  counts[state] > 0 && (
+                    <Text color={CHECK[state].color}>
+                      {' '}
+                      {CHECK[state].mark}
+                      {counts[state]}
+                    </Text>
+                  ),
+              )}
+              {threads > 0 && (
+                <Text color="yellow">
+                  {' '}
+                  · {threads} open thread{threads === 1 ? '' : 's'}
+                </Text>
+              )}
+              {current.mergeable === 'CONFLICTING' && <Text color="red"> · conflicts</Text>}
+              {current.reviewDecision === 'APPROVED' && <Text color="green"> · approved</Text>}
+              {current.reviewDecision === 'CHANGES_REQUESTED' && <Text color="red"> · changes requested</Text>}
+              <Text dimColor> · {current.title}</Text>
+            </Text>
+          )}
         </Box>
       )
-    }
+    })
+  }
 
-    const checks = [...current.checks].sort((a, b) => CHECK_ORDER[a.state] - CHECK_ORDER[b.state])
-    const summary = checksSummary(current.checks)
-    return (
-      <Box flexDirection="column">
-        <Text bold wrap="wrap">
-          #{current.number} {current.title}
-        </Text>
-        <Link key="url" href={current.url} label={current.url} />
-        <Text>
-          <Text color={current.state === 'OPEN' ? 'green' : 'magenta'}>{current.state.toLowerCase()}</Text>
-          {current.isDraft && <Text dimColor> · draft</Text>}
-          {current.mergeable === 'CONFLICTING' ? (
-            <Text color="red"> · merge conflicts</Text>
-          ) : (
-            <Text> · {current.mergeable.toLowerCase()}</Text>
-          )}
-          {current.reviewDecision !== null && (
-            <Text> · {current.reviewDecision.toLowerCase().replace('_', ' ')}</Text>
-          )}
-        </Text>
+  if (isOn('prPane')) {
+    on('command.run', { command: 'pr' }, async $ => {
+      await $.ui.open({ id: PANE, title: 'Pull request' })
+      await refreshPr($)
+      const current = (await read($, prRead))?.pr ?? null
+      return { text: current === null ? 'No PR for this branch yet.' : `PR #${current.number} is in the pane.` }
+    })
 
-        <Text bold>
-          {'\n'}Checks ✗{summary.failing} …{summary.pending} ✓{summary.passing}
-        </Text>
-        {checks.length === 0 && <Text dimColor>No checks reported.</Text>}
-        {checks.map(check => (
-          <Text wrap="truncate-end">
-            <Text color={CHECK_COLOR[check.state]}>{CHECK_MARK[check.state]}</Text> {check.name}
+    on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
+      const { Box, Text, Button, Link } = $.ui.resolve(e)
+      const last = await read($, prRead)
+      const refresh = <Button key="refresh" hotkey="r" label="Refresh" onPress={() => void refreshPr($)} />
+
+      if (last?.pr == null) {
+        return (
+          <Box flexDirection="column">
+            <Text dimColor>{last === null ? 'Reading the PR…' : (last.error ?? 'No PR for this branch.')}</Text>
+            {refresh}
+          </Box>
+        )
+      }
+
+      const current = last.pr
+      const checks = [...current.checks].sort((a, b) => CHECK_STATES.indexOf(a.state) - CHECK_STATES.indexOf(b.state))
+      const counts = countChecks(current.checks)
+      return (
+        <Box flexDirection="column">
+          <Text bold wrap="wrap">
+            #{current.number} {current.title}
           </Text>
-        ))}
-
-        <Text bold>
-          {'\n'}Open threads ({current.threads.length})
-        </Text>
-        {current.threads.length === 0 && <Text dimColor>None.</Text>}
-        {current.threads.map(thread => (
-          <Text wrap="truncate-end">
-            <Text color="cyan">
-              {thread.path}
-              {thread.line === null ? '' : `:${thread.line}`}
-            </Text>{' '}
-            <Text dimColor>{thread.author}:</Text> {thread.excerpt}
+          <Link key="url" href={current.url} label={current.url} />
+          <Text>
+            <Text color={current.state === 'OPEN' ? 'green' : 'magenta'}>{current.state.toLowerCase()}</Text>
+            {current.isDraft && <Text dimColor> · draft</Text>}
+            {current.mergeable === 'CONFLICTING' ? (
+              <Text color="red"> · merge conflicts</Text>
+            ) : (
+              <Text> · {current.mergeable.toLowerCase()}</Text>
+            )}
+            {current.reviewDecision !== null && (
+              <Text> · {current.reviewDecision.toLowerCase().replace('_', ' ')}</Text>
+            )}
           </Text>
-        ))}
 
-        <Text> </Text>
-        <Box flexDirection="row" gap={1}>
-          {refresh}
-          {PR_ACTIONS.map(action => (
-            <Button
-              key={action.key}
-              hotkey={action.hotkey}
-              label={action.label}
-              onPress={() => void $.prompt.submit({ text: action.prompt })}
-            />
+          <Text bold>
+            {'\n'}Checks{(['fail', 'pending', 'pass'] as const).map(state => ` ${CHECK[state].mark}${counts[state]}`)}
+          </Text>
+          {checks.length === 0 && <Text dimColor>No checks reported.</Text>}
+          {checks.map(check => (
+            <Text wrap="truncate-end">
+              <Text color={CHECK[check.state].color}>{CHECK[check.state].mark}</Text> {check.name}
+            </Text>
           ))}
+
+          <Text bold>
+            {'\n'}Open threads ({current.threads.length})
+          </Text>
+          {current.threads.length === 0 && <Text dimColor>None.</Text>}
+          {current.threads.map(thread => (
+            <Text wrap="truncate-end">
+              <Text color="cyan">
+                {thread.path}
+                {thread.line === null ? '' : `:${thread.line}`}
+              </Text>{' '}
+              <Text dimColor>{thread.author}:</Text> {thread.excerpt}
+            </Text>
+          ))}
+
+          <Text> </Text>
+          <Box flexDirection="row" gap={1}>
+            {refresh}
+            {PR_ACTIONS.map(action => (
+              <Button
+                key={action.key}
+                hotkey={action.hotkey}
+                label={action.label}
+                onPress={() => void $.prompt.submit({ text: action.prompt })}
+              />
+            ))}
+          </Box>
         </Box>
-      </Box>
-    )
-  })
+      )
+    })
+  }
 
-  // The rule guard: Write, Edit and NotebookEdit, by what each puts in the file.
-  on('tool.call', { tool: 'Write' }, async ($, e, next) => {
-    const reason = hasRuleGuard ? await guardEdit($, e.file_path, e.content, blockedTerms) : null
-    return reason === null ? next(e) : { deny: reason }
-  }).catch(($, e, next) => guardFailed(next.called, e.file_path, e.content) ?? next(e))
-
-  on('tool.call', { tool: 'Edit' }, async ($, e, next) => {
-    const reason = hasRuleGuard ? await guardEdit($, e.file_path, e.new_string, blockedTerms) : null
-    return reason === null ? next(e) : { deny: reason }
-  }).catch(($, e, next) => guardFailed(next.called, e.file_path, e.new_string) ?? next(e))
-
-  on('tool.call', { tool: 'NotebookEdit' }, async ($, e, next) => {
-    const reason = hasRuleGuard ? await guardEdit($, e.notebook_path, e.new_source, blockedTerms) : null
-    return reason === null ? next(e) : { deny: reason }
-  }).catch(($, e, next) => guardFailed(next.called, e.notebook_path, e.new_source) ?? next(e))
+  // The rule guard, on each tool that writes a file, by what it puts there.
+  if (isOn('ruleGuard')) {
+    on('tool.call', { tool: 'Write' }, async ($, e, next) => (await guardEdit($, e.file_path, e.content, blockedTerms)) ?? next(e))
+      .catch(($, e, next) => guardFailed(next.called, e.file_path, e.content) ?? next(e))
+    on('tool.call', { tool: 'Edit' }, async ($, e, next) => (await guardEdit($, e.file_path, e.new_string, blockedTerms)) ?? next(e))
+      .catch(($, e, next) => guardFailed(next.called, e.file_path, e.new_string) ?? next(e))
+    on('tool.call', { tool: 'NotebookEdit' }, async ($, e, next) => (await guardEdit($, e.notebook_path, e.new_source, blockedTerms)) ?? next(e))
+      .catch(($, e, next) => guardFailed(next.called, e.notebook_path, e.new_source) ?? next(e))
+  }
 
   // prompts/reply-style.md as a system-prompt section of its own. Unlike the
   // SessionStart hook it replaces, it rides every request, so compaction cannot
   // drop it. Codex reads the same file through scripts/agents_md.py.
-  on('prompt.compose', async ($, e, next) => {
-    const composed = await next(e)
-    if (!hasReplyStyle || e.traits.some(trait => NO_REPLY_TRAITS.has(trait))) return composed
-    if (replyStyle === null) {
+  if (isOn('replyStyle')) {
+    let replyStyle: string | null = null
+    on('prompt.compose', async ($, e, next) => {
+      const composed = await next(e)
+      if (e.traits.some(trait => NO_REPLY_TRAITS.has(trait))) return composed
       try {
-        replyStyle = String(await $.fs.read(`${$.plugin.root}/prompts/reply-style.md`)).trim()
+        replyStyle ??= String(await $.fs.read(`${$.plugin.root}/prompts/reply-style.md`)).trim()
       } catch {
         return composed
       }
-    }
-    return { sections: [...composed.sections, { id: REPLY_STYLE_SECTION, text: replyStyle, scope: 'session' }] }
-  })
+      return { sections: [...composed.sections, { id: REPLY_STYLE_SECTION, text: replyStyle, scope: 'session' }] }
+    })
+  }
 
   // Counts each skill that loads, however it was asked for (typed as /name,
   // the Skill tool, preloaded into a subagent), across sessions: the live half
   // of what the trigger evals in evals/ predict.
-  on('skill.prompt', async ($, e, next) => {
-    const prompted = await next(e)
-    if (hasSkillTally) {
+  if (isOn('skillTally')) {
+    on('skill.prompt', async ($, e, next) => {
+      const prompted = await next(e)
       const now = new Date(await $.clock.now()).toISOString()
       await $.store.set(TALLY_KEY, countSkill(asTally(await $.store.get(TALLY_KEY)), e.skill, now))
-    }
-    return prompted
-  })
+      return prompted
+    })
 
-  on('command.run', { command: 'skill-tally' }, async ($, e) => {
-    if (e.args.trim() === 'reset') {
-      await $.store.delete(TALLY_KEY)
-      return { text: 'Skill tally cleared.' }
-    }
-    const known = (await $.command.list())
-      .filter(command => command.source === 'plugin' && command.name.includes(':'))
-      .map(command => command.name)
-    return { text: formatTally(asTally(await $.store.get(TALLY_KEY)), known) }
-  })
+    on('command.run', { command: 'skill-tally' }, async ($, e) => {
+      if (e.args.trim() === 'reset') {
+        await $.store.delete(TALLY_KEY)
+        return { text: 'Skill tally cleared.' }
+      }
+      const known = (await $.command.list())
+        .filter(command => command.source === 'plugin' && command.name.includes(':'))
+        .map(command => command.name)
+      return { text: formatTally(asTally(await $.store.get(TALLY_KEY)), known) }
+    })
+  }
 }

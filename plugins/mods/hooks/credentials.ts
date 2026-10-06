@@ -37,14 +37,16 @@ export function parseTerms(option: unknown): string[] {
     .filter(Boolean)
 }
 
-/** The first term the text holds, matched as a whole word, ignoring case. */
-export function findTerm(text: string, terms: readonly string[]): string | null {
-  return (
-    terms.find(term => {
-      const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-      return new RegExp(`(^|[^A-Za-z0-9_])${escaped}([^A-Za-z0-9_]|$)`, 'i').test(text)
-    }) ?? null
-  )
+/** One pattern for all the terms, as whole words, ignoring case; null for none. */
+export function termPattern(terms: readonly string[]): RegExp | null {
+  if (terms.length === 0) return null
+  const escaped = terms.map(term => term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+  return new RegExp(`(?:^|[^A-Za-z0-9_])(${escaped.join('|')})(?:[^A-Za-z0-9_]|$)`, 'i')
+}
+
+/** The first blocked term the text holds, as the text spells it. */
+export function findTerm(text: string, pattern: RegExp | null): string | null {
+  return pattern?.exec(text)?.[1] ?? null
 }
 
 export function credentialReason(path: string, finding: Finding): string {
