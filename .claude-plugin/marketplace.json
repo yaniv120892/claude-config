@@ -29,6 +29,12 @@
       "source": "./plugins/infra-workflows"
     },
     {
+      "name": "mods",
+      "description": "Function-hook mods: a git write gate the person answers, a status band with the branch's PR, a /pr pane, a tracked-file secret guard, the reply-style system-prompt rule, and a skill usage tally.",
+      "category": "productivity",
+      "source": "./plugins/mods"
+    },
+    {
       "name": "cmux",
       "description": "Control the cmux terminal multiplexer — topology, workspaces, browser surface, notifications.",
       "category": "productivity",

@@ -91,7 +91,7 @@ as a list of shipped changes rather than a transcript of how each one was arrive
 **Ship `claude-config` Changes; Never Leave Them Uncommitted** — `~/.claude` is symlinked
 into that repo, so an edit is live on this machine and absent everywhere else until pushed
 > Pattern: Any change under the `claude-config` checkout (`~/.claude/plugins/marketplaces/yaniv-claude-config`)
-> — statusline, rules, settings, keybindings, plugins — gets a branch, a PR, a squash-merge
+> — rules, settings, keybindings, plugins — gets a branch, a PR, a squash-merge
 > to `main`, and a local fast-forward so the symlink target matches `origin`. This is
 > standing authorization: do it without asking, in the same session that made the change.
 > Corollary: if a file under `~/.claude` is a regular file where `install.sh` links one, the

@@ -26,6 +26,7 @@ jobs:
       - uses: actions/checkout@v7
       - name: Run the Python and hook tests
         run: |
+          shopt -s nullglob
           status=0
           for test in tests/test_*.py plugins/*/tests/test_*.py settings/tests/test_*.py \
                       plugins/*/tests/test-*.sh settings/tests/test-*.sh; do
@@ -35,3 +36,26 @@ jobs:
             echo "::endgroup::"
           done
           exit "$status"
+
+  mods:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      # The function-hook API is early access and moves between releases, so the
+      # checks run on the version the mods were last verified against. Bump it
+      # deliberately, with the mods, rather than following latest.
+      - run: npm install -g @anthropic-ai/claude-code@2.1.289 typescript@5
+      - name: Validate the manifest and the hooks module
+        run: claude plugin validate plugins/mods
+      - name: Run the mods' tests
+        run: claude plugin test "$PWD/plugins/mods"
+      # Loading the plugin once lays this build's API types beside it, with a
+      # tsconfig.json that points at them; no model call, no credentials.
+      - name: Type-check
+        run: |
+          claude -p --plugin-dir "$PWD/plugins/mods" /git-gate
+          tsc -p plugins/mods

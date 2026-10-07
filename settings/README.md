@@ -1,8 +1,12 @@
 # Settings
 
 `settings.json` is the profile-neutral baseline: permissions, model, effort,
-statusline, and the marketplace/plugin wiring. It contains **no secrets** and no
+and the marketplace/plugin wiring. It contains **no secrets** and no
 employer-specific servers.
+
+The git write gate and the status line are **not** here either: both are mods in
+the `mods` plugin, which `enabledPlugins` turns on and
+`tests/test_settings_hooks.py` keeps on.
 
 The pre-push quality-gate hook is **not** here — it ships with the
 `dev-workflows` plugin, so it installs and updates with the plugin rather than

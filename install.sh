@@ -16,9 +16,9 @@
 #   ./install.sh --harness all
 #
 # For Claude Code this installs only the parts a plugin cannot carry: the
-# always-loaded global rules, the path-scoped rules/, settings, keybindings, and
-# the statusline. Skills, commands, and hooks ship as PLUGINS. For Codex it links
-# the skills and generates AGENTS.md. README covers both.
+# always-loaded global rules, the path-scoped rules/, settings, and keybindings.
+# Skills, commands, hooks, and mods ship as PLUGINS. For Codex it links the
+# skills and generates AGENTS.md. README covers both.
 #
 # Anything already present is backed up to ~/.claude-config-backups/<timestamp>/
 # before being replaced. Existing skills are left completely alone.
@@ -91,6 +91,43 @@ link() {
   say "  link:   $destination -> $source"
 }
 
+# A kept settings.json outlives what this repo ships: warn about each command it
+# runs from a ~/.claude path that is gone, and each plugin the repo's settings
+# enable that it never mentions (one it sets false is a profile's choice).
+check_kept_settings() {
+  python3 - "$1" "$REPO_DIR/settings/settings.json" 2>/dev/null <<'PY' || say "  note:   could not check $1 (not JSON, or no python3) — compare it by hand"
+import json, os, re, sys
+
+kept, shipped = (json.load(open(path)) for path in sys.argv[1:3])
+commands = [hook.get("command", "") for groups in kept.get("hooks", {}).values()
+            for group in groups for hook in group.get("hooks", [])]
+commands.append(kept.get("statusLine", {}).get("command", ""))
+for command in commands:
+    # Any spelling of a Claude config directory: ~, $HOME, ${HOME}, or absolute,
+    # and a second profile's ~/.claude-<name> as well as ~/.claude.
+    for path in re.findall(r"(?:~|\$\{?HOME\}?|/[^\s\"';]*)/\.claude[\w-]*/[^\s\"';]+", command):
+        expanded = re.sub(r"^(?:\$\{?HOME\}?)", "~", path)
+        if not os.path.exists(os.path.expanduser(expanded)):
+            print(f"  stale:  {sys.argv[1]} runs {path}, which no longer exists — remove that entry")
+for plugin, is_enabled in shipped.get("enabledPlugins", {}).items():
+    if is_enabled and plugin not in kept.get("enabledPlugins", {}):
+        print(f"  stale:  {sys.argv[1]} does not enable {plugin} — install it and add it to enabledPlugins")
+PY
+}
+
+# Links into this repo whose file the repo has since deleted.
+prune_dangling_links() {
+  local dir link
+  for dir in "$@"; do
+    for link in "$dir"/*; do
+      if [ -L "$link" ] && [ ! -e "$link" ] && [[ "$(readlink "$link")" == "$REPO_DIR"* ]]; then
+        say "  prune:  $link (its target left the repo)"
+        run rm "$link"
+      fi
+    done
+  done
+}
+
 install_claude() {
   say ""
   say "Claude Code → $TARGET"
@@ -101,16 +138,11 @@ install_claude() {
   link "$REPO_DIR/keybindings.json"             "$TARGET/keybindings.json"
   link "$REPO_DIR/profiles/$PROFILE/CLAUDE.md"  "$TARGET/CLAUDE.md"
 
-  # The exception: settings.json declares this PreToolUse hook itself, so no
-  # plugin owns it and nothing else would put it on disk. It is referenced as
-  # $HOME/.claude/hooks/, hence SHARED_HOME rather than TARGET.
-  link "$REPO_DIR/settings/hooks/require-git-approval.sh" \
-       "$SHARED_HOME/hooks/require-git-approval.sh"
-
   # settings.json is copied, not linked: Claude Code writes machine-local state
   # into it, which must not flow back into the repo.
   if [ -e "$TARGET/settings.json" ]; then
     say "  keep:   $TARGET/settings.json (exists — compare against settings/settings.json yourself)"
+    check_kept_settings "$TARGET/settings.json"
   else
     run cp "$REPO_DIR/settings/settings.json" "$TARGET/settings.json"
     say "  copy:   $TARGET/settings.json"
@@ -129,6 +161,7 @@ install_claude() {
   say "  /plugin install dev-workflows@yaniv-claude-config"
   say "  /plugin install issue-tracker@yaniv-claude-config"
   say "  /plugin install infra-workflows@yaniv-claude-config"
+  say "  /plugin install mods@yaniv-claude-config"
   say "  /plugin install cmux@yaniv-claude-config"
   say ""
 }
@@ -170,7 +203,8 @@ run mkdir -p "$SHARED_HOME"
 link "$REPO_DIR/shared-rules.md"    "$SHARED_HOME/shared-rules.md"
 link "$REPO_DIR/rules"              "$SHARED_HOME/rules"
 link "$REPO_DIR/rules-reference.md" "$SHARED_HOME/rules-reference.md"
-link "$REPO_DIR/statusline-command.sh" "$SHARED_HOME/statusline-command.sh"
+prune_dangling_links "$SHARED_HOME" "$SHARED_HOME/hooks"
+[ "$TARGET" = "$SHARED_HOME" ] || prune_dangling_links "$TARGET"
 
 
 case "$HARNESS" in
