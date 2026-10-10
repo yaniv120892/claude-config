@@ -51,6 +51,19 @@ describe('gitWrites', () => {
     expect(gitWrites('git commit -m "ALLOW_DEFAULT_BRANCH_WRITE=1"', CWD, HOME)[0]?.isOptedOut).toBe(false)
     expect(gitWrites('ALLOW_DEFAULT_BRANCH_WRITE=1; git commit', CWD, HOME)[0]?.isOptedOut).toBe(false)
   })
+
+  test('names the branches a push only deletes, and nothing for a push that sends', () => {
+    const deleted = (command: string) => gitWrites(command, CWD, HOME)[0]?.deletedBranches
+    expect(deleted('git push origin --delete fix/a refs/heads/fix/b')).toEqual(['fix/a', 'fix/b'])
+    expect(deleted('git push -d origin fix/a')).toEqual(['fix/a'])
+    expect(deleted('git push -o ci.skip origin :fix/a')).toEqual(['fix/a'])
+    expect(deleted('B=fix/a; git push origin --delete $B')).toEqual(['fix/a'])
+    expect(deleted('git push origin fix/a :fix/b')).toBe(null)
+    expect(deleted('git push origin :')).toBe(null)
+    expect(deleted('git push origin --delete')).toBe(null)
+    expect(deleted('git push origin --delete $UNSET')).toBe(null)
+    expect(deleted('git commit -m x')).toBe(null)
+  })
 })
 
 test('resolvePath folds . and .. against the base', () => {
@@ -96,6 +109,16 @@ describe('the default-branch guard', () => {
     fakeCheckouts(on)
     for (const command of ['cd wt && git commit -m x', 'W=/w/repo/wt; git -C $W push', 'cd /w/repo/wt/a/b && cd ../.. && git push']) {
       expect((await $.tool.call({ tool: 'Bash', command })).deny).toBeUndefined()
+    }
+  })
+
+  test('lets a push from the default branch through when it only deletes other branches', NO_GATE, async ($, on) => {
+    fakeCheckouts(on)
+    for (const command of ['git push origin --delete fix/a', 'git push origin :fix/a']) {
+      expect((await $.tool.call({ tool: 'Bash', command })).deny).toBeUndefined()
+    }
+    for (const command of ['git push origin --delete main', 'git push origin --delete fix/a refs/heads/main', 'git push origin fix/a :fix/b']) {
+      expect((await $.tool.call({ tool: 'Bash', command })).deny).toContain("you are on 'main'")
     }
   })
 

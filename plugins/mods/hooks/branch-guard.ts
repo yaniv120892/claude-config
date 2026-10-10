@@ -8,13 +8,16 @@ import { splitCommands } from './git-write'
 
 export const OPT_OUT = 'ALLOW_DEFAULT_BRANCH_WRITE=1'
 
-export type GitWrite = { directory: string | null; isOptedOut: boolean }
+// `deletedBranches` names the branches a push only deletes; null for a commit, or a push
+// that sends anything or names a branch it cannot read.
+export type GitWrite = { directory: string | null; isOptedOut: boolean; deletedBranches: string[] | null }
 
 const ASSIGNMENT = /^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/s
 const WRAPPERS = new Set(['sudo', 'env', 'command', 'nice', 'time', 'exec'])
 const SHELLS = new Set(['bash', 'sh', 'zsh'])
 const GIT_VALUE_OPTIONS = new Set(['-c', '--git-dir', '--work-tree', '--namespace', '--super-prefix', '--config-env'])
 const WRITES = new Set(['commit', 'push'])
+const PUSH_VALUE_OPTIONS = new Set(['-o', '--push-option', '--repo', '--receive-pack', '--exec'])
 
 type Scope = { directory: string | null; variables: Map<string, string> }
 
@@ -63,8 +66,29 @@ function gitWrite(scope: Scope, args: readonly string[], prefix: readonly string
       index += GIT_VALUE_OPTIONS.has(option ?? '') ? 2 : 1
     }
   }
-  if (!WRITES.has(args[index] ?? '')) return null
-  return { directory, isOptedOut: prefix.includes(OPT_OUT) }
+  const subcommand = args[index] ?? ''
+  if (!WRITES.has(subcommand)) return null
+  const deletedBranches = subcommand === 'push' ? pushDeletes(scope, args.slice(index + 1)) : null
+  return { directory, isOptedOut: prefix.includes(OPT_OUT), deletedBranches }
+}
+
+function pushDeletes(scope: Scope, args: readonly string[]): string[] | null {
+  let isDelete = false
+  const positional: string[] = []
+  for (let index = 0; index < args.length; index++) {
+    const arg = args[index] ?? ''
+    if (arg === '--delete' || arg === '-d') isDelete = true
+    else if (PUSH_VALUE_OPTIONS.has(arg)) index++
+    else if (!arg.startsWith('-')) positional.push(arg)
+  }
+  const refspecs = positional.slice(1)
+  if (refspecs.length === 0) return null
+  const branches = refspecs.map(refspec => {
+    const name = isDelete ? refspec : /^:./.test(refspec) ? refspec.slice(1) : null
+    if (name === null || name.includes(':')) return null
+    return expand(scope, name)?.replace(/^refs\/heads\//, '') ?? null
+  })
+  return branches.every(branch => branch !== null) ? branches : null
 }
 
 function remember(scope: Scope, assignment: string): void {
