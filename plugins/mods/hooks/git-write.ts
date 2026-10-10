@@ -117,6 +117,10 @@ export function changesPr(command: string): boolean {
   )
 }
 
+export function createsPr(command: string): boolean {
+  return calls(command).some(call => call.program === 'gh' && call.group === 'pr' && call.action === 'create')
+}
+
 export function runsGit(command: string): boolean {
   return calls(command).length > 0
 }

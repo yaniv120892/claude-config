@@ -1,13 +1,16 @@
-import type { CheckState, PrCheck, PrThread, PullRequest } from '../types'
+import type { CheckState, MergeState, PrCheck, PrThread, PullRequest } from '../types'
 import { truncate } from './text'
 
-export const PR_FIELDS = 'number,title,url,state,isDraft,mergeable,reviewDecision,statusCheckRollup'
-// gh fills `{owner}` and `{repo}` from the current repository, as `gh pr view` does.
+export const PR_FIELDS = 'number,title,url,state,isDraft,mergeable,reviewDecision,mergeStateStatus,author,statusCheckRollup'
 export const THREADS_QUERY = `query($owner: String!, $repo: String!, $number: Int!) {
   repository(owner: $owner, name: $repo) {
     pullRequest(number: $number) {
       reviewThreads(first: 100) {
-        nodes { isResolved path line comments(first: 1) { nodes { author { login } body } } }
+        nodes {
+          isResolved path line
+          comments(first: 1) { nodes { author { login } body } }
+          latest: comments(last: 1) { nodes { author { login } } }
+        }
       }
     }
   }
@@ -27,6 +30,8 @@ const PASSING = new Set(['SUCCESS', 'NEUTRAL'])
 const SKIPPED = new Set(['SKIPPED', 'STALE'])
 const FAILING = new Set(['FAILURE', 'ERROR'])
 const NO_PR = /no pull requests? found|not a git repository|could not determine/i
+const MERGE_STATES = new Set<string>(['CLEAN', 'HAS_HOOKS', 'BEHIND', 'BLOCKED', 'DIRTY', 'DRAFT', 'UNSTABLE'])
+const PR_URL = /https:\/\/github\.com\/([\w.-]+)\/([\w.-]+)\/pull\/(\d+)/g
 
 export function checkState(entry: Record<string, unknown>): CheckState {
   if (entry.__typename === 'StatusContext') {
@@ -42,7 +47,7 @@ export function checkState(entry: Record<string, unknown>): CheckState {
   return 'fail'
 }
 
-export function parsePrView(json: string): Omit<PullRequest, 'threads'> {
+export function parsePrView(json: string): Omit<PullRequest, 'threads' | 'resolvedThreads'> {
   const view = JSON.parse(json) as Record<string, unknown>
   const rollup = Array.isArray(view.statusCheckRollup)
     ? (view.statusCheckRollup as Record<string, unknown>[])
@@ -53,6 +58,8 @@ export function parsePrView(json: string): Omit<PullRequest, 'threads'> {
   }))
   const decision = view.reviewDecision
   const mergeable = view.mergeable
+  const mergeState = String(view.mergeStateStatus)
+  const author = view.author as { login?: unknown } | null | undefined
   return {
     number: Number(view.number),
     title: String(view.title),
@@ -64,6 +71,8 @@ export function parsePrView(json: string): Omit<PullRequest, 'threads'> {
       decision === 'APPROVED' || decision === 'CHANGES_REQUESTED' || decision === 'REVIEW_REQUIRED'
         ? decision
         : null,
+    mergeState: MERGE_STATES.has(mergeState) ? (mergeState as MergeState) : 'UNKNOWN',
+    author: typeof author?.login === 'string' ? author.login : 'ghost',
     checks,
   }
 }
@@ -78,6 +87,7 @@ type ThreadsAnswer = {
             path: string
             line: number | null
             comments: { nodes: { author: { login: string } | null; body: string }[] }
+            latest?: { nodes: { author: { login: string } | null }[] }
           }[]
         }
       }
@@ -85,21 +95,24 @@ type ThreadsAnswer = {
   }
 }
 
-export function parseThreads(json: string): PrThread[] {
+export function parseThreads(json: string, prAuthor: string): { threads: PrThread[]; resolvedThreads: number } {
   const answer = JSON.parse(json) as ThreadsAnswer
   const nodes = answer.data?.repository?.pullRequest?.reviewThreads?.nodes ?? []
-  return nodes
+  const threads = nodes
     .filter(thread => !thread.isResolved)
     .map(thread => {
       const first = thread.comments.nodes[0]
       const firstLine = (first?.body ?? '').trim().split('\n')[0] ?? ''
+      const lastAuthor = thread.latest?.nodes[0]?.author?.login
       return {
         path: thread.path,
         line: thread.line,
         author: first?.author?.login ?? 'ghost',
         excerpt: truncate(firstLine, EXCERPT_LENGTH),
+        isReplied: lastAuthor === prAuthor,
       }
     })
+  return { threads, resolvedThreads: nodes.length - threads.length }
 }
 
 /** Null when the branch simply has no PR, which is no error to show. */
@@ -125,6 +138,39 @@ export function settledChecks(previous: PullRequest | null, next: PullRequest | 
   return failed.length === 0
     ? `PR #${next.number}: checks passed`
     : `PR #${next.number}: ${failed.length} check${failed.length === 1 ? '' : 's'} failed (${failed.join(', ')})`
+}
+
+/** Where GitHub stands on the PR, in a word or two, and the colour to draw it in. */
+export function prStatus(pr: PullRequest): { label: string; color: string } {
+  if (pr.state === 'MERGED') return { label: 'merged', color: 'magenta' }
+  if (pr.state === 'CLOSED') return { label: 'closed', color: 'gray' }
+  if (pr.isDraft) return { label: 'draft', color: 'gray' }
+  switch (pr.reviewDecision) {
+    case 'APPROVED':
+      return { label: 'approved', color: 'green' }
+    case 'CHANGES_REQUESTED':
+      return { label: 'changes requested', color: 'red' }
+    case 'REVIEW_REQUIRED':
+      return { label: 'awaiting review', color: 'yellow' }
+    default:
+      return { label: 'open', color: 'cyan' }
+  }
+}
+
+/** Open, not a draft, and GitHub would merge it now: checks, reviews and branch rules all met. */
+export function isReadyToMerge(pr: PullRequest): boolean {
+  return pr.state === 'OPEN' && !pr.isDraft && (pr.mergeState === 'CLEAN' || pr.mergeState === 'HAS_HOOKS')
+}
+
+export type PrAddress = { owner: string; repo: string; number: number; url: string }
+
+/** Every GitHub PR link in the text, each once, as `gh pr create` prints the one it made. */
+export function prAddresses(text: string): PrAddress[] {
+  const seen = new Map<string, PrAddress>()
+  for (const [url, owner = '', repo = '', number = ''] of text.matchAll(PR_URL)) {
+    seen.set(url, { owner, repo, number: Number(number), url })
+  }
+  return [...seen.values()]
 }
 
 export function basename(path: string): string {

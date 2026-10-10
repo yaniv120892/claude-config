@@ -1,19 +1,22 @@
 import { atom, read, update } from 'claude-code'
 import type { CommandSpec, EngineInterface as Engine, Register } from 'claude-code'
 
-import type { Band, GitLocation, PrRead, PrThread, UsageLimit } from '../types'
+import type { Band, GitLocation, PrRead, PullRequest, UsageLimit } from '../types'
 import { gitWrites, OPT_OUT } from './branch-guard'
 import { credentialReason, findCredential, findTerm, parseTerms, termPattern, termReason } from './credentials'
-import { changesPr, GATED_COMMANDS, isGitWrite, runsGit } from './git-write'
+import { changesPr, createsPr, GATED_COMMANDS, isGitWrite, runsGit } from './git-write'
 import {
   basename,
   CHECK,
   CHECK_STATES,
   countChecks,
+  isReadyToMerge,
   parsePrView,
   parseThreads,
+  prAddresses,
   settledChecks,
   PR_FIELDS,
+  prStatus,
   prViewError,
   THREADS_QUERY,
 } from './pr-data'
@@ -38,6 +41,8 @@ import {
 const gitGrant = atom({ plugin: 'mods', key: 'gitGrant' } as const, false)
 const band = atom({ plugin: 'mods', key: 'band' } as const, null, { shape: 'band-3' })
 const prRead = atom({ plugin: 'mods', key: 'prRead' } as const, null)
+const sessionPrUrls = atom({ plugin: 'mods', key: 'sessionPrUrls' } as const, [])
+const sessionPrs = atom({ plugin: 'mods', key: 'sessionPrs' } as const, [], { shape: 'session-prs-1' })
 
 const GIT_GATE_COMMAND: CommandSpec = {
   name: 'git-gate',
@@ -130,6 +135,8 @@ function defaultBranchRefusal(branch: string): string {
 }
 
 const PR_POLL_MS = 90_000
+// The branch's own PR, then the newest opened this session: the band stays a few rows tall.
+const MAX_SESSION_PR_ROWS = 3
 // Bash calls a few hundred milliseconds apart share one refresh.
 const BAND_SETTLE_MS = 300
 
@@ -166,8 +173,53 @@ async function storePr($: Engine, found: PrRead): Promise<void> {
   const last = await read($, prRead)
   if (isSame(last, found)) return
   await update($, prRead, () => found)
-  const settled = isAlerting ? settledChecks(last?.pr ?? null, found.pr) : null
+  toastSettled($, last?.pr ?? null, found.pr)
+}
+
+function toastSettled($: Engine, previous: PullRequest | null, next: PullRequest | null): void {
+  const settled = isAlerting ? settledChecks(previous, next) : null
   if (settled !== null) $.ui.toast(settled, { timeoutMs: ALERT_TOAST_MS })
+}
+
+/** Rereads each PR opened this session that is still open; a merged or closed one keeps its last read. */
+async function refreshSessionPrs($: Engine): Promise<void> {
+  const cwd = await $.session.cwd()
+  const known = await read($, sessionPrUrls)
+  const urls = [...new Set([...(await listSessionPrs($, cwd)), ...known])]
+  if (!isSame(urls, known)) await update($, sessionPrUrls, () => urls)
+  if (urls.length === 0) return
+
+  const last = await read($, sessionPrs)
+  const reads = await Promise.all(
+    urls.map(async url => {
+      const previous = last.find(pr => pr.url === url) ?? null
+      if (previous !== null && previous.state !== 'OPEN') return previous
+      const found = (await readPrView($, url, cwd)).pr ?? previous
+      toastSettled($, previous, found)
+      return found
+    }),
+  )
+  const next = reads.filter(pr => pr !== null).sort((a, b) => b.number - a.number)
+  if (!isSame(last, next)) await update($, sessionPrs, () => next)
+}
+
+/** The PRs the person opened in this repository since the session began, however they were opened. */
+async function listSessionPrs($: Engine, cwd: string): Promise<string[]> {
+  const since = new Date((await $.session.usage()).startedAt).toISOString()
+  try {
+    const listed = await $.process.run(
+      ['gh', 'pr', 'list', '--author', '@me', '--state', 'all', '--search', `created:>=${since}`, '--json', 'url'],
+      { cwd, timeoutMs: 15000 },
+    )
+    return listed.exitCode === 0 ? prAddresses(listed.stdout).map(address => address.url) : []
+  } catch {
+    return []
+  }
+}
+
+async function rememberSessionPrs($: Engine, output: string): Promise<void> {
+  const urls = prAddresses(output).map(address => address.url)
+  if (urls.length > 0) await update($, sessionPrUrls, known => [...new Set([...urls, ...known])])
 }
 
 /** One toast per limit per window, kept across sessions so a new session does not repeat it. */
@@ -185,34 +237,41 @@ async function alertLimits($: Engine, limits: readonly UsageLimit[]): Promise<vo
 async function readPr($: Engine): Promise<PrRead> {
   const here = (await read($, band))?.location
   if (here !== undefined && here.branch === null) return { pr: null, error: null }
+  return readPrView($, null, await $.session.cwd())
+}
 
-  const cwd = await $.session.cwd()
+/** One PR with its review threads: the branch's own when `url` is null. */
+async function readPrView($: Engine, url: string | null, cwd: string): Promise<PrRead> {
   let view
   try {
-    view = await $.process.run(['gh', 'pr', 'view', '--json', PR_FIELDS], { cwd, timeoutMs: 15000 })
+    const target = url === null ? [] : [url]
+    view = await $.process.run(['gh', 'pr', 'view', ...target, '--json', PR_FIELDS], { cwd, timeoutMs: 15000 })
   } catch {
     return { pr: null, error: 'gh is not installed' }
   }
   if (view.exitCode !== 0) return { pr: null, error: prViewError(view.stderr) }
 
   const parsed = parsePrView(view.stdout)
-  let threads: PrThread[] = []
+  const address = prAddresses(parsed.url)[0]
+  let threads: ReturnType<typeof parseThreads> = { threads: [], resolvedThreads: 0 }
   try {
-    const answer = await $.process.run(
-      [
-        'gh', 'api', 'graphql',
-        '-f', `query=${THREADS_QUERY}`,
-        '-F', 'owner={owner}',
-        '-F', 'repo={repo}',
-        '-F', `number=${parsed.number}`,
-      ],
-      { cwd, timeoutMs: 15000 },
-    )
-    if (answer.exitCode === 0) threads = parseThreads(answer.stdout)
+    if (address !== undefined) {
+      const answer = await $.process.run(
+        [
+          'gh', 'api', 'graphql',
+          '-f', `query=${THREADS_QUERY}`,
+          '-F', `owner=${address.owner}`,
+          '-F', `repo=${address.repo}`,
+          '-F', `number=${address.number}`,
+        ],
+        { cwd, timeoutMs: 15000 },
+      )
+      if (answer.exitCode === 0) threads = parseThreads(answer.stdout, parsed.author)
+    }
   } catch {
     // The checks still show; the threads read as none.
   }
-  return { pr: { ...parsed, threads }, error: null }
+  return { pr: { ...parsed, ...threads }, error: null }
 }
 
 const ALERTED_KEY = 'alertedWindows'
@@ -238,11 +297,17 @@ function refreshPr($: Engine): Promise<void> {
     do {
       isPrRereadWanted = false
       await storePr($, await readPr($))
+      await refreshSessionPrs($)
     } while (isPrRereadWanted)
   })().finally(() => {
     prInFlight = null
   })
   return prInFlight
+}
+
+function stdoutOf(result: unknown): string {
+  const stdout = typeof result === 'object' && result !== null && 'stdout' in result ? result.stdout : ''
+  return typeof stdout === 'string' ? stdout : ''
 }
 
 function inBackground($: Engine, work: Promise<void>): void {
@@ -397,6 +462,7 @@ export const register: Register = (on, options) => {
     if (refusal !== null) return refusal
     const ran = await next(e)
     // Other commands that move the branch are caught when the turn ends.
+    if (hasStatusBand && createsPr(e.command)) await rememberSessionPrs($, stdoutOf(ran.result))
     if (hasStatusBand && runsGit(e.command)) {
       queueBandRefresh($)
       if (changesPr(e.command)) $.clock.after(0, () => inBackground($, refreshPr($)))
@@ -454,8 +520,8 @@ export const register: Register = (on, options) => {
       const { location: here, model: modelName, contextPercent: percent, usageLimits: limits, costUsd } = shown
       const now = await $.clock.now()
       const current = (await read($, prRead))?.pr ?? null
-      const counts = countChecks(current?.checks ?? [])
-      const threads = current?.threads.length ?? 0
+      const opened = (await read($, sessionPrs)).filter(pr => pr.url !== current?.url).slice(0, MAX_SESSION_PR_ROWS)
+      const rows = current === null ? opened : [current, ...opened]
       const place = here.repo !== null && here.repo !== here.dir ? `${here.repo}/${here.dir}` : here.dir
 
       return (
@@ -494,34 +560,36 @@ export const register: Register = (on, options) => {
             })}
             {limits.length === 0 && costUsd !== null && <Text dimColor> {formatCost(costUsd)}</Text>}
           </Text>
-          {current !== null && (
-            <Text wrap="truncate-end">
-              <Text dimColor>PR </Text>
-              <Text bold>#{current.number}</Text>
-              {current.isDraft && <Text dimColor> draft</Text>}
-              {current.state !== 'OPEN' && <Text color="magenta"> {current.state.toLowerCase()}</Text>}
-              {(['fail', 'pending', 'pass'] as const).map(
-                state =>
-                  counts[state] > 0 && (
-                    <Text color={CHECK[state].color}>
-                      {' '}
-                      {CHECK[state].mark}
-                      {counts[state]}
-                    </Text>
-                  ),
-              )}
-              {threads > 0 && (
-                <Text color="yellow">
-                  {' '}
-                  · {threads} open thread{threads === 1 ? '' : 's'}
-                </Text>
-              )}
-              {current.mergeable === 'CONFLICTING' && <Text color="red"> · conflicts</Text>}
-              {current.reviewDecision === 'APPROVED' && <Text color="green"> · approved</Text>}
-              {current.reviewDecision === 'CHANGES_REQUESTED' && <Text color="red"> · changes requested</Text>}
-              <Text dimColor> · {current.title}</Text>
-            </Text>
-          )}
+          {rows.map(pr => {
+            const status = prStatus(pr)
+            const counts = countChecks(pr.checks)
+            const replied = pr.threads.filter(thread => thread.isReplied).length
+            const open = pr.threads.length - replied
+            return (
+              <Text key={pr.url} wrap="truncate-end">
+                <Text dimColor>PR </Text>
+                <Text bold>#{pr.number}</Text>
+                <Text color={status.color}> {status.label}</Text>
+                {(['fail', 'pending', 'pass'] as const).map(
+                  state =>
+                    counts[state] > 0 && (
+                      <Text key={state} color={CHECK[state].color}>
+                        {' '}
+                        {CHECK[state].mark}
+                        {counts[state]}
+                      </Text>
+                    ),
+                )}
+                {open > 0 && <Text color="yellow"> · {open} open</Text>}
+                {replied > 0 && <Text dimColor> · {replied} replied</Text>}
+                {pr.resolvedThreads > 0 && <Text dimColor> · {pr.resolvedThreads} resolved</Text>}
+                {pr.state === 'OPEN' && pr.mergeable === 'CONFLICTING' && <Text color="red"> · conflicts</Text>}
+                {pr.state === 'OPEN' && pr.mergeState === 'BEHIND' && <Text color="yellow"> · behind base</Text>}
+                {isReadyToMerge(pr) && <Text color="green" bold> · ready to merge</Text>}
+                <Text dimColor> · {pr.title}</Text>
+              </Text>
+            )
+          })}
         </Box>
       )
     })
@@ -592,6 +660,7 @@ export const register: Register = (on, options) => {
                 {thread.line === null ? '' : `:${thread.line}`}
               </Text>{' '}
               <Text dimColor>{thread.author}:</Text> {thread.excerpt}
+              {thread.isReplied && <Text dimColor> (replied)</Text>}
             </Text>
           ))}
 
