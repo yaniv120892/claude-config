@@ -8,7 +8,6 @@ import {
   basename,
   CHECK,
   CHECK_STATES,
-  contextColor,
   countChecks,
   parsePrView,
   parseThreads,
@@ -18,13 +17,14 @@ import {
 } from './pr-data'
 import { asTally, countSkill, formatTally } from './tally'
 import { truncate } from './text'
+import { usageColor, usageLimits } from './usage'
 
 // Every hook lives in this file: the engine follows `$` only into functions
 // declared beside the hook that passes it. The pure logic sits in the files
 // imported above, which is what the tests cover.
 
 const gitGrant = atom({ plugin: 'mods', key: 'gitGrant' } as const, false)
-const band = atom({ plugin: 'mods', key: 'band' } as const, null)
+const band = atom({ plugin: 'mods', key: 'band' } as const, null, { shape: 'band-2' })
 const prRead = atom({ plugin: 'mods', key: 'prRead' } as const, null)
 
 const GIT_GATE_COMMAND: CommandSpec = {
@@ -168,7 +168,12 @@ function inBackground($: Engine, work: Promise<void>): void {
 async function refreshBand($: Engine): Promise<void> {
   const [location, modelName, usage] = await Promise.all([readLocation($), $.session.model(), $.session.usage()])
   const { percent } = usage.context
-  const next: Band = { location, model: modelName, contextPercent: percent === undefined ? null : Math.round(percent) }
+  const next: Band = {
+    location,
+    model: modelName,
+    contextPercent: percent === undefined ? null : Math.round(percent),
+    usageLimits: usageLimits(usage.rateLimits),
+  }
   const last = await read($, band)
   if (isSame(last, next)) return
   await update($, band, () => next)
@@ -336,12 +341,23 @@ export const register: Register = (on, options) => {
       return completed
     })
 
+    // A window can move a point mid-turn, while the model runs tools. Only the
+    // limits are patched: the rest of the band is reread when the turn ends.
+    on('session.measure', async ($, e, next) => {
+      const measured = await next(e)
+      if (e.changed.includes('rateLimits')) {
+        const limits = usageLimits(e.rateLimits)
+        await update($, band, last => (last === null ? null : { ...last, usageLimits: limits }))
+      }
+      return measured
+    })
+
     on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
       const shown = await read($, band)
       if (e.props.hasSurvey || shown === null) return next(e)
 
       const { Box, Text } = $.ui.resolve(e)
-      const { location: here, model: modelName, contextPercent: percent } = shown
+      const { location: here, model: modelName, contextPercent: percent, usageLimits: limits } = shown
       const current = (await read($, prRead))?.pr ?? null
       const counts = countChecks(current?.checks ?? [])
       const threads = current?.threads.length ?? 0
@@ -368,7 +384,13 @@ export const register: Register = (on, options) => {
               </Text>
             )}
             <Text color="magenta"> [{modelName}]</Text>
-            {percent !== null && <Text color={contextColor(percent)}> ctx:{percent}%</Text>}
+            {percent !== null && <Text color={usageColor(percent)}> ctx:{percent}%</Text>}
+            {limits.map(limit => (
+              <Text key={limit.label} color={usageColor(limit.percent)}>
+                {' '}
+                {limit.label}:{limit.percent}%
+              </Text>
+            ))}
           </Text>
           {current !== null && (
             <Text wrap="truncate-end">

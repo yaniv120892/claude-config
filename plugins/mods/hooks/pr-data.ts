@@ -113,12 +113,6 @@ export function countChecks(checks: readonly PrCheck[]): Record<CheckState, numb
   return counts
 }
 
-export function contextColor(percent: number): string {
-  if (percent >= 75) return 'red'
-  if (percent >= 50) return 'yellow'
-  return 'green'
-}
-
 export function basename(path: string): string {
   return path.replace(/\/+$/, '').split('/').pop() ?? path
 }

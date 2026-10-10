@@ -47,8 +47,8 @@ When writing a rule, use this format:
 ## Status Line
 
 The status line is the `mods` plugin's status band (robbyrussell theme): `➜  dir
-git:(branch) ✗ [model] ctx:42%`, context colored green below 50%, yellow below 75%, red
-above. The README's *Mods* section has the rest.
+git:(branch) ✗ [model] ctx:42% 5h:23% wk:41%`, the context and the 5-hour and weekly usage
+limits each colored green below 50%, yellow below 75%, red from 75% up. The README's *Mods* section has the rest.
 
 ## Communication Preferences
 

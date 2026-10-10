@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { checkState, contextColor, countChecks, parsePrView, parseThreads, prViewError } from '../hooks/pr-data'
+import { checkState, countChecks, parsePrView, parseThreads, prViewError } from '../hooks/pr-data'
 import { PR_VIEW, THREADS } from './fixtures'
 
 describe('parsePrView', () => {
@@ -48,12 +48,5 @@ describe('helpers', () => {
     expect(prViewError('no pull requests found for branch "x"')).toBe(null)
     expect(prViewError('HTTP 401: Bad credentials\nmore')).toBe('HTTP 401: Bad credentials')
     expect(prViewError('')).toBe('gh failed')
-  })
-
-  test('contextColor matches the old statusline thresholds', () => {
-    expect(contextColor(49)).toBe('green')
-    expect(contextColor(50)).toBe('yellow')
-    expect(contextColor(74)).toBe('yellow')
-    expect(contextColor(75)).toBe('red')
   })
 })
