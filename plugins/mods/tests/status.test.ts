@@ -70,6 +70,14 @@ const PANE_PROPS = {
   view: {},
 }
 
+/** The band's PR rows, each as one line. */
+async function prRows($: Engine): Promise<string[]> {
+  const band = await $.ui.mount({ plugin: 'mods', surface: 'terminal', component: 'AbovePrompt', props: BAND_PROPS })
+  const rows = (await band.findAll({ type: 'Text' })).map(element => element.text).filter(text => text.startsWith('PR #'))
+  await band.unmount()
+  return rows
+}
+
 describe('the status band', () => {
   test('draws the old statusline and the PR row', async ($, on) => {
     const { clock } = fakeRepo(on, { hasPr: true })
@@ -228,13 +236,6 @@ describe('the session PRs', () => {
     statusCheckRollup: [{ __typename: 'CheckRun', name: 'tests', status: 'COMPLETED', conclusion: 'SUCCESS' }],
     ...fields,
   })
-  /** The band's PR rows, each as one line. */
-  const prRows = async ($: Engine) => {
-    const band = await $.ui.mount({ plugin: 'mods', surface: 'terminal', component: 'AbovePrompt', props: BAND_PROPS })
-    const rows = (await band.findAll({ type: 'Text' })).map(element => element.text).filter(text => text.startsWith('PR #'))
-    await band.unmount()
-    return rows
-  }
 
   test('adds the PR a gh pr create printed, even on a branch with no PR', NO_GATE, async ($, on) => {
     const { clock, pr, bash } = fakeRepo(on, { hasPr: false })
@@ -293,5 +294,57 @@ describe('the session PRs', () => {
     await $.command.run(slash('pr'))
     expect([...ghCalls].sort()).toEqual(['gh api graphql', 'gh pr list', 'gh pr view'])
     expect((await prRows($)).filter(row => row.startsWith('PR #51'))).toHaveLength(1)
+  })
+})
+
+describe('the PR skill checklist', () => {
+  /** On the branch of PR #51, the store empty unless `stored` fills it. */
+  const setup = async ($: Engine, on: On, stored?: Record<string, unknown>) => {
+    const repo = fakeRepo(on, { hasPr: true })
+    mock.store(on, stored)
+    on('skill.prompt', ($, e) => ({ text: e.text }))
+    await $.tool.call({ tool: 'Bash', command: 'git status' })
+    return repo
+  }
+  const row51 = async ($: Engine) => (await prRows($)).find(row => row.startsWith('PR #51'))
+
+  test('ticks a skill run on the PR branch on its row and in /pr', async ($, on) => {
+    const { clock } = await setup($, on)
+    await $.skill.prompt({ skill: 'simplify', text: 'Simplify.' })
+    await $.skill.prompt({ skill: 'pr-workflows:pr-second-review', text: 'Recheck.' })
+    await clock.advance(1000)
+    await $.command.run(slash('pr'))
+    expect(await row51($)).toContain('✓simplify ○review ○prune')
+
+    const pane = await $.ui.mount({ plugin: 'mods', surface: 'terminal', component: 'Pane', requestId: 'mods-pr', props: PANE_PROPS })
+    const lines = (await pane.findAll({ type: 'Text' })).map(element => element.text).join('|')
+    expect(lines).toContain('✓ simplify ran 2026-10-05')
+    expect(lines).toContain('○ pr-review not run')
+    await pane.unmount()
+  })
+
+  test('counts pr-review for the PR its arguments name', async ($, on) => {
+    const { clock } = await setup($, on)
+    await $.skill.prompt({ skill: 'pr-workflows:pr-review', text: 'Review.\n\nARGUMENTS: 51' })
+    await clock.advance(1000)
+    await $.command.run(slash('pr'))
+    expect(await row51($)).toContain('○simplify ✓review ○prune')
+  })
+
+  test('shows the runs an earlier session stored', async ($, on) => {
+    on('command.register', ($, e) => ({ value: { command: e.name } }))
+    on('session.start', ($, e) => ({ cwd: e.cwd }))
+    const { clock } = await setup($, on, { prSkillRuns: { '/w/claude-config@feat/mods': { 'prune-comments': '2026-10-04T09:00:00.000Z' } } })
+    await $.session.start({ cwd: '/w/claude-config/.worktrees/mods', surface: 'terminal', isInteractive: true })
+    await clock.advance(1000)
+    expect(await row51($)).toContain('○simplify ○review ✓prune')
+  })
+
+  test('stays off the band when switched off', { options: { prSkills: false } }, async ($, on) => {
+    const { clock } = await setup($, on)
+    await $.skill.prompt({ skill: 'simplify', text: 'Simplify.' })
+    await clock.advance(1000)
+    await $.command.run(slash('pr'))
+    expect(await row51($)).not.toContain('simplify')
   })
 })

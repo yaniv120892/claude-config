@@ -1,7 +1,7 @@
 import type { CheckState, MergeState, PrCheck, PrThread, PullRequest } from '../types'
 import { truncate } from './text'
 
-export const PR_FIELDS = 'number,title,url,state,isDraft,mergeable,reviewDecision,mergeStateStatus,author,statusCheckRollup'
+export const PR_FIELDS = 'number,title,url,headRefName,state,isDraft,mergeable,reviewDecision,mergeStateStatus,author,statusCheckRollup'
 export const THREADS_QUERY = `query($owner: String!, $repo: String!, $number: Int!) {
   repository(owner: $owner, name: $repo) {
     pullRequest(number: $number) {
@@ -64,6 +64,7 @@ export function parsePrView(json: string): Omit<PullRequest, 'threads' | 'resolv
     number: Number(view.number),
     title: String(view.title),
     url: String(view.url),
+    headRefName: String(view.headRefName ?? ''),
     state: view.state === 'MERGED' || view.state === 'CLOSED' ? view.state : 'OPEN',
     isDraft: view.isDraft === true,
     mergeable: mergeable === 'MERGEABLE' || mergeable === 'CONFLICTING' ? mergeable : 'UNKNOWN',

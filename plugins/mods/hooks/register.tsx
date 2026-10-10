@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { CommandSpec, EngineInterface as Engine, Register } from 'claude-code'
 
-import type { Band, GitLocation, PrRead, UsageLimit } from '../types'
+import type { Band, GitLocation, PrRead, PrSkillRuns, UsageLimit } from '../types'
 import { gitWrites, OPT_OUT } from './branch-guard'
 import { credentialReason, findCredential, findTerm, parseTerms, termPattern, termReason } from './credentials'
 import { changesPr, createsPr, GATED_COMMANDS, isGitWrite, runsGit } from './git-write'
@@ -19,6 +19,8 @@ import {
   prViewError,
   THREADS_QUERY,
 } from './pr-data'
+import { PR_SKILLS, prSkillOf, prSkillRuns, recordRun, runTargets } from './pr-skills'
+import { asRecord } from './store'
 import { asTally, countSkill, formatTally } from './tally'
 import { truncate } from './text'
 import {
@@ -41,7 +43,8 @@ const gitGrant = atom({ plugin: 'mods', key: 'gitGrant' } as const, false)
 const band = atom({ plugin: 'mods', key: 'band' } as const, null, { shape: 'band-3' })
 const prRead = atom({ plugin: 'mods', key: 'prRead' } as const, null)
 const sessionPrUrls = atom({ plugin: 'mods', key: 'sessionPrUrls' } as const, [])
-const sessionPrs = atom({ plugin: 'mods', key: 'sessionPrs' } as const, [], { shape: 'session-prs-1' })
+const sessionPrs = atom({ plugin: 'mods', key: 'sessionPrs' } as const, [], { shape: 'session-prs-2' })
+const prSkills = atom({ plugin: 'mods', key: 'prSkills' } as const, { root: null, runs: {} })
 
 const GIT_GATE_COMMAND: CommandSpec = {
   name: 'git-gate',
@@ -156,19 +159,17 @@ async function git($: Engine, cwd: string, args: string[]): Promise<{ exitCode: 
   }
 }
 
+/** Null on a detached HEAD, or where git cannot say. */
+async function currentBranch($: Engine, cwd: string): Promise<string | null> {
+  const branch = await git($, cwd, ['branch', '--show-current'])
+  return branch?.exitCode === 0 && branch.stdout ? branch.stdout : null
+}
+
 async function readLocation($: Engine): Promise<GitLocation> {
   const [cwd, repo] = await Promise.all([$.session.cwd(), $.session.repo()])
   if (repo === null) return { repo: null, dir: basename(cwd), branch: null, isDirty: false }
-  const [branch, status] = await Promise.all([
-    git($, cwd, ['branch', '--show-current']),
-    git($, cwd, ['status', '--porcelain']),
-  ])
-  return {
-    repo: basename(repo.root),
-    dir: basename(cwd),
-    branch: branch?.exitCode === 0 && branch.stdout ? branch.stdout : null,
-    isDirty: Boolean(status?.stdout),
-  }
+  const [branch, status] = await Promise.all([currentBranch($, cwd), git($, cwd, ['status', '--porcelain'])])
+  return { repo: basename(repo.root), dir: basename(cwd), branch, isDirty: Boolean(status?.stdout) }
 }
 
 async function storePr($: Engine, reading: Promise<PrRead>): Promise<void> {
@@ -273,6 +274,28 @@ async function readPrView($: Engine, url: string | null, cwd: string): Promise<P
     // The checks still show; the threads read as none.
   }
   return { pr: { ...parsed, ...threads }, error: null }
+}
+
+const PR_SKILLS_KEY = 'prSkillRuns'
+
+async function loadPrSkills($: Engine): Promise<void> {
+  const [repo, stored] = await Promise.all([$.session.repo(), $.store.get(PR_SKILLS_KEY)])
+  await update($, prSkills, () => ({ root: repo?.root ?? null, runs: asRecord<PrSkillRuns>(stored) }))
+}
+
+async function recordPrSkill($: Engine, skill: string, text: string): Promise<void> {
+  const [repo, cwd, stored, now] = await Promise.all([
+    $.session.repo(),
+    $.session.cwd(),
+    $.store.get(PR_SKILLS_KEY),
+    $.clock.now(),
+  ])
+  if (repo === null) return
+  const targets = runTargets(repo.root, await currentBranch($, cwd), text)
+  if (targets.length === 0) return
+  const runs = recordRun(asRecord<PrSkillRuns>(stored), targets, skill, new Date(now).toISOString())
+  await $.store.set(PR_SKILLS_KEY, runs)
+  await update($, prSkills, () => ({ root: repo.root, runs }))
 }
 
 const ALERTED_KEY = 'alertedWindows'
@@ -435,6 +458,7 @@ export const register: Register = (on, options) => {
   const hasBranchGuard = isOn('branchGuard')
   const hasStatusBand = isOn('statusBand')
   isAlerting = isOn('alerts')
+  const hasPrSkills = isOn('prSkills') && (hasStatusBand || isOn('prPane'))
   const blockedTerms = termPattern(parseTerms(options.blockedTerms))
   const commands = [
     ...(hasGitGate ? [GIT_GATE_COMMAND] : []),
@@ -445,6 +469,7 @@ export const register: Register = (on, options) => {
   on('session.start', async ($, e, next) => {
     await Promise.all(commands.map(command => $.command.register(command)))
     const started = await next(e)
+    if (hasPrSkills) $.clock.after(0, () => inBackground($, loadPrSkills($)))
     if (hasStatusBand) {
       // On timers, not in this dispatch, so the first prompt does not wait on git or gh.
       $.clock.after(0, () => {
@@ -524,6 +549,7 @@ export const register: Register = (on, options) => {
       const opened = (await read($, sessionPrs)).filter(pr => pr.url !== current?.url).slice(0, MAX_SESSION_PR_ROWS)
       const rows = current === null ? opened : [current, ...opened]
       const place = here.repo !== null && here.repo !== here.dir ? `${here.repo}/${here.dir}` : here.dir
+      const skills = hasPrSkills ? await read($, prSkills) : null
 
       return (
         <Box flexDirection="column">
@@ -566,6 +592,8 @@ export const register: Register = (on, options) => {
             const counts = countChecks(pr.checks)
             const replied = pr.threads.filter(thread => thread.isReplied).length
             const open = pr.threads.length - replied
+            // A merged or closed PR is past the point where the skills matter.
+            const skillsRan = skills === null || pr.state !== 'OPEN' ? null : prSkillRuns(skills.runs, skills.root, pr)
             return (
               <Text key={pr.url} wrap="truncate-end">
                 <Text dimColor>PR </Text>
@@ -587,6 +615,21 @@ export const register: Register = (on, options) => {
                 {pr.state === 'OPEN' && pr.mergeable === 'CONFLICTING' && <Text color="red"> · conflicts</Text>}
                 {pr.state === 'OPEN' && pr.mergeState === 'BEHIND' && <Text color="yellow"> · behind base</Text>}
                 {isReadyToMerge(pr) && <Text color="green" bold> · ready to merge</Text>}
+                {skillsRan !== null && (
+                  <Text>
+                    {' ·'}
+                    {PR_SKILLS.map(({ skill, label }) => {
+                      const ran = skill in skillsRan
+                      return (
+                        <Text key={skill} color={ran ? 'green' : undefined} dimColor={!ran}>
+                          {' '}
+                          {ran ? '✓' : '○'}
+                          {label}
+                        </Text>
+                      )
+                    })}
+                  </Text>
+                )}
                 <Text dimColor> · {pr.title}</Text>
               </Text>
             )
@@ -619,6 +662,8 @@ export const register: Register = (on, options) => {
       }
 
       const current = last.pr
+      const skills = hasPrSkills ? await read($, prSkills) : null
+      const skillsRan = skills === null ? null : prSkillRuns(skills.runs, skills.root, current)
       const checks = [...current.checks].sort((a, b) => CHECK_STATES.indexOf(a.state) - CHECK_STATES.indexOf(b.state))
       const counts = countChecks(current.checks)
       return (
@@ -665,6 +710,21 @@ export const register: Register = (on, options) => {
             </Text>
           ))}
 
+          {skillsRan !== null && (
+            <Box flexDirection="column">
+              <Text bold>{'\n'}PR skills</Text>
+              {PR_SKILLS.map(({ skill }) => {
+                const ranAt = skillsRan[skill]
+                return (
+                  <Text key={skill} wrap="truncate-end">
+                    {ranAt === undefined ? <Text dimColor>○</Text> : <Text color="green">✓</Text>} {skill}
+                    <Text dimColor> {ranAt === undefined ? 'not run' : `ran ${ranAt.slice(0, 10)}`}</Text>
+                  </Text>
+                )
+              })}
+            </Box>
+          )}
+
           <Text> </Text>
           <Box flexDirection="row" gap={1}>
             {refresh}
@@ -709,14 +769,21 @@ export const register: Register = (on, options) => {
 
   // skill.prompt fires however a skill loads: typed as /name, the Skill tool,
   // or preloaded into a subagent.
-  if (isOn('skillTally')) {
+  const hasSkillTally = isOn('skillTally')
+  if (hasSkillTally || hasPrSkills) {
     on('skill.prompt', async ($, e, next) => {
       const prompted = await next(e)
-      const now = new Date(await $.clock.now()).toISOString()
-      await $.store.set(TALLY_KEY, countSkill(asTally(await $.store.get(TALLY_KEY)), e.skill, now))
+      const prSkill = hasPrSkills ? prSkillOf(e.skill) : null
+      if (prSkill !== null) inBackground($, recordPrSkill($, prSkill, e.text))
+      if (hasSkillTally) {
+        const now = new Date(await $.clock.now()).toISOString()
+        await $.store.set(TALLY_KEY, countSkill(asTally(await $.store.get(TALLY_KEY)), e.skill, now))
+      }
       return prompted
     })
+  }
 
+  if (hasSkillTally) {
     on('command.run', { command: 'skill-tally' }, async ($, e) => {
       if (e.args.trim() === 'reset') {
         await $.store.delete(TALLY_KEY)

@@ -1,6 +1,7 @@
 import type { SessionRateLimit } from 'claude-code'
 
 import type { UsageLimit } from '../types'
+import { asRecord } from './store'
 
 const LIMIT_LABELS = [
   ['five_hour', '5h', '5-hour'],
@@ -58,7 +59,7 @@ export function markAlerted(alerted: AlertedWindows, limits: readonly UsageLimit
 }
 
 export function asAlertedWindows(stored: unknown): AlertedWindows {
-  return stored !== null && typeof stored === 'object' && !Array.isArray(stored) ? (stored as AlertedWindows) : {}
+  return asRecord<AlertedWindows>(stored)
 }
 
 export function alertText(limit: UsageLimit, now: number): string {

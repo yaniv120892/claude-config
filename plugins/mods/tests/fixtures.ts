@@ -2,6 +2,7 @@ export const PR_VIEW = {
   number: 51,
   title: 'feat(mods): add the mods plugin',
   url: 'https://github.com/owner/claude-config/pull/51',
+  headRefName: 'feat/mods',
   state: 'OPEN',
   isDraft: false,
   mergeable: 'CONFLICTING',

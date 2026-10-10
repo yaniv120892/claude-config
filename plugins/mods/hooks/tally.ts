@@ -1,7 +1,9 @@
+import { asRecord } from './store'
+
 export type Tally = Record<string, { count: number; lastUsed: string }>
 
 export function asTally(stored: unknown): Tally {
-  return stored !== null && typeof stored === 'object' && !Array.isArray(stored) ? (stored as Tally) : {}
+  return asRecord<Tally>(stored)
 }
 
 export function countSkill(tally: Tally, skill: string, now: string): Tally {
