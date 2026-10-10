@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { githubSlug, prSkillOf, prSkillRuns, recordRun, runTargets } from '../hooks/pr-skills'
+import { argumentsLine, prReferences, prSkillOf, prSkillRuns, recordRun } from '../hooks/pr-skills'
 
 const ROOT = '/w/claude-config'
 const URL_63 = 'https://github.com/owner/claude-config/pull/63'
@@ -20,42 +20,26 @@ describe('prSkillOf', () => {
   })
 })
 
-describe('runTargets', () => {
-  const place = { root: ROOT, branch: 'feat/x', slug: 'owner/claude-config' }
-  const args = (line: string) => `The skill.\n\nARGUMENTS: ${line}`
-
-  test('counts a run with no arguments for the branch', () => {
-    expect(runTargets(place, 'Simplify the diff.')).toEqual([`${ROOT}@feat/x`])
-    expect(runTargets({ ...place, branch: null }, 'Simplify the diff.')).toEqual([])
+describe('prReferences', () => {
+  test('reads links, owner/repo#n and numbers, past flags and effort levels', () => {
+    expect(prReferences(`high 64 #65 ${URL_63}/files --comment other/repo#9`)).toEqual({
+      urls: [URL_63, 'https://github.com/other/repo/pull/9'],
+      numbers: [64, 65],
+    })
   })
 
-  test('counts a run for each PR its arguments name, by URL', () => {
-    const URL_64 = 'https://github.com/owner/claude-config/pull/64'
-    const URL_OTHER = 'https://github.com/other/repo/pull/9'
-    expect(runTargets(place, args(`63 #64 ${URL_63} other/repo#9`))).toEqual([URL_63, URL_64, URL_OTHER])
-  })
-
-  test('counts a run for the branch when any argument is not a PR', () => {
-    expect(runTargets(place, args('3 files'))).toEqual([`${ROOT}@feat/x`])
-    expect(runTargets(place, args(`${URL_63} --comment`))).toEqual([`${ROOT}@feat/x`])
-  })
-
-  test('cannot name a bare number without a GitHub remote, so falls back to the branch', () => {
-    expect(runTargets({ ...place, slug: null }, args('63'))).toEqual([`${ROOT}@feat/x`])
-    expect(runTargets({ ...place, slug: null }, args('owner/claude-config#63'))).toEqual([URL_63])
-  })
-
-  test('reads PR links only from the arguments line, never from the skill text', () => {
-    expect(runTargets(place, `See ${URL_63} for an example.`)).toEqual([`${ROOT}@feat/x`])
+  test('is null when nothing names a PR, or anything left is not one', () => {
+    expect(prReferences('')).toBe(null)
+    expect(prReferences('--comment high')).toBe(null)
+    expect(prReferences('3 files')).toBe(null)
+    expect(prReferences('plugins/mods')).toBe(null)
   })
 })
 
-describe('githubSlug', () => {
-  test('reads owner/repo from an SSH or HTTPS remote', () => {
-    expect(githubSlug('git@github.com:owner/claude-config.git')).toBe('owner/claude-config')
-    expect(githubSlug('https://github.com/owner/claude-config')).toBe('owner/claude-config')
-    expect(githubSlug('git@gitlab.com:owner/repo.git')).toBe(null)
-    expect(githubSlug(null)).toBe(null)
+describe('argumentsLine', () => {
+  test('reads the line the engine appends, never PR links elsewhere in the skill text', () => {
+    expect(argumentsLine(`See ${URL_63}.\n\nARGUMENTS: 63`)).toBe(' 63')
+    expect(argumentsLine(`See ${URL_63}.`)).toBe('')
   })
 })
 

@@ -11,51 +11,45 @@ export const PR_SKILLS = [
 ] as const
 
 // The engine appends a skill's arguments as this line when the skill's text has no
-// `$ARGUMENTS` of its own; a PR named there is the one the skill ran on.
+// `$ARGUMENTS` of its own: the fallback when the call that loaded it was not seen.
 const ARGUMENTS_LINE = /^ARGUMENTS:(.*)$/gm
 const SLUG_PR = /^([\w.-]+\/[\w.-]+)#(\d+)$/
-const BARE_PR = /^#?(\d+)$/
-const GITHUB_REMOTE = /github\.com[:/]([\w.-]+\/[\w.-]+?)(?:\.git)?\/?$/
+const NUMBER_PR = /^#?(\d+)$/
+// code-review's effort levels, which sit beside a PR number in its arguments.
+const EFFORT_LEVELS = new Set(['low', 'medium', 'high', 'xhigh', 'max', 'ultra'])
 
-export type RunPlace = {
-  root: string
-  branch: string | null
-  /** `owner/repo` of the session's GitHub remote, so a bare PR number can be named by its URL. */
-  slug: string | null
-}
+/** The PRs a skill's arguments name: links as given, numbers for gh to resolve in the session's repo. */
+export type PrReferences = { urls: string[]; numbers: number[] }
 
 export function prSkillOf(skill: string): string | null {
   const name = skill.slice(skill.lastIndexOf(':') + 1)
   return PR_SKILLS.some(entry => entry.skill === name) ? name : null
 }
 
-export function githubSlug(remote: string | null): string | null {
-  return remote === null ? null : (GITHUB_REMOTE.exec(remote)?.[1] ?? null)
-}
-
-const branchKey = (root: string, branch: string) => `${root}@${branch}`
-const prUrl = (slug: string, number: string) => `https://github.com/${slug}/pull/${number}`
-
-/** The PR URL a single argument names, or null when it is not a PR reference. */
-function prReference(token: string, slug: string | null): string | null {
-  const url = prAddresses(token)[0]?.url
-  if (url !== undefined && url === token.replace(/\/$/, '')) return url
-  const slugged = SLUG_PR.exec(token)
-  if (slugged !== null) return prUrl(slugged[1] ?? '', slugged[2] ?? '')
-  const bare = BARE_PR.exec(token)
-  return bare !== null && slug !== null ? prUrl(slug, bare[1] ?? '') : null
+export function argumentsLine(text: string): string {
+  return [...text.matchAll(ARGUMENTS_LINE)].map(match => match[1] ?? '').join(' ')
 }
 
 /**
- * What a skill run counts for: the PRs its arguments name when every argument names one,
- * else the branch it ran on, so `/simplify 3 files` is not read as PR #3.
+ * The PRs the arguments name, once flags and effort levels are set aside; null when nothing
+ * is left or anything left is not a PR, so `/simplify 3 files` is not read as PR #3.
  */
-export function runTargets(place: RunPlace, text: string): string[] {
-  const tokens = [...text.matchAll(ARGUMENTS_LINE)].flatMap(match => (match[1] ?? '').split(/\s+/)).filter(Boolean)
-  const urls = tokens.map(token => prReference(token, place.slug)).filter(url => url !== null)
-  if (tokens.length > 0 && urls.length === tokens.length) return [...new Set(urls)]
-  return place.branch === null ? [] : [branchKey(place.root, place.branch)]
+export function prReferences(args: string): PrReferences | null {
+  const tokens = args.split(/\s+/).filter(token => token !== '' && !token.startsWith('-') && !EFFORT_LEVELS.has(token))
+  const found: PrReferences = { urls: [], numbers: [] }
+  for (const token of tokens) {
+    const link = prAddresses(token)[0]
+    const slugged = SLUG_PR.exec(token)
+    const numbered = NUMBER_PR.exec(token)
+    if (link !== undefined && token.startsWith(link.url)) found.urls.push(link.url)
+    else if (slugged !== null) found.urls.push(`https://github.com/${slugged[1]}/pull/${slugged[2]}`)
+    else if (numbered !== null) found.numbers.push(Number(numbered[1]))
+    else return null
+  }
+  return tokens.length === 0 ? null : found
 }
+
+export const branchKey = (root: string, branch: string) => `${root}@${branch}`
 
 export function recordRun(runs: PrSkillRuns, targets: readonly string[], skill: string, now: string): PrSkillRuns {
   const next = { ...runs }

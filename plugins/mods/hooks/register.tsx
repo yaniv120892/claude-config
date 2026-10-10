@@ -19,7 +19,7 @@ import {
   prViewError,
   THREADS_QUERY,
 } from './pr-data'
-import { githubSlug, PR_SKILLS, prSkillOf, prSkillRuns, recordRun, runTargets } from './pr-skills'
+import { argumentsLine, branchKey, PR_SKILLS, prReferences, prSkillOf, prSkillRuns, recordRun } from './pr-skills'
 import { asRecord } from './store'
 import { asTally, countSkill, formatTally } from './tally'
 import { truncate } from './text'
@@ -283,17 +283,34 @@ async function loadPrSkills($: Engine): Promise<void> {
   await update($, prSkills, () => ({ root: repo?.root ?? null, runs: asRecord<PrSkillRuns>(stored) }))
 }
 
-async function recordPrSkill($: Engine, skill: string, text: string): Promise<void> {
-  const [repo, cwd, stored, now] = await Promise.all([
-    $.session.repo(),
-    $.session.cwd(),
-    $.store.get(PR_SKILLS_KEY),
-    $.clock.now(),
-  ])
+/** gh resolves a number against the repository a PR there would open on, a fork's upstream included. */
+async function prUrlOf($: Engine, cwd: string, number: number): Promise<string | null> {
+  try {
+    const view = await $.process.run(['gh', 'pr', 'view', String(number), '--json', 'url'], { cwd, timeoutMs: 15000 })
+    return view.exitCode === 0 ? (prAddresses(view.stdout)[0]?.url ?? null) : null
+  } catch {
+    return null
+  }
+}
+
+/** The PRs the arguments name, else the branch the session is on. */
+async function runTargets($: Engine, root: string, cwd: string, args: string): Promise<string[]> {
+  const named = prReferences(args)
+  if (named !== null) {
+    const resolved = await Promise.all(named.numbers.map(number => prUrlOf($, cwd, number)))
+    const urls = [...new Set([...named.urls, ...resolved.filter(url => url !== null)])]
+    if (urls.length > 0) return urls
+  }
+  const branch = await currentBranch($, cwd)
+  return branch === null ? [] : [branchKey(root, branch)]
+}
+
+async function recordPrSkill($: Engine, skill: string, args: string): Promise<void> {
+  const [repo, cwd] = await Promise.all([$.session.repo(), $.session.cwd()])
   if (repo === null) return
-  const place = { root: repo.root, branch: await currentBranch($, cwd), slug: githubSlug(repo.remote) }
-  const targets = runTargets(place, text)
+  const targets = await runTargets($, repo.root, cwd, args)
   if (targets.length === 0) return
+  const [stored, now] = await Promise.all([$.store.get(PR_SKILLS_KEY), $.clock.now()])
   const runs = recordRun(asRecord<PrSkillRuns>(stored), targets, skill, new Date(now).toISOString())
   await $.store.set(PR_SKILLS_KEY, runs)
   await update($, prSkills, () => ({ root: repo.root, runs }))
@@ -309,6 +326,13 @@ let isAlerting = true
 let prInFlight: Promise<void> | null = null
 // Each run rewrites the whole stored map, so two at once would drop one.
 let prSkillWrites: Promise<void> = Promise.resolve()
+// A PR skill's arguments, from the call that loads it, until its prompt fires.
+const prSkillArgs = new Map<string, string>()
+
+function notePrSkillArgs(skill: string, args: string): void {
+  const prSkill = prSkillOf(skill)
+  if (prSkill !== null) prSkillArgs.set(prSkill, args)
+}
 let isPrRereadWanted = false
 
 /**
@@ -472,7 +496,11 @@ export const register: Register = (on, options) => {
   on('session.start', async ($, e, next) => {
     await Promise.all(commands.map(command => $.command.register(command)))
     const started = await next(e)
-    if (hasPrSkills) $.clock.after(0, () => inBackground($, loadPrSkills($)))
+    if (hasPrSkills) {
+      // Rereading on the PR poll shows the runs other open sessions record.
+      $.clock.after(0, () => inBackground($, loadPrSkills($)))
+      $.clock.every(PR_POLL_MS, () => inBackground($, loadPrSkills($)))
+    }
     if (hasStatusBand) {
       // On timers, not in this dispatch, so the first prompt does not wait on git or gh.
       $.clock.after(0, () => {
@@ -666,7 +694,7 @@ export const register: Register = (on, options) => {
 
       const current = last.pr
       const skills = hasPrSkills ? await read($, prSkills) : null
-      const skillsRan = skills === null ? null : prSkillRuns(skills.runs, skills.root, current)
+      const skillsRan = skills === null || current.state !== 'OPEN' ? null : prSkillRuns(skills.runs, skills.root, current)
       const checks = [...current.checks].sort((a, b) => CHECK_STATES.indexOf(a.state) - CHECK_STATES.indexOf(b.state))
       const counts = countChecks(current.checks)
       return (
@@ -772,13 +800,26 @@ export const register: Register = (on, options) => {
 
   // skill.prompt fires however a skill loads: typed as /name, the Skill tool,
   // or preloaded into a subagent.
+  if (hasPrSkills) {
+    on('tool.call', { tool: 'Skill' }, async ($, e, next) => {
+      notePrSkillArgs(e.skill, e.args ?? '')
+      return next(e)
+    })
+    on('command.run', async ($, e, next) => {
+      notePrSkillArgs(e.command, e.args)
+      return next(e)
+    })
+  }
+
   const hasSkillTally = isOn('skillTally')
   if (hasSkillTally || hasPrSkills) {
     on('skill.prompt', async ($, e, next) => {
       const prompted = await next(e)
       const prSkill = hasPrSkills ? prSkillOf(e.skill) : null
       if (prSkill !== null) {
-        prSkillWrites = prSkillWrites.then(() => recordPrSkill($, prSkill, e.text)).catch(error => {
+        const args = prSkillArgs.get(prSkill) ?? argumentsLine(e.text)
+        prSkillArgs.delete(prSkill)
+        prSkillWrites = prSkillWrites.then(() => recordPrSkill($, prSkill, args)).catch(error => {
           $.ui.log(`mods: ${String(error)}`, { to: 'debug' })
         })
       }

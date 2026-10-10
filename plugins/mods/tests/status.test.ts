@@ -303,6 +303,9 @@ describe('the PR skill checklist', () => {
     const repo = fakeRepo(on, { hasPr: true })
     mock.store(on, stored)
     on('skill.prompt', ($, e) => ({ text: e.text }))
+    on('tool.call', { tool: 'Skill' }, ($, e) => ({ result: { success: true, commandName: e.skill } }))
+    on('command.run', () => ({ text: '' }))
+    repo.pr.byUrl['51'] = { url: PR_VIEW.url }
     await $.tool.call({ tool: 'Bash', command: 'git status' })
     return repo
   }
@@ -326,10 +329,24 @@ describe('the PR skill checklist', () => {
   test('counts a run for the PR its arguments name, not the branch it ran on', async ($, on) => {
     const { clock } = await setup($, on)
     await $.skill.prompt({ skill: 'pr-workflows:pr-review', text: 'Review.\n\nARGUMENTS: 51' })
-    await $.skill.prompt({ skill: 'code-review', text: 'Review.\n\nARGUMENTS: owner/claude-config#57' })
+    await $.skill.prompt({ skill: 'simplify', text: 'Simplify.\n\nARGUMENTS: owner/claude-config#57' })
     await clock.advance(1000)
     await $.command.run(slash('pr'))
     expect(await row51($)).toContain('○simplify ○code-review ✓pr-review ○prune')
+  })
+
+  test('reads the arguments from the Skill call or the slash command, where the skill text has none', async ($, on) => {
+    const { clock, pr } = await setup($, on)
+    pr.byUrl['57'] = { url: 'https://github.com/owner/claude-config/pull/57' }
+    await $.tool.call({ tool: 'Skill', skill: 'code-review', args: 'high 57 --comment' })
+    await $.skill.prompt({ skill: 'code-review', text: 'Review target: `high 57 --comment`' })
+    await $.command.run(slash('prune-comments', '57'))
+    await $.skill.prompt({ skill: 'dev-workflows:prune-comments', text: 'Prune.' })
+    await $.skill.prompt({ skill: 'simplify', text: 'Simplify.' })
+    await clock.advance(1000)
+    await $.command.run(slash('pr'))
+    // Both named #57, so the branch's own #51 gets only the run that named nothing.
+    expect(await row51($)).toContain('✓simplify ○code-review ○pr-review ○prune')
   })
 
   test('shows the runs an earlier session stored', async ($, on) => {
