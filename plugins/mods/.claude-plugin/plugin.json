@@ -1,7 +1,7 @@
 {
   "name": "mods",
-  "description": "Function-hook mods for the Claude Code harness: a git write gate that asks the person, not the model; a status band with the location, model, context, 5-hour and weekly usage, and the branch's PR; toasts when a usage limit nears its cap and when the PR's checks finish; a /pr pane with buttons into the PR skills; a guard that refuses credentials in tracked files; the reply-style rule as a system-prompt section; and a /skill-tally of which skills actually fire. Each one has a switch in /config.",
-  "version": "0.3.0",
+  "description": "Function-hook mods for the Claude Code harness: a git write gate that asks the person, not the model; a guard that refuses commits and pushes on the default branch; a status band with the location, model, context, 5-hour and weekly usage, and the branch's PR; toasts when a usage limit nears its cap and when the PR's checks finish; a /pr pane with buttons into the PR skills; a guard that refuses credentials in tracked files; the reply-style rule as a system-prompt section; and a /skill-tally of which skills actually fire. Each one has a switch in /config.",
+  "version": "0.4.0",
   "author": { "name": "Yaniv Daye" },
   "homepage": "https://github.com/yaniv120892/claude-config",
   "repository": "https://github.com/yaniv120892/claude-config",
@@ -12,6 +12,12 @@
       "type": "boolean",
       "title": "Git write gate",
       "description": "Ask the person before git commit, git push, gh pr create and gh pr merge run",
+      "default": true
+    },
+    "branchGuard": {
+      "type": "boolean",
+      "title": "Default-branch guard",
+      "description": "Refuse git commit and git push on the repository's default branch, unless the git command is prefixed with ALLOW_DEFAULT_BRANCH_WRITE=1",
       "default": true
     },
     "statusBand": {
