@@ -24,7 +24,7 @@ import { usageColor, usageLimits } from './usage'
 // imported above, which is what the tests cover.
 
 const gitGrant = atom({ plugin: 'mods', key: 'gitGrant' } as const, false)
-const band = atom({ plugin: 'mods', key: 'band' } as const, null)
+const band = atom({ plugin: 'mods', key: 'band' } as const, null, { shape: 'band-2' })
 const prRead = atom({ plugin: 'mods', key: 'prRead' } as const, null)
 
 const GIT_GATE_COMMAND: CommandSpec = {
@@ -341,10 +341,14 @@ export const register: Register = (on, options) => {
       return completed
     })
 
-    // A window can move a point between turns, while the model runs tools.
+    // A window can move a point mid-turn, while the model runs tools. Only the
+    // limits are patched: the rest of the band is reread when the turn ends.
     on('session.measure', async ($, e, next) => {
       const measured = await next(e)
-      if (e.changed.includes('rateLimits')) queueBandRefresh($)
+      if (e.changed.includes('rateLimits')) {
+        const limits = usageLimits(e.rateLimits)
+        await update($, band, last => (last === null ? null : { ...last, usageLimits: limits }))
+      }
       return measured
     })
 
