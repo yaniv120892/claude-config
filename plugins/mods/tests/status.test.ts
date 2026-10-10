@@ -24,7 +24,7 @@ function fakeRepo(on: On, options: { hasPr: boolean }) {
   }
   on('session.usage', () => ({ value: usage }))
   on('ui.open', () => ({ value: { isPlaced: true } }))
-  const pr: { view: object; byUrl: Record<string, object>; list: string[] } = { view: PR_VIEW, byUrl: {}, list: [] }
+  const pr: { byUrl: Record<string, object>; list: string[] } = { byUrl: {}, list: [] }
   const bash = { stdout: '' }
   const toasts: string[] = []
   on('ui.toast', ($, e) => {
@@ -44,7 +44,7 @@ function fakeRepo(on: On, options: { hasPr: boolean }) {
     }
     if (command.startsWith('gh pr list')) return ok(JSON.stringify(pr.list.map(url => ({ url }))))
     if (command.startsWith('gh pr view')) {
-      return options.hasPr ? ok(JSON.stringify(pr.view)) : fail('no pull requests found for branch "feat/mods"')
+      return options.hasPr ? ok(JSON.stringify(PR_VIEW)) : fail('no pull requests found for branch "feat/mods"')
     }
     if (command.startsWith('gh api graphql')) return ok(THREADS)
     return fail('unexpected')
