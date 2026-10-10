@@ -30,7 +30,7 @@
     },
     {
       "name": "mods",
-      "description": "Function-hook mods: a git write gate the person answers, a default-branch guard, a status band with the 5-hour and weekly usage and the session's PRs, usage and CI toasts, a /pr pane, a tracked-file secret guard, the reply-style system-prompt rule, and a skill usage tally.",
+      "description": "Function-hook mods: a git write gate the person answers, a default-branch guard, a status band with the 5-hour and weekly usage and the session's PRs, usage toasts, a /pr pane, a tracked-file secret guard, the reply-style system-prompt rule, and a skill usage tally.",
       "category": "productivity",
       "source": "./plugins/mods"
     },

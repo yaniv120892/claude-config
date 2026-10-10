@@ -1,7 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { checkState, countChecks, isReadyToMerge, parsePrView, parseThreads, prAddresses, prStatus, prViewError, settledChecks } from '../hooks/pr-data'
-import type { CheckState } from '../types'
+import { checkState, countChecks, isReadyToMerge, parsePrView, parseThreads, prAddresses, prStatus, prViewError } from '../hooks/pr-data'
 import { PR_VIEW, THREADS } from './fixtures'
 
 describe('parsePrView', () => {
@@ -60,33 +59,6 @@ describe('helpers', () => {
     expect(prViewError('no pull requests found for branch "x"')).toBe(null)
     expect(prViewError('HTTP 401: Bad credentials\nmore')).toBe('HTTP 401: Bad credentials')
     expect(prViewError('')).toBe('gh failed')
-  })
-})
-
-describe('settledChecks', () => {
-  const running = { ...parsePrView(JSON.stringify(PR_VIEW)), threads: [], resolvedThreads: 0 }
-  const finished = (pending: CheckState, failed: CheckState = 'fail') => ({
-    ...running,
-    checks: running.checks.map(check => {
-      if (check.state === 'pending') return { ...check, state: pending }
-      return check.state === 'fail' ? { ...check, state: failed } : check
-    }),
-  })
-
-  test('names the failures once nothing pends', () => {
-    expect(settledChecks(running, finished('pass'))).toBe('PR #51: 1 check failed (lint)')
-    expect(settledChecks(running, finished('fail'))).toBe('PR #51: 3 checks failed (lint, deploy, ci/legacy)')
-  })
-
-  test('says passed when nothing failed', () => {
-    expect(settledChecks(running, finished('pass', 'pass'))).toBe('PR #51: checks passed')
-  })
-
-  test('stays quiet on a first read, another PR, a run still pending, or a settled PR read again', () => {
-    expect(settledChecks(null, finished('pass'))).toBe(null)
-    expect(settledChecks(running, { ...finished('pass'), number: 52 })).toBe(null)
-    expect(settledChecks(running, running)).toBe(null)
-    expect(settledChecks(finished('pass'), finished('pass'))).toBe(null)
   })
 })
 
