@@ -64,8 +64,8 @@ A skill marked `disable-model-invocation: true` also carries an
 `agents/openai.yaml` with `allow_implicit_invocation: false`, the key Codex reads
 instead; `tests/test_codex_policy.py` keeps the two in step.
 
-What does not carry over: the hooks (the default-branch guard, the pre-push
-quality gate, the worktree guard), the mods (the git write gate, the secret
+What does not carry over: the hooks (the pre-push quality gate, the worktree
+guard), the mods (the git write gate, the default-branch guard, the secret
 guard, the status band), `settings.json`, and keybindings. The generated `AGENTS.md` asks the agent to keep the rules the hooks
 enforce, but nothing on Codex enforces them.
 
@@ -74,7 +74,7 @@ enforce, but nothing on Codex enforces them.
 | Plugin | Skills | What it does |
 | --- | --- | --- |
 | `pr-workflows` | 15 | GitHub pull request workflow: create, review (house rules plus a Fowler smell baseline, batched across PRs with a Notion docs-drift check), inline comments, CI verification, thread resolution, conflict fixing, the `steward` drive-to-green posture, feedback harvesting, posting a PR to Slack. Ships `/pr-review` and `lib/github.py` |
-| `dev-workflows` | 21 | `/ship` (scoping rounds through blind-QA'd PR, with a reproduce phase for bugs), brainstorming, plan writing and execution, TDD, subagent-driven development, worktree isolation, Docker-based service runs, drip-feed recurring maintenance, domain modeling (`CONTEXT.md` + ADRs), the `/flows` router, and the `wizard`/`research`/`retro`/`wait-what` helpers. Ships the pre-push quality-gate, post-merge cleanup, require-worktree, and default-branch-guard hooks |
+| `dev-workflows` | 21 | `/ship` (scoping rounds through blind-QA'd PR, with a reproduce phase for bugs), brainstorming, plan writing and execution, TDD, subagent-driven development, worktree isolation, Docker-based service runs, drip-feed recurring maintenance, domain modeling (`CONTEXT.md` + ADRs), the `/flows` router, and the `wizard`/`research`/`retro`/`wait-what` helpers. Ships the pre-push quality-gate, post-merge cleanup and require-worktree hooks |
 | `issue-tracker` | 3 | Jira ticket creation and status transitions, with a cached per-project transition map. Also files Linear issues against a fixed Why/Repro/Fix/Done-when/Signals template |
 | `infra-workflows` | 2 | Helm env vars across GitOps registries, and AWS SSM SecureString provisioning with an account guard. Ships `provision_ssm.sh` |
 | `mods` | 0 | Function-hook mods for the harness itself: the git write gate, the status band, `/pr`, the secret guard, the reply-style rule and `/skill-tally` — see *Mods* below |
@@ -114,6 +114,7 @@ calls on its own events. Each mod has a switch in `/config`, and all start on.
 | Mod | What it does | What it replaced |
 | --- | --- | --- |
 | Git write gate | Before `git commit`, `git push`, `gh pr create` or `gh pr merge` runs, asks the person in a dialog: allow once, allow for the session, or deny. The model cannot answer it, and a headless run is refused. `/git-gate reset` takes back a session approval | `settings/hooks/require-git-approval.sh`, which the model passed by adding `CLAUDE_GIT_OK=1` to the command |
+| Default-branch guard | Refuses `git commit` and `git push` whose target checkout is on the default branch (`origin/HEAD`, else `main` or `master`). The target is followed through the command: each `cd`, a `-C`, and the variables the command assigns; a path it cannot read off the text is left to the git write gate rather than guessed. `ALLOW_DEFAULT_BRANCH_WRITE=1` before the git command opts out | dev-workflows' `protect-default-branch.sh`, which resolved only the last `cd` and no variables, so it blocked writes in worktrees |
 | Status band | Above the prompt, in the terminal and the desktop app: `➜  repo/dir git:(branch) ✗ [model] ctx:42% 5h:81% ↻1h12m wk:41%` — the 5-hour and weekly usage limits, shown on a subscription, with the time to reset from 75%; off a subscription, the session's cost (`$1.24`) in their place — then a row for the branch's PR: failing, pending and passing checks, open review threads, conflicts, review decision. The PR is read through `gh` every 90 seconds, and again after a push, a `gh pr` write or a branch switch | `statusline-command.sh` and the `statusLine` setting |
 | Alerts | A toast when the 5-hour or weekly limit passes 90%, once per window across sessions, and when the branch's PR checks stop pending: passed, or which failed | — |
 | `/pr` | A pane with the PR's checks (failing first), its unresolved threads by file and line, and buttons that start `address-pr-feedback`, `verify-pr-state` and `finalize-pr` | — |

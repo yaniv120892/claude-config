@@ -2,6 +2,7 @@ import { atom, read, update } from 'claude-code'
 import type { CommandSpec, EngineInterface as Engine, Register } from 'claude-code'
 
 import type { Band, GitLocation, PrRead, PrThread, UsageLimit } from '../types'
+import { gitWrites, OPT_OUT } from './branch-guard'
 import { credentialReason, findCredential, findTerm, parseTerms, termPattern, termReason } from './credentials'
 import { changesPr, GATED_COMMANDS, isGitWrite, runsGit } from './git-write'
 import {
@@ -74,6 +75,58 @@ async function gateGitWrite($: Engine, command: string): Promise<{ deny: string 
   if (answer === ONCE) return null
   const note = answer === DENY ? '' : ` They said: ${answer}`
   return { deny: `BLOCKED: the user declined this git/gh write.${note} Do not retry it unless they ask.` }
+}
+
+const DEFAULT_BRANCH_CANDIDATES = ['main', 'master']
+
+/**
+ * Refuses a git commit or push that would land on the repository's default branch.
+ * A guard that cannot read the session steps aside: the git write gate still asks.
+ */
+async function guardDefaultBranch($: Engine, command: string): Promise<{ deny: string } | null> {
+  if (!isGitWrite(command)) return null
+  try {
+    return await refuseDefaultBranchWrite($, command)
+  } catch (error) {
+    $.ui.log(`mods: the default-branch guard stepped aside: ${String(error)}`, { to: 'debug' })
+    return null
+  }
+}
+
+async function refuseDefaultBranchWrite($: Engine, command: string): Promise<{ deny: string } | null> {
+  const writes = gitWrites(command, await $.session.cwd(), (await $.env.get('HOME')) ?? null)
+  for (const write of writes) {
+    if (write.isOptedOut || write.directory === null) continue
+    const branch = await git($, write.directory, ['symbolic-ref', '--quiet', '--short', 'HEAD'])
+    if (branch?.exitCode !== 0 || !branch.stdout) continue
+    if (branch.stdout === (await defaultBranch($, write.directory))) return { deny: defaultBranchRefusal(branch.stdout) }
+  }
+  return null
+}
+
+async function defaultBranch($: Engine, directory: string): Promise<string | null> {
+  const head = await git($, directory, ['symbolic-ref', '--quiet', '--short', 'refs/remotes/origin/HEAD'])
+  if (head?.exitCode === 0 && head.stdout) return head.stdout.replace(/^origin\//, '')
+  for (const candidate of DEFAULT_BRANCH_CANDIDATES) {
+    const found = await git($, directory, ['rev-parse', '--verify', '--quiet', `refs/remotes/origin/${candidate}`])
+    if (found?.exitCode === 0) return candidate
+  }
+  return null
+}
+
+function defaultBranchRefusal(branch: string): string {
+  return [
+    `BLOCKED: you are on '${branch}', the default branch.`,
+    '',
+    'Commits and pushes go on a feature branch, then through a PR that is squash-merged: that keeps the',
+    'base branch one commit per shipped change, and a push here cannot be undone without a force-push.',
+    '',
+    '  git checkout -b <type>/<slug>',
+    '  git commit ...',
+    '  git push -u origin HEAD',
+    '',
+    `If this genuinely belongs on '${branch}', say so by prefixing the git command with ${OPT_OUT}.`,
+  ].join('\n')
 }
 
 const PR_POLL_MS = 90_000
@@ -313,6 +366,7 @@ const TALLY_COMMAND: CommandSpec = {
 export const register: Register = (on, options) => {
   const isOn = (name: string): boolean => options[name] !== false
   const hasGitGate = isOn('gitGate')
+  const hasBranchGuard = isOn('branchGuard')
   const hasStatusBand = isOn('statusBand')
   isAlerting = isOn('alerts')
   const blockedTerms = termPattern(parseTerms(options.blockedTerms))
@@ -337,7 +391,9 @@ export const register: Register = (on, options) => {
   })
 
   on('tool.call', { tool: 'Bash' }, async ($, e, next) => {
-    const refusal = hasGitGate ? await gateGitWrite($, e.command) : null
+    const refusal =
+      (hasBranchGuard ? await guardDefaultBranch($, e.command) : null) ??
+      (hasGitGate ? await gateGitWrite($, e.command) : null)
     if (refusal !== null) return refusal
     const ran = await next(e)
     // Other commands that move the branch are caught when the turn ends.
