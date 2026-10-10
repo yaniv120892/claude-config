@@ -98,7 +98,7 @@ describe('the status band', () => {
 
     await $.tool.call({ tool: 'Bash', command: 'git push' })
     await clock.advance(1000)
-    expect(ghCalls).toEqual(['gh pr view', 'gh api graphql', 'gh pr list'])
+    expect([...ghCalls].sort()).toEqual(['gh api graphql', 'gh pr list', 'gh pr view'])
   })
 
   test('patches the usage limits when a window moves mid-turn, without rereading git', async ($, on) => {
@@ -279,5 +279,19 @@ describe('the session PRs', () => {
     ghCalls.length = 0
     await $.command.run(slash('pr'))
     expect(ghCalls).toEqual(['gh pr view', 'gh pr list'])
+  })
+
+  test('reads the branch PR once when it was also opened this session', NO_GATE, async ($, on) => {
+    const { clock, pr, ghCalls } = fakeRepo(on, { hasPr: true })
+    pr.list = [PR_VIEW.url]
+    pr.byUrl[PR_VIEW.url] = PR_VIEW
+    await $.tool.call({ tool: 'Bash', command: 'git status' })
+    await clock.advance(1000)
+    await $.command.run(slash('pr'))
+
+    ghCalls.length = 0
+    await $.command.run(slash('pr'))
+    expect([...ghCalls].sort()).toEqual(['gh api graphql', 'gh pr list', 'gh pr view'])
+    expect((await prRows($)).filter(row => row.startsWith('PR #51'))).toHaveLength(1)
   })
 })
