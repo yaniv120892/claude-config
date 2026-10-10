@@ -11,7 +11,7 @@ function fakeRepo(on: On, options: { hasPr: boolean }) {
   const ghCalls: string[] = []
   const gitCalls: string[] = []
   on('session.cwd', () => ({ value: '/w/claude-config/.worktrees/mods' }))
-  on('session.repo', () => ({ value: { root: '/w/claude-config', remote: null, internal: false, name: null } }))
+  on('session.repo', () => ({ value: { root: '/w/claude-config', remote: 'git@github.com:owner/claude-config.git', internal: false, name: null } }))
   on('session.model', () => ({ value: 'claude-opus-5-5' }))
   const usage = {
     startedAt: 0,
@@ -314,7 +314,7 @@ describe('the PR skill checklist', () => {
     await $.skill.prompt({ skill: 'pr-workflows:pr-second-review', text: 'Recheck.' })
     await clock.advance(1000)
     await $.command.run(slash('pr'))
-    expect(await row51($)).toContain('✓simplify ○review ○prune')
+    expect(await row51($)).toContain('✓simplify ○code-review ○pr-review ○prune')
 
     const pane = await $.ui.mount({ plugin: 'mods', surface: 'terminal', component: 'Pane', requestId: 'mods-pr', props: PANE_PROPS })
     const lines = (await pane.findAll({ type: 'Text' })).map(element => element.text).join('|')
@@ -323,12 +323,13 @@ describe('the PR skill checklist', () => {
     await pane.unmount()
   })
 
-  test('counts pr-review for the PR its arguments name', async ($, on) => {
+  test('counts a run for the PR its arguments name, not the branch it ran on', async ($, on) => {
     const { clock } = await setup($, on)
     await $.skill.prompt({ skill: 'pr-workflows:pr-review', text: 'Review.\n\nARGUMENTS: 51' })
+    await $.skill.prompt({ skill: 'code-review', text: 'Review.\n\nARGUMENTS: owner/claude-config#57' })
     await clock.advance(1000)
     await $.command.run(slash('pr'))
-    expect(await row51($)).toContain('○simplify ✓review ○prune')
+    expect(await row51($)).toContain('○simplify ○code-review ✓pr-review ○prune')
   })
 
   test('shows the runs an earlier session stored', async ($, on) => {
@@ -337,7 +338,7 @@ describe('the PR skill checklist', () => {
     const { clock } = await setup($, on, { prSkillRuns: { '/w/claude-config@feat/mods': { 'prune-comments': '2026-10-04T09:00:00.000Z' } } })
     await $.session.start({ cwd: '/w/claude-config/.worktrees/mods', surface: 'terminal', isInteractive: true })
     await clock.advance(1000)
-    expect(await row51($)).toContain('○simplify ○review ✓prune')
+    expect(await row51($)).toContain('○simplify ○code-review ○pr-review ✓prune')
   })
 
   test('stays off the band when switched off', { options: { prSkills: false } }, async ($, on) => {

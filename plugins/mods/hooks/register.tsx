@@ -19,7 +19,7 @@ import {
   prViewError,
   THREADS_QUERY,
 } from './pr-data'
-import { PR_SKILLS, prSkillOf, prSkillRuns, recordRun, runTargets } from './pr-skills'
+import { githubSlug, PR_SKILLS, prSkillOf, prSkillRuns, recordRun, runTargets } from './pr-skills'
 import { asRecord } from './store'
 import { asTally, countSkill, formatTally } from './tally'
 import { truncate } from './text'
@@ -291,7 +291,8 @@ async function recordPrSkill($: Engine, skill: string, text: string): Promise<vo
     $.clock.now(),
   ])
   if (repo === null) return
-  const targets = runTargets(repo.root, await currentBranch($, cwd), text)
+  const place = { root: repo.root, branch: await currentBranch($, cwd), slug: githubSlug(repo.remote) }
+  const targets = runTargets(place, text)
   if (targets.length === 0) return
   const runs = recordRun(asRecord<PrSkillRuns>(stored), targets, skill, new Date(now).toISOString())
   await $.store.set(PR_SKILLS_KEY, runs)
@@ -306,6 +307,8 @@ let isBandQueued = false
 // Set by register, which a /config change reruns.
 let isAlerting = true
 let prInFlight: Promise<void> | null = null
+// Each run rewrites the whole stored map, so two at once would drop one.
+let prSkillWrites: Promise<void> = Promise.resolve()
 let isPrRereadWanted = false
 
 /**
@@ -774,7 +777,11 @@ export const register: Register = (on, options) => {
     on('skill.prompt', async ($, e, next) => {
       const prompted = await next(e)
       const prSkill = hasPrSkills ? prSkillOf(e.skill) : null
-      if (prSkill !== null) inBackground($, recordPrSkill($, prSkill, e.text))
+      if (prSkill !== null) {
+        prSkillWrites = prSkillWrites.then(() => recordPrSkill($, prSkill, e.text)).catch(error => {
+          $.ui.log(`mods: ${String(error)}`, { to: 'debug' })
+        })
+      }
       if (hasSkillTally) {
         const now = new Date(await $.clock.now()).toISOString()
         await $.store.set(TALLY_KEY, countSkill(asTally(await $.store.get(TALLY_KEY)), e.skill, now))

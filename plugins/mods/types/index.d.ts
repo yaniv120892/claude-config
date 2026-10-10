@@ -64,11 +64,11 @@ export type UsageLimit = {
 
 export type PrRead = { pr: PullRequest | null; error: string | null }
 
-/** When each PR skill last ran, by what it ran against: a branch, a PR number or a PR URL. */
+/** When each PR skill last ran, by what it ran against: a branch, or a PR by its URL. */
 export type PrSkillRuns = Record<string, Record<string, string>>
 
 export type PrSkillState = {
-  /** The repository the session is in, which every branch and number key starts with. */
+  /** The repository the session is in, which every branch key starts with. */
   root: string | null
   runs: PrSkillRuns
 }

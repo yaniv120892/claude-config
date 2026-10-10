@@ -1,6 +1,6 @@
 {
   "name": "mods",
-  "description": "Function-hook mods for the Claude Code harness: a git write gate that asks the person, not the model; a guard that refuses commits and pushes on the default branch; a status band with the location, model, context, 5-hour and weekly usage, and the branch's PR and the PRs opened this session, each with its review state, threads, CI and whether it is ready to merge; a toast when a usage limit nears its cap; a /pr pane with buttons into the PR skills; a checklist of whether simplify, pr-review and prune-comments ran on each PR; a guard that refuses credentials in tracked files; the reply-style rule as a system-prompt section; and a /skill-tally of which skills actually fire. Each one has a switch in /config.",
+  "description": "Function-hook mods for the Claude Code harness: a git write gate that asks the person, not the model; a guard that refuses commits and pushes on the default branch; a status band with the location, model, context, 5-hour and weekly usage, and the branch's PR and the PRs opened this session, each with its review state, threads, CI and whether it is ready to merge; a toast when a usage limit nears its cap; a /pr pane with buttons into the PR skills; a checklist of whether simplify, code-review, pr-review and prune-comments ran on each PR; a guard that refuses credentials in tracked files; the reply-style rule as a system-prompt section; and a /skill-tally of which skills actually fire. Each one has a switch in /config.",
   "version": "0.6.0",
   "author": { "name": "Yaniv Daye" },
   "homepage": "https://github.com/yaniv120892/claude-config",
@@ -59,7 +59,7 @@
     "prSkills": {
       "type": "boolean",
       "title": "PR skill checklist",
-      "description": "Show on each open PR's band row and in /pr whether simplify, pr-review and prune-comments have run on it",
+      "description": "Show on each open PR's band row and in /pr whether simplify, code-review, pr-review and prune-comments have run on it",
       "default": true
     },
     "skillTally": {
