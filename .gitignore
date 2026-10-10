@@ -27,3 +27,6 @@ evals/results/
 # API types and a tsconfig.json that points at them.
 plugins/*/.claude-plugin/types/
 plugins/*/tsconfig.json
+
+# Agent worktrees, checked out inside the repo.
+.claude/worktrees/
