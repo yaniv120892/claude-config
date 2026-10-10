@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { CommandSpec, EngineInterface as Engine, Register } from 'claude-code'
 
-import type { Band, GitLocation, PrRead, PrThread } from '../types'
+import type { Band, GitLocation, PrRead, PrThread, UsageLimit } from '../types'
 import { credentialReason, findCredential, findTerm, parseTerms, termPattern, termReason } from './credentials'
 import { changesPr, GATED_COMMANDS, isGitWrite, runsGit } from './git-write'
 import {
@@ -11,20 +11,31 @@ import {
   countChecks,
   parsePrView,
   parseThreads,
+  settledChecks,
   PR_FIELDS,
   prViewError,
   THREADS_QUERY,
 } from './pr-data'
 import { asTally, countSkill, formatTally } from './tally'
 import { truncate } from './text'
-import { usageColor, usageLimits } from './usage'
+import {
+  alertText,
+  asAlertedWindows,
+  formatCost,
+  markAlerted,
+  notAlertedYet,
+  pastAlertLine,
+  shownReset,
+  usageColor,
+  usageLimits,
+} from './usage'
 
 // Every hook lives in this file: the engine follows `$` only into functions
 // declared beside the hook that passes it. The pure logic sits in the files
 // imported above, which is what the tests cover.
 
 const gitGrant = atom({ plugin: 'mods', key: 'gitGrant' } as const, false)
-const band = atom({ plugin: 'mods', key: 'band' } as const, null, { shape: 'band-2' })
+const band = atom({ plugin: 'mods', key: 'band' } as const, null, { shape: 'band-3' })
 const prRead = atom({ plugin: 'mods', key: 'prRead' } as const, null)
 
 const GIT_GATE_COMMAND: CommandSpec = {
@@ -99,7 +110,23 @@ async function readLocation($: Engine): Promise<GitLocation> {
 }
 
 async function storePr($: Engine, found: PrRead): Promise<void> {
-  if (!isSame(await read($, prRead), found)) await update($, prRead, () => found)
+  const last = await read($, prRead)
+  if (isSame(last, found)) return
+  await update($, prRead, () => found)
+  const settled = isAlerting ? settledChecks(last?.pr ?? null, found.pr) : null
+  if (settled !== null) $.ui.toast(settled, { timeoutMs: ALERT_TOAST_MS })
+}
+
+/** One toast per limit per window, kept across sessions so a new session does not repeat it. */
+async function alertLimits($: Engine, limits: readonly UsageLimit[]): Promise<void> {
+  const nearCap = pastAlertLine(limits)
+  if (nearCap.length === 0) return
+  const alerted = asAlertedWindows(await $.store.get(ALERTED_KEY))
+  const due = notAlertedYet(nearCap, alerted)
+  if (due.length === 0) return
+  await $.store.set(ALERTED_KEY, markAlerted(alerted, due))
+  const now = await $.clock.now()
+  for (const limit of due) $.ui.toast(alertText(limit, now), { timeoutMs: ALERT_TOAST_MS })
 }
 
 async function readPr($: Engine): Promise<PrRead> {
@@ -135,8 +162,13 @@ async function readPr($: Engine): Promise<PrRead> {
   return { pr: { ...parsed, threads }, error: null }
 }
 
+const ALERTED_KEY = 'alertedWindows'
+const ALERT_TOAST_MS = 10_000
+
 // The module's own, so a reload starts them over; that only drops a queued refresh.
 let isBandQueued = false
+// Set by register, which a /config change reruns.
+let isAlerting = true
 let prInFlight: Promise<void> | null = null
 let isPrRereadWanted = false
 
@@ -173,6 +205,7 @@ async function refreshBand($: Engine): Promise<void> {
     model: modelName,
     contextPercent: percent === undefined ? null : Math.round(percent),
     usageLimits: usageLimits(usage.rateLimits),
+    costUsd: usage.cost?.usd ?? null,
   }
   const last = await read($, band)
   if (isSame(last, next)) return
@@ -281,6 +314,7 @@ export const register: Register = (on, options) => {
   const isOn = (name: string): boolean => options[name] !== false
   const hasGitGate = isOn('gitGate')
   const hasStatusBand = isOn('statusBand')
+  isAlerting = isOn('alerts')
   const blockedTerms = termPattern(parseTerms(options.blockedTerms))
   const commands = [
     ...(hasGitGate ? [GIT_GATE_COMMAND] : []),
@@ -334,6 +368,20 @@ export const register: Register = (on, options) => {
     })
   }
 
+  if (hasStatusBand || isAlerting) {
+    // A window can move a point mid-turn, while the model runs tools. Only the
+    // limits are patched: the rest of the band is reread when the turn ends.
+    on('session.measure', async ($, e, next) => {
+      const measured = await next(e)
+      if (e.changed.includes('rateLimits')) {
+        const limits = usageLimits(e.rateLimits)
+        if (hasStatusBand) await update($, band, last => (last === null ? null : { ...last, usageLimits: limits }))
+        if (isAlerting) await alertLimits($, limits)
+      }
+      return measured
+    })
+  }
+
   if (hasStatusBand) {
     on('turn.complete', async ($, e, next) => {
       const completed = await next(e)
@@ -341,23 +389,14 @@ export const register: Register = (on, options) => {
       return completed
     })
 
-    // A window can move a point mid-turn, while the model runs tools. Only the
-    // limits are patched: the rest of the band is reread when the turn ends.
-    on('session.measure', async ($, e, next) => {
-      const measured = await next(e)
-      if (e.changed.includes('rateLimits')) {
-        const limits = usageLimits(e.rateLimits)
-        await update($, band, last => (last === null ? null : { ...last, usageLimits: limits }))
-      }
-      return measured
-    })
 
     on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
       const shown = await read($, band)
       if (e.props.hasSurvey || shown === null) return next(e)
 
       const { Box, Text } = $.ui.resolve(e)
-      const { location: here, model: modelName, contextPercent: percent, usageLimits: limits } = shown
+      const { location: here, model: modelName, contextPercent: percent, usageLimits: limits, costUsd } = shown
+      const now = await $.clock.now()
       const current = (await read($, prRead))?.pr ?? null
       const counts = countChecks(current?.checks ?? [])
       const threads = current?.threads.length ?? 0
@@ -385,12 +424,19 @@ export const register: Register = (on, options) => {
             )}
             <Text color="magenta"> [{modelName}]</Text>
             {percent !== null && <Text color={usageColor(percent)}> ctx:{percent}%</Text>}
-            {limits.map(limit => (
-              <Text key={limit.label} color={usageColor(limit.percent)}>
-                {' '}
-                {limit.label}:{limit.percent}%
-              </Text>
-            ))}
+            {limits.map(limit => {
+              const reset = shownReset(limit, now)
+              return (
+                <Text key={limit.label}>
+                  <Text color={usageColor(limit.percent)}>
+                    {' '}
+                    {limit.label}:{limit.percent}%
+                  </Text>
+                  {reset !== null && <Text dimColor> ↻{reset}</Text>}
+                </Text>
+              )
+            })}
+            {limits.length === 0 && costUsd !== null && <Text dimColor> {formatCost(costUsd)}</Text>}
           </Text>
           {current !== null && (
             <Text wrap="truncate-end">

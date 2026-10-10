@@ -17,12 +17,18 @@ function fakeRepo(on: On, options: { hasPr: boolean }) {
     context: { window: 200_000, percent: 62.4 },
     rateLimits: [
       { kind: 'five_hour', percentUsed: 23.4 },
-      { kind: 'seven_day', percentUsed: 81 },
+      { kind: 'seven_day', percentUsed: 81, resetsAt: '2026-10-08T13:30:00.000Z' },
     ],
     cost: { usd: 0 },
   }
   on('session.usage', () => ({ value: usage }))
   on('ui.open', () => ({ value: { isPlaced: true } }))
+  const pr: { view: object } = { view: PR_VIEW }
+  const toasts: string[] = []
+  on('ui.toast', ($, e) => {
+    toasts.push(e.text)
+    return { value: undefined }
+  })
   on('process.run', ($, e) => {
     const command = e.argv.filter(arg => arg !== '--no-optional-locks').join(' ')
     if (command.startsWith('git ')) gitCalls.push(command)
@@ -30,13 +36,13 @@ function fakeRepo(on: On, options: { hasPr: boolean }) {
     if (command.startsWith('git status')) return ok(' M install.sh\n')
     if (command.startsWith('gh ')) ghCalls.push(command.split(' ').slice(0, 3).join(' '))
     if (command.startsWith('gh pr view')) {
-      return options.hasPr ? ok(JSON.stringify(PR_VIEW)) : fail('no pull requests found for branch "feat/mods"')
+      return options.hasPr ? ok(JSON.stringify(pr.view)) : fail('no pull requests found for branch "feat/mods"')
     }
     if (command.startsWith('gh api graphql')) return ok(THREADS)
     return fail('unexpected')
   })
   on('tool.call', { tool: 'Bash' }, () => ({ result: { stdout: '', stderr: '', interrupted: false } }))
-  return { clock, ghCalls, gitCalls, usage }
+  return { clock, ghCalls, gitCalls, usage, pr, toasts }
 }
 
 const BAND_PROPS = {
@@ -66,7 +72,7 @@ describe('the status band', () => {
     for (const surface of ['terminal', 'desktop'] as const) {
       const band = await $.ui.mount({ plugin: 'mods', surface, component: 'AbovePrompt', props: BAND_PROPS })
       const text = (await band.findAll({ type: 'Text' })).map(element => element.text).join('|')
-      for (const shown of ['claude-config/mods', 'feat/mods', '✗', '[claude-opus-5-5]', 'ctx:62%', '5h:23%', 'wk:81%', '#51', '2 open threads', 'conflicts', 'changes requested']) {
+      for (const shown of ['claude-config/mods', 'feat/mods', '✗', '[claude-opus-5-5]', 'ctx:62%', '5h:23%', 'wk:81%', '↻3d4h', '#51', '2 open threads', 'conflicts', 'changes requested']) {
         expect(text).toContain(shown)
       }
       await band.unmount()
@@ -122,6 +128,20 @@ describe('the status band', () => {
     await band.unmount()
   })
 
+  test('draws the session cost in place of the limits off a subscription', async ($, on) => {
+    const { clock, usage } = fakeRepo(on, { hasPr: false })
+    usage.rateLimits = []
+    usage.cost = { usd: 1.237 }
+    await $.tool.call({ tool: 'Bash', command: 'git status' })
+    await clock.advance(1000)
+
+    const band = await $.ui.mount({ plugin: 'mods', surface: 'terminal', component: 'AbovePrompt', props: BAND_PROPS })
+    const text = (await band.findAll({ type: 'Text' })).map(element => element.text).join('|')
+    expect(text).toContain('$1.24')
+    expect(text).not.toContain('5h:')
+    await band.unmount()
+  })
+
   test('leaves the band to the engine before it has read the repository', async ($, on) => {
     on('ui.render', { component: 'AbovePrompt' }, ($, e) => {
       const { Text } = $.ui.resolve(e)
@@ -159,5 +179,51 @@ describe('the /pr pane', () => {
     const pane = await $.ui.mount({ plugin: 'mods', surface: 'terminal', component: 'Pane', requestId: 'mods-pr', props: PANE_PROPS })
     expect(await pane.find({ type: 'Text', text: 'No PR for this branch.' })).toBeDefined()
     await pane.unmount()
+  })
+})
+
+describe('the alerts', () => {
+  const nearCap = (resetsAt: string) => [{ kind: 'five_hour', percentUsed: 92, resetsAt }]
+
+  test('toast a limit past 90% once per window', async ($, on) => {
+    const { usage, toasts } = fakeRepo(on, { hasPr: false })
+    mock.store(on)
+    on('session.measure', ($, e) => ({ changed: e.changed }))
+
+    await $.session.measure({ context: usage.context, rateLimits: nearCap('2026-10-05T10:12:00.000Z'), changed: ['rateLimits'] })
+    await $.session.measure({ context: usage.context, rateLimits: nearCap('2026-10-05T10:12:00.000Z'), changed: ['rateLimits'] })
+    expect(toasts).toEqual(['5-hour usage at 92%, resets in 1h12m'])
+
+    await $.session.measure({ context: usage.context, rateLimits: nearCap('2026-10-05T15:00:00.000Z'), changed: ['rateLimits'] })
+    expect(toasts).toHaveLength(2)
+  })
+
+  test('toast when the PR checks stop pending', async ($, on) => {
+    const { pr, toasts } = fakeRepo(on, { hasPr: true })
+    await $.command.run(slash('pr'))
+    expect(toasts).toEqual([])
+
+    pr.view = {
+      ...PR_VIEW,
+      statusCheckRollup: [
+        { __typename: 'CheckRun', name: 'tests', status: 'COMPLETED', conclusion: 'SUCCESS' },
+        { __typename: 'CheckRun', name: 'lint', status: 'COMPLETED', conclusion: 'FAILURE' },
+        { __typename: 'CheckRun', name: 'deploy', status: 'COMPLETED', conclusion: 'SUCCESS' },
+        { __typename: 'StatusContext', context: 'ci/legacy', state: 'SUCCESS' },
+      ],
+    }
+    await $.command.run(slash('pr'))
+    expect(toasts).toEqual(['PR #51: 1 check failed (lint)'])
+  })
+
+  test('stay off when switched off', { options: { alerts: false } }, async ($, on) => {
+    const { usage, pr, toasts } = fakeRepo(on, { hasPr: true })
+    mock.store(on)
+    on('session.measure', ($, e) => ({ changed: e.changed }))
+    await $.session.measure({ context: usage.context, rateLimits: nearCap('2026-10-05T10:12:00.000Z'), changed: ['rateLimits'] })
+    await $.command.run(slash('pr'))
+    pr.view = { ...PR_VIEW, statusCheckRollup: [] }
+    await $.command.run(slash('pr'))
+    expect(toasts).toEqual([])
   })
 })

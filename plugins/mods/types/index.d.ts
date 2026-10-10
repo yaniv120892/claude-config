@@ -38,9 +38,19 @@ export type Band = {
   contextPercent: number | null
   /** Empty off a subscription, or before the first response reports a window. */
   usageLimits: UsageLimit[]
+  /** What the session has cost so far, drawn only where no usage limit is reported. */
+  costUsd: number | null
 }
 
-export type UsageLimit = { label: string; percent: number }
+export type UsageLimit = {
+  /** `5h` or `wk`, as the band draws it. */
+  label: string
+  /** `5-hour` or `Weekly`, as a toast says it. */
+  name: string
+  percent: number
+  /** ISO 8601; null when the window reports no reset. */
+  resetsAt: string | null
+}
 
 export type PrRead = { pr: PullRequest | null; error: string | null }
 
