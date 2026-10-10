@@ -11,13 +11,16 @@ function fakeRepo(on: On, options: { hasPr: boolean }) {
   on('session.cwd', () => ({ value: '/w/claude-config/.worktrees/mods' }))
   on('session.repo', () => ({ value: { root: '/w/claude-config', remote: null, internal: false, name: null } }))
   on('session.model', () => ({ value: 'claude-opus-5-5' }))
-  on('session.usage', () => ({
-    value: { startedAt: 0, context: { window: 200_000, percent: 62.4 }, rateLimits: [
-        { kind: 'five_hour', percentUsed: 23.4 },
-        { kind: 'seven_day', percentUsed: 81 },
-      ],
-      cost: { usd: 0 } },
-  }))
+  const usage = {
+    startedAt: 0,
+    context: { window: 200_000, percent: 62.4 },
+    rateLimits: [
+      { kind: 'five_hour', percentUsed: 23.4 },
+      { kind: 'seven_day', percentUsed: 81 },
+    ],
+    cost: { usd: 0 },
+  }
+  on('session.usage', () => ({ value: usage }))
   on('ui.open', () => ({ value: { isPlaced: true } }))
   on('process.run', ($, e) => {
     const command = e.argv.filter(arg => arg !== '--no-optional-locks').join(' ')
@@ -31,7 +34,7 @@ function fakeRepo(on: On, options: { hasPr: boolean }) {
     return fail('unexpected')
   })
   on('tool.call', { tool: 'Bash' }, () => ({ result: { stdout: '', stderr: '', interrupted: false } }))
-  return { clock, ghCalls }
+  return { clock, ghCalls, usage }
 }
 
 const BAND_PROPS = {
@@ -80,6 +83,23 @@ describe('the status band', () => {
     await $.tool.call({ tool: 'Bash', command: 'git push' })
     await clock.advance(1000)
     expect(ghCalls).toEqual(['gh pr view', 'gh api graphql'])
+  })
+
+  test('redraws the usage limits when a window moves between turns', async ($, on) => {
+    const { clock, usage } = fakeRepo(on, { hasPr: false })
+    on('session.measure', ($, e) => ({ changed: e.changed }))
+    await $.tool.call({ tool: 'Bash', command: 'git status' })
+    await clock.advance(1000)
+
+    usage.rateLimits = [{ kind: 'five_hour', percentUsed: 57 }]
+    await $.session.measure({ context: usage.context, rateLimits: usage.rateLimits, changed: ['rateLimits'] })
+    await clock.advance(1000)
+
+    const band = await $.ui.mount({ plugin: 'mods', surface: 'terminal', component: 'AbovePrompt', props: BAND_PROPS })
+    const text = (await band.findAll({ type: 'Text' })).map(element => element.text).join('|')
+    expect(text).toContain('5h:57%')
+    expect(text).not.toContain('wk:')
+    await band.unmount()
   })
 
   test('leaves the band to the engine before it has read the repository', async ($, on) => {

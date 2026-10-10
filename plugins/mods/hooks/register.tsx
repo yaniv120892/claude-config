@@ -8,7 +8,6 @@ import {
   basename,
   CHECK,
   CHECK_STATES,
-  contextColor,
   countChecks,
   parsePrView,
   parseThreads,
@@ -18,7 +17,7 @@ import {
 } from './pr-data'
 import { asTally, countSkill, formatTally } from './tally'
 import { truncate } from './text'
-import { usageLimits } from './usage'
+import { usageColor, usageLimits } from './usage'
 
 // Every hook lives in this file: the engine follows `$` only into functions
 // declared beside the hook that passes it. The pure logic sits in the files
@@ -342,6 +341,13 @@ export const register: Register = (on, options) => {
       return completed
     })
 
+    // A window can move a point between turns, while the model runs tools.
+    on('session.measure', async ($, e, next) => {
+      const measured = await next(e)
+      if (e.changed.includes('rateLimits')) queueBandRefresh($)
+      return measured
+    })
+
     on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
       const shown = await read($, band)
       if (e.props.hasSurvey || shown === null) return next(e)
@@ -374,9 +380,9 @@ export const register: Register = (on, options) => {
               </Text>
             )}
             <Text color="magenta"> [{modelName}]</Text>
-            {percent !== null && <Text color={contextColor(percent)}> ctx:{percent}%</Text>}
+            {percent !== null && <Text color={usageColor(percent)}> ctx:{percent}%</Text>}
             {limits.map(limit => (
-              <Text color={contextColor(limit.percent)}>
+              <Text key={limit.label} color={usageColor(limit.percent)}>
                 {' '}
                 {limit.label}:{limit.percent}%
               </Text>

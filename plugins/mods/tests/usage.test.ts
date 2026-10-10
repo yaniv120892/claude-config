@@ -1,6 +1,15 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { usageLimits } from '../hooks/usage'
+import { usageColor, usageLimits } from '../hooks/usage'
+
+describe('usageColor', () => {
+  test('matches the old statusline thresholds', () => {
+    expect(usageColor(49)).toBe('green')
+    expect(usageColor(50)).toBe('yellow')
+    expect(usageColor(74)).toBe('yellow')
+    expect(usageColor(75)).toBe('red')
+  })
+})
 
 describe('usageLimits', () => {
   test('shows the 5-hour window before the weekly one, rounded', () => {
