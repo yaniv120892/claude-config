@@ -36,7 +36,12 @@ export type Band = {
   location: GitLocation
   model: string
   contextPercent: number | null
+  /** Empty off a subscription, or before the first response reports a window. */
+  usageLimits: UsageLimit[]
 }
+
+/** A rate-limit window as the band shows it: `5h` or `wk`, and the percent used. */
+export type UsageLimit = { label: string; percent: number }
 
 export type PrRead = { pr: PullRequest | null; error: string | null }
 

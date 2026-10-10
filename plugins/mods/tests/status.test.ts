@@ -12,7 +12,11 @@ function fakeRepo(on: On, options: { hasPr: boolean }) {
   on('session.repo', () => ({ value: { root: '/w/claude-config', remote: null, internal: false, name: null } }))
   on('session.model', () => ({ value: 'claude-opus-5-5' }))
   on('session.usage', () => ({
-    value: { startedAt: 0, context: { window: 200_000, percent: 62.4 }, rateLimits: [], cost: { usd: 0 } },
+    value: { startedAt: 0, context: { window: 200_000, percent: 62.4 }, rateLimits: [
+        { kind: 'five_hour', percentUsed: 23.4 },
+        { kind: 'seven_day', percentUsed: 81 },
+      ],
+      cost: { usd: 0 } },
   }))
   on('ui.open', () => ({ value: { isPlaced: true } }))
   on('process.run', ($, e) => {
@@ -57,7 +61,7 @@ describe('the status band', () => {
     for (const surface of ['terminal', 'desktop'] as const) {
       const band = await $.ui.mount({ plugin: 'mods', surface, component: 'AbovePrompt', props: BAND_PROPS })
       const text = (await band.findAll({ type: 'Text' })).map(element => element.text).join('|')
-      for (const shown of ['claude-config/mods', 'feat/mods', '✗', '[claude-opus-5-5]', 'ctx:62%', '#51', '2 open threads', 'conflicts', 'changes requested']) {
+      for (const shown of ['claude-config/mods', 'feat/mods', '✗', '[claude-opus-5-5]', 'ctx:62%', '5h:23%', 'wk:81%', '#51', '2 open threads', 'conflicts', 'changes requested']) {
         expect(text).toContain(shown)
       }
       await band.unmount()

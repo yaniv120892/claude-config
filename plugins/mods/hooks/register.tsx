@@ -18,6 +18,7 @@ import {
 } from './pr-data'
 import { asTally, countSkill, formatTally } from './tally'
 import { truncate } from './text'
+import { usageLimits } from './usage'
 
 // Every hook lives in this file: the engine follows `$` only into functions
 // declared beside the hook that passes it. The pure logic sits in the files
@@ -168,7 +169,12 @@ function inBackground($: Engine, work: Promise<void>): void {
 async function refreshBand($: Engine): Promise<void> {
   const [location, modelName, usage] = await Promise.all([readLocation($), $.session.model(), $.session.usage()])
   const { percent } = usage.context
-  const next: Band = { location, model: modelName, contextPercent: percent === undefined ? null : Math.round(percent) }
+  const next: Band = {
+    location,
+    model: modelName,
+    contextPercent: percent === undefined ? null : Math.round(percent),
+    usageLimits: usageLimits(usage.rateLimits),
+  }
   const last = await read($, band)
   if (isSame(last, next)) return
   await update($, band, () => next)
@@ -341,7 +347,7 @@ export const register: Register = (on, options) => {
       if (e.props.hasSurvey || shown === null) return next(e)
 
       const { Box, Text } = $.ui.resolve(e)
-      const { location: here, model: modelName, contextPercent: percent } = shown
+      const { location: here, model: modelName, contextPercent: percent, usageLimits: limits } = shown
       const current = (await read($, prRead))?.pr ?? null
       const counts = countChecks(current?.checks ?? [])
       const threads = current?.threads.length ?? 0
@@ -369,6 +375,12 @@ export const register: Register = (on, options) => {
             )}
             <Text color="magenta"> [{modelName}]</Text>
             {percent !== null && <Text color={contextColor(percent)}> ctx:{percent}%</Text>}
+            {limits.map(limit => (
+              <Text color={contextColor(limit.percent)}>
+                {' '}
+                {limit.label}:{limit.percent}%
+              </Text>
+            ))}
           </Text>
           {current !== null && (
             <Text wrap="truncate-end">
