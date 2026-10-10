@@ -126,20 +126,6 @@ export function countChecks(checks: readonly PrCheck[]): Record<CheckState, numb
   return counts
 }
 
-/**
- * A toast line when the checks of the same PR stop pending: what failed, or that all passed.
- * Null on the first read, on another PR, and while any check still runs.
- */
-export function settledChecks(previous: PullRequest | null, next: PullRequest | null): string | null {
-  if (previous === null || next === null || previous.number !== next.number) return null
-  const wasRunning = countChecks(previous.checks).pending > 0
-  if (!wasRunning || countChecks(next.checks).pending > 0) return null
-  const failed = next.checks.filter(check => check.state === 'fail').map(check => check.name)
-  return failed.length === 0
-    ? `PR #${next.number}: checks passed`
-    : `PR #${next.number}: ${failed.length} check${failed.length === 1 ? '' : 's'} failed (${failed.join(', ')})`
-}
-
 /** Where GitHub stands on the PR, in a word or two, and the colour to draw it in. */
 export function prStatus(pr: PullRequest): { label: string; color: string } {
   if (pr.state === 'MERGED') return { label: 'merged', color: 'magenta' }

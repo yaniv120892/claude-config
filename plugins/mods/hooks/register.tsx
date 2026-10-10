@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { CommandSpec, EngineInterface as Engine, Register } from 'claude-code'
 
-import type { Band, GitLocation, PrRead, PullRequest, UsageLimit } from '../types'
+import type { Band, GitLocation, PrRead, UsageLimit } from '../types'
 import { gitWrites, OPT_OUT } from './branch-guard'
 import { credentialReason, findCredential, findTerm, parseTerms, termPattern, termReason } from './credentials'
 import { changesPr, createsPr, GATED_COMMANDS, isGitWrite, runsGit } from './git-write'
@@ -14,7 +14,6 @@ import {
   parsePrView,
   parseThreads,
   prAddresses,
-  settledChecks,
   PR_FIELDS,
   prStatus,
   prViewError,
@@ -173,12 +172,6 @@ async function storePr($: Engine, found: PrRead): Promise<void> {
   const last = await read($, prRead)
   if (isSame(last, found)) return
   await update($, prRead, () => found)
-  toastSettled($, last?.pr ?? null, found.pr)
-}
-
-function toastSettled($: Engine, previous: PullRequest | null, next: PullRequest | null): void {
-  const settled = isAlerting ? settledChecks(previous, next) : null
-  if (settled !== null) $.ui.toast(settled, { timeoutMs: ALERT_TOAST_MS })
 }
 
 /** Rereads each PR opened this session that is still open; a merged or closed one keeps its last read. */
@@ -194,9 +187,7 @@ async function refreshSessionPrs($: Engine): Promise<void> {
     urls.map(async url => {
       const previous = last.find(pr => pr.url === url) ?? null
       if (previous !== null && previous.state !== 'OPEN') return previous
-      const found = (await readPrView($, url, cwd)).pr ?? previous
-      toastSettled($, previous, found)
-      return found
+      return (await readPrView($, url, cwd)).pr ?? previous
     }),
   )
   const next = reads.filter(pr => pr !== null).sort((a, b) => b.number - a.number)

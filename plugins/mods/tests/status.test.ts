@@ -206,32 +206,11 @@ describe('the alerts', () => {
     expect(toasts).toHaveLength(2)
   })
 
-  test('toast when the PR checks stop pending', async ($, on) => {
-    const { pr, toasts } = fakeRepo(on, { hasPr: true })
-    await $.command.run(slash('pr'))
-    expect(toasts).toEqual([])
-
-    pr.view = {
-      ...PR_VIEW,
-      statusCheckRollup: [
-        { __typename: 'CheckRun', name: 'tests', status: 'COMPLETED', conclusion: 'SUCCESS' },
-        { __typename: 'CheckRun', name: 'lint', status: 'COMPLETED', conclusion: 'FAILURE' },
-        { __typename: 'CheckRun', name: 'deploy', status: 'COMPLETED', conclusion: 'SUCCESS' },
-        { __typename: 'StatusContext', context: 'ci/legacy', state: 'SUCCESS' },
-      ],
-    }
-    await $.command.run(slash('pr'))
-    expect(toasts).toEqual(['PR #51: 1 check failed (lint)'])
-  })
-
   test('stay off when switched off', { options: { alerts: false } }, async ($, on) => {
-    const { usage, pr, toasts } = fakeRepo(on, { hasPr: true })
+    const { usage, toasts } = fakeRepo(on, { hasPr: false })
     mock.store(on)
     on('session.measure', ($, e) => ({ changed: e.changed }))
     await $.session.measure({ context: usage.context, rateLimits: nearCap('2026-10-05T10:12:00.000Z'), changed: ['rateLimits'] })
-    await $.command.run(slash('pr'))
-    pr.view = { ...PR_VIEW, statusCheckRollup: [] }
-    await $.command.run(slash('pr'))
     expect(toasts).toEqual([])
   })
 })
