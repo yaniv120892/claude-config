@@ -1,5 +1,6 @@
 import type { On, RenderElement } from 'claude-code'
 import { describe, expect, mock, test } from 'claude-code/testing'
+import type { Engine } from 'claude-code/testing'
 
 import { fail, ok, PR_VIEW, THREADS } from './fixtures'
 import { slash } from './slash'
@@ -23,7 +24,8 @@ function fakeRepo(on: On, options: { hasPr: boolean }) {
   }
   on('session.usage', () => ({ value: usage }))
   on('ui.open', () => ({ value: { isPlaced: true } }))
-  const pr: { view: object } = { view: PR_VIEW }
+  const pr: { view: object; byUrl: Record<string, object>; list: string[] } = { view: PR_VIEW, byUrl: {}, list: [] }
+  const bash = { stdout: '' }
   const toasts: string[] = []
   on('ui.toast', ($, e) => {
     toasts.push(e.text)
@@ -35,14 +37,20 @@ function fakeRepo(on: On, options: { hasPr: boolean }) {
     if (command.startsWith('git branch')) return ok('feat/mods\n')
     if (command.startsWith('git status')) return ok(' M install.sh\n')
     if (command.startsWith('gh ')) ghCalls.push(command.split(' ').slice(0, 3).join(' '))
+    const viewed = /^gh pr view (\S+)/.exec(command)?.[1]
+    if (viewed !== undefined && viewed !== '--json') {
+      const view = pr.byUrl[viewed]
+      return view === undefined ? fail('not found') : ok(JSON.stringify(view))
+    }
+    if (command.startsWith('gh pr list')) return ok(JSON.stringify(pr.list.map(url => ({ url }))))
     if (command.startsWith('gh pr view')) {
       return options.hasPr ? ok(JSON.stringify(pr.view)) : fail('no pull requests found for branch "feat/mods"')
     }
     if (command.startsWith('gh api graphql')) return ok(THREADS)
     return fail('unexpected')
   })
-  on('tool.call', { tool: 'Bash' }, () => ({ result: { stdout: '', stderr: '', interrupted: false } }))
-  return { clock, ghCalls, gitCalls, usage, pr, toasts }
+  on('tool.call', { tool: 'Bash' }, () => ({ result: { stdout: bash.stdout, stderr: '', interrupted: false } }))
+  return { clock, ghCalls, gitCalls, usage, pr, toasts, bash }
 }
 
 const BAND_PROPS = {
@@ -72,7 +80,7 @@ describe('the status band', () => {
     for (const surface of ['terminal', 'desktop'] as const) {
       const band = await $.ui.mount({ plugin: 'mods', surface, component: 'AbovePrompt', props: BAND_PROPS })
       const text = (await band.findAll({ type: 'Text' })).map(element => element.text).join('|')
-      for (const shown of ['claude-config/mods', 'feat/mods', '✗', '[claude-opus-5-5]', 'ctx:62%', '5h:23%', 'wk:81%', '↻3d4h', '#51', '2 open threads', 'conflicts', 'changes requested']) {
+      for (const shown of ['claude-config/mods', 'feat/mods', '✗', '[claude-opus-5-5]', 'ctx:62%', '5h:23%', 'wk:81%', '↻3d4h', '#51', 'changes requested', '2 open', '1 replied', '1 resolved', 'conflicts']) {
         expect(text).toContain(shown)
       }
       await band.unmount()
@@ -90,7 +98,7 @@ describe('the status band', () => {
 
     await $.tool.call({ tool: 'Bash', command: 'git push' })
     await clock.advance(1000)
-    expect(ghCalls).toEqual(['gh pr view', 'gh api graphql'])
+    expect(ghCalls).toEqual(['gh pr view', 'gh api graphql', 'gh pr list'])
   })
 
   test('patches the usage limits when a window moves mid-turn, without rereading git', async ($, on) => {
@@ -225,5 +233,72 @@ describe('the alerts', () => {
     pr.view = { ...PR_VIEW, statusCheckRollup: [] }
     await $.command.run(slash('pr'))
     expect(toasts).toEqual([])
+  })
+})
+
+describe('the session PRs', () => {
+  const NO_GATE = { options: { gitGate: false } }
+  const URL_57 = 'https://github.com/owner/claude-config/pull/57'
+  const URL_58 = 'https://github.com/owner/claude-config/pull/58'
+  const view = (number: number, url: string, fields: object) => ({
+    ...PR_VIEW,
+    number,
+    url,
+    title: `PR ${number}`,
+    mergeable: 'MERGEABLE',
+    statusCheckRollup: [{ __typename: 'CheckRun', name: 'tests', status: 'COMPLETED', conclusion: 'SUCCESS' }],
+    ...fields,
+  })
+  /** The band's PR rows, each as one line. */
+  const prRows = async ($: Engine) => {
+    const band = await $.ui.mount({ plugin: 'mods', surface: 'terminal', component: 'AbovePrompt', props: BAND_PROPS })
+    const rows = (await band.findAll({ type: 'Text' })).map(element => element.text).filter(text => text.startsWith('PR #'))
+    await band.unmount()
+    return rows
+  }
+
+  test('adds the PR a gh pr create printed, even on a branch with no PR', NO_GATE, async ($, on) => {
+    const { clock, pr, bash } = fakeRepo(on, { hasPr: false })
+    pr.byUrl[URL_57] = view(57, URL_57, { reviewDecision: 'REVIEW_REQUIRED', mergeStateStatus: 'BLOCKED' })
+    bash.stdout = `${URL_57}\n`
+    await $.tool.call({ tool: 'Bash', command: 'gh pr create --fill' })
+    await clock.advance(1000)
+
+    const rows = await prRows($)
+    expect(rows.find(row => row.startsWith('PR #57'))).toMatch(/^PR #57 awaiting review ✓1 · .* · PR 57$/)
+
+    const band = await $.ui.mount({ plugin: 'mods', surface: 'terminal', component: 'AbovePrompt', props: BAND_PROPS })
+    const links = (await band.findAll({ type: 'Link' })).map(element => element.props.href)
+    expect(links).toEqual([URL_57])
+    await band.unmount()
+  })
+
+  test('finds PRs opened elsewhere this session, and says which is ready to merge', NO_GATE, async ($, on) => {
+    const { clock, pr } = fakeRepo(on, { hasPr: true })
+    pr.list = [URL_58, URL_57]
+    pr.byUrl[URL_57] = view(57, URL_57, { reviewDecision: 'APPROVED', mergeStateStatus: 'CLEAN' })
+    pr.byUrl[URL_58] = view(58, URL_58, { isDraft: true, mergeStateStatus: 'DRAFT' })
+    await $.tool.call({ tool: 'Bash', command: 'git status' })
+    await clock.advance(1000)
+    await $.command.run(slash('pr'))
+
+    const rows = await prRows($)
+    expect(rows.map(row => row.split(' · ')[0])).toEqual(['PR #51 changes requested ✗1 …2 ✓1', 'PR #58 draft ✓1', 'PR #57 approved ✓1'])
+    expect(rows[2]).toContain('ready to merge')
+    expect(rows[1]).not.toContain('ready to merge')
+  })
+
+  test('stops rereading a session PR once it is merged', NO_GATE, async ($, on) => {
+    const { clock, pr, ghCalls } = fakeRepo(on, { hasPr: false })
+    pr.list = [URL_57]
+    pr.byUrl[URL_57] = view(57, URL_57, { state: 'MERGED' })
+    await $.tool.call({ tool: 'Bash', command: 'git status' })
+    await clock.advance(1000)
+    await $.command.run(slash('pr'))
+    expect((await prRows($)).some(row => row.startsWith('PR #57 merged'))).toBe(true)
+
+    ghCalls.length = 0
+    await $.command.run(slash('pr'))
+    expect(ghCalls).toEqual(['gh pr view', 'gh pr list'])
   })
 })

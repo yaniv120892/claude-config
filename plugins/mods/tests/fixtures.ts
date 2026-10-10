@@ -6,6 +6,8 @@ export const PR_VIEW = {
   isDraft: false,
   mergeable: 'CONFLICTING',
   reviewDecision: 'CHANGES_REQUESTED',
+  mergeStateStatus: 'DIRTY',
+  author: { login: 'author' },
   statusCheckRollup: [
     { __typename: 'CheckRun', name: 'tests', status: 'COMPLETED', conclusion: 'SUCCESS' },
     { __typename: 'CheckRun', name: 'lint', status: 'COMPLETED', conclusion: 'FAILURE' },
@@ -15,12 +17,22 @@ export const PR_VIEW = {
   ],
 }
 
-type Thread = { isResolved: boolean; path: string; line: number | null; author: string | null; body: string }
+type Thread = {
+  isResolved: boolean
+  path: string
+  line: number | null
+  author: string | null
+  body: string
+  /** Who wrote the last comment; the first comment's author when left out. */
+  lastAuthor?: string
+}
 
 export function threadsAnswer(threads: readonly Thread[]): string {
-  const nodes = threads.map(({ author, body, ...thread }) => ({
+  const login = (name: string | null) => (name === null ? null : { login: name })
+  const nodes = threads.map(({ author, body, lastAuthor, ...thread }) => ({
     ...thread,
-    comments: { nodes: [{ author: author === null ? null : { login: author }, body }] },
+    comments: { nodes: [{ author: login(author), body }] },
+    latest: { nodes: [{ author: login(lastAuthor ?? author) }] },
   }))
   return JSON.stringify({ data: { repository: { pullRequest: { reviewThreads: { nodes } } } } })
 }
@@ -29,6 +41,7 @@ export const THREADS = threadsAnswer([
   { isResolved: false, path: 'hooks/register.tsx', line: 12, author: 'reviewer', body: 'Rename this.\nIt reads oddly.' },
   { isResolved: true, path: 'README.md', line: 3, author: 'reviewer', body: 'Done' },
   { isResolved: false, path: 'install.sh', line: null, author: null, body: 'Outdated?' },
+  { isResolved: false, path: 'README.md', line: 9, author: 'reviewer', body: 'Typo.', lastAuthor: 'author' },
 ])
 
 function ran(exitCode: number, stdout: string, stderr: string) {

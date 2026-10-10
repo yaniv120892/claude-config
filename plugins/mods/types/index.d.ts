@@ -18,7 +18,12 @@ export type PrThread = {
   author: string
   /** The thread's first comment, first line only. */
   excerpt: string
+  /** The PR's author wrote the thread's last comment, so it waits on the reviewer. */
+  isReplied: boolean
 }
+
+/** GitHub's mergeStateStatus: CLEAN can merge now; the rest say what stands in the way. */
+export type MergeState = 'CLEAN' | 'HAS_HOOKS' | 'BEHIND' | 'BLOCKED' | 'DIRTY' | 'DRAFT' | 'UNSTABLE' | 'UNKNOWN'
 
 export type PullRequest = {
   number: number
@@ -28,8 +33,12 @@ export type PullRequest = {
   isDraft: boolean
   mergeable: 'MERGEABLE' | 'CONFLICTING' | 'UNKNOWN'
   reviewDecision: 'APPROVED' | 'CHANGES_REQUESTED' | 'REVIEW_REQUIRED' | null
+  mergeState: MergeState
+  author: string
   checks: PrCheck[]
+  /** The unresolved review threads. */
   threads: PrThread[]
+  resolvedThreads: number
 }
 
 export type Band = {
@@ -63,6 +72,9 @@ declare module 'claude-code' {
       band: Shaped<Band | null>
       /** Null until the PR's first read. */
       prRead: PrRead | null
+      /** The PRs opened this session, newest first: the URLs found, and each one's last read. */
+      sessionPrUrls: string[]
+      sessionPrs: Shaped<PullRequest[]>
     }
   }
 }
