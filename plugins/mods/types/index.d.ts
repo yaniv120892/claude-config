@@ -40,7 +40,6 @@ export type Band = {
   usageLimits: UsageLimit[]
 }
 
-/** A rate-limit window as the band shows it: `5h` or `wk`, and the percent used. */
 export type UsageLimit = { label: string; percent: number }
 
 export type PrRead = { pr: PullRequest | null; error: string | null }
