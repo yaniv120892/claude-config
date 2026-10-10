@@ -29,6 +29,7 @@ export type PullRequest = {
   number: number
   title: string
   url: string
+  headRefName: string
   state: 'OPEN' | 'MERGED' | 'CLOSED'
   isDraft: boolean
   mergeable: 'MERGEABLE' | 'CONFLICTING' | 'UNKNOWN'
@@ -63,6 +64,15 @@ export type UsageLimit = {
 
 export type PrRead = { pr: PullRequest | null; error: string | null }
 
+/** When each PR skill last ran, by what it ran against: a branch, or a PR by its URL. */
+export type PrSkillRuns = Record<string, Record<string, string>>
+
+export type PrSkillState = {
+  /** The repository the session is in, which every branch key starts with. */
+  root: string | null
+  runs: PrSkillRuns
+}
+
 declare module 'claude-code' {
   interface PluginState {
     mods: {
@@ -75,6 +85,8 @@ declare module 'claude-code' {
       /** The PRs opened this session, newest first: the URLs found, and each one's last read. */
       sessionPrUrls: string[]
       sessionPrs: Shaped<PullRequest[]>
+      /** Which PR skills ran on each PR, mirrored from the store so the band reads it without I/O. */
+      prSkills: PrSkillState
     }
   }
 }

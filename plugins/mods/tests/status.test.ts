@@ -11,7 +11,7 @@ function fakeRepo(on: On, options: { hasPr: boolean }) {
   const ghCalls: string[] = []
   const gitCalls: string[] = []
   on('session.cwd', () => ({ value: '/w/claude-config/.worktrees/mods' }))
-  on('session.repo', () => ({ value: { root: '/w/claude-config', remote: null, internal: false, name: null } }))
+  on('session.repo', () => ({ value: { root: '/w/claude-config', remote: 'git@github.com:owner/claude-config.git', internal: false, name: null } }))
   on('session.model', () => ({ value: 'claude-opus-5-5' }))
   const usage = {
     startedAt: 0,
@@ -68,6 +68,14 @@ const PANE_PROPS = {
   placement: 'dock' as const,
   scroll: { offset: 0, bodyRows: 40 },
   view: {},
+}
+
+/** The band's PR rows, each as one line. */
+async function prRows($: Engine): Promise<string[]> {
+  const band = await $.ui.mount({ plugin: 'mods', surface: 'terminal', component: 'AbovePrompt', props: BAND_PROPS })
+  const rows = (await band.findAll({ type: 'Text' })).map(element => element.text).filter(text => text.startsWith('PR #'))
+  await band.unmount()
+  return rows
 }
 
 describe('the status band', () => {
@@ -228,13 +236,6 @@ describe('the session PRs', () => {
     statusCheckRollup: [{ __typename: 'CheckRun', name: 'tests', status: 'COMPLETED', conclusion: 'SUCCESS' }],
     ...fields,
   })
-  /** The band's PR rows, each as one line. */
-  const prRows = async ($: Engine) => {
-    const band = await $.ui.mount({ plugin: 'mods', surface: 'terminal', component: 'AbovePrompt', props: BAND_PROPS })
-    const rows = (await band.findAll({ type: 'Text' })).map(element => element.text).filter(text => text.startsWith('PR #'))
-    await band.unmount()
-    return rows
-  }
 
   test('adds the PR a gh pr create printed, even on a branch with no PR', NO_GATE, async ($, on) => {
     const { clock, pr, bash } = fakeRepo(on, { hasPr: false })
@@ -293,5 +294,75 @@ describe('the session PRs', () => {
     await $.command.run(slash('pr'))
     expect([...ghCalls].sort()).toEqual(['gh api graphql', 'gh pr list', 'gh pr view'])
     expect((await prRows($)).filter(row => row.startsWith('PR #51'))).toHaveLength(1)
+  })
+})
+
+describe('the PR skill checklist', () => {
+  /** On the branch of PR #51, the store empty unless `stored` fills it. */
+  const setup = async ($: Engine, on: On, stored?: Record<string, unknown>) => {
+    const repo = fakeRepo(on, { hasPr: true })
+    mock.store(on, stored)
+    on('skill.prompt', ($, e) => ({ text: e.text }))
+    on('tool.call', { tool: 'Skill' }, ($, e) => ({ result: { success: true, commandName: e.skill } }))
+    on('command.run', () => ({ text: '' }))
+    repo.pr.byUrl['51'] = { url: PR_VIEW.url }
+    await $.tool.call({ tool: 'Bash', command: 'git status' })
+    return repo
+  }
+  const row51 = async ($: Engine) => (await prRows($)).find(row => row.startsWith('PR #51'))
+
+  test('ticks a skill run on the PR branch on its row and in /pr', async ($, on) => {
+    const { clock } = await setup($, on)
+    await $.skill.prompt({ skill: 'simplify', text: 'Simplify.' })
+    await $.skill.prompt({ skill: 'pr-workflows:pr-second-review', text: 'Recheck.' })
+    await clock.advance(1000)
+    await $.command.run(slash('pr'))
+    expect(await row51($)).toContain('✓simplify ○code-review ○pr-review ○prune')
+
+    const pane = await $.ui.mount({ plugin: 'mods', surface: 'terminal', component: 'Pane', requestId: 'mods-pr', props: PANE_PROPS })
+    const lines = (await pane.findAll({ type: 'Text' })).map(element => element.text).join('|')
+    expect(lines).toContain('✓ simplify ran 2026-10-05')
+    expect(lines).toContain('○ pr-review not run')
+    await pane.unmount()
+  })
+
+  test('counts a run for the PR its arguments name, not the branch it ran on', async ($, on) => {
+    const { clock } = await setup($, on)
+    await $.skill.prompt({ skill: 'pr-workflows:pr-review', text: 'Review.\n\nARGUMENTS: 51' })
+    await $.skill.prompt({ skill: 'simplify', text: 'Simplify.\n\nARGUMENTS: owner/claude-config#57' })
+    await clock.advance(1000)
+    await $.command.run(slash('pr'))
+    expect(await row51($)).toContain('○simplify ○code-review ✓pr-review ○prune')
+  })
+
+  test('reads the arguments from the Skill call or the slash command, where the skill text has none', async ($, on) => {
+    const { clock, pr } = await setup($, on)
+    pr.byUrl['57'] = { url: 'https://github.com/owner/claude-config/pull/57' }
+    await $.tool.call({ tool: 'Skill', skill: 'code-review', args: 'high 57 --comment' })
+    await $.skill.prompt({ skill: 'code-review', text: 'Review target: `high 57 --comment`' })
+    await $.command.run(slash('prune-comments', '57'))
+    await $.skill.prompt({ skill: 'dev-workflows:prune-comments', text: 'Prune.' })
+    await $.skill.prompt({ skill: 'simplify', text: 'Simplify.' })
+    await clock.advance(1000)
+    await $.command.run(slash('pr'))
+    // Both named #57, so the branch's own #51 gets only the run that named nothing.
+    expect(await row51($)).toContain('✓simplify ○code-review ○pr-review ○prune')
+  })
+
+  test('shows the runs an earlier session stored', async ($, on) => {
+    on('command.register', ($, e) => ({ value: { command: e.name } }))
+    on('session.start', ($, e) => ({ cwd: e.cwd }))
+    const { clock } = await setup($, on, { prSkillRuns: { '/w/claude-config@feat/mods': { 'prune-comments': '2026-10-04T09:00:00.000Z' } } })
+    await $.session.start({ cwd: '/w/claude-config/.worktrees/mods', surface: 'terminal', isInteractive: true })
+    await clock.advance(1000)
+    expect(await row51($)).toContain('○simplify ○code-review ○pr-review ✓prune')
+  })
+
+  test('stays off the band when switched off', { options: { prSkills: false } }, async ($, on) => {
+    const { clock } = await setup($, on)
+    await $.skill.prompt({ skill: 'simplify', text: 'Simplify.' })
+    await clock.advance(1000)
+    await $.command.run(slash('pr'))
+    expect(await row51($)).not.toContain('simplify')
   })
 })
