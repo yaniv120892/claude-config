@@ -13,7 +13,6 @@ employer, forge, or issue tracker — and **no secrets are tracked**.
 | --- | --- | --- |
 | Skills, commands, hooks, mods | **Plugins** (6) | Plugins are the supported mechanism: versioned, per-profile toggles, `/plugin update`, namespaced, and installing one never touches your existing skills |
 | Global rules, settings, keybindings | **Symlinks** via `install.sh` | Plugins cannot provide always-loaded `CLAUDE.md` instructions, `paths:`-scoped `rules/*.md`, or `settings.json` |
-| Reusable workflows and composite actions | **`uses:`** from a repo's own workflow | Runs on GitHub, not in a session — see *GitHub workflows* below |
 
 ## Install on a new machine
 
@@ -132,30 +131,6 @@ write gate included.
 **Upgrading a machine that has the old pieces:** re-run `install.sh`. It removes
 the links to the deleted scripts and names each entry of your kept
 `settings.json` that still runs one, which you delete by hand.
-
-## GitHub workflows (the third route)
-
-Some automation runs on GitHub rather than in a session, and reaches a repo by
-`uses:` rather than by plugin or symlink. `.github/workflows/deps-upgrade.yml` is
-a reusable workflow: an app repo's own `deps-upgrade.yml` calls it daily with the
-list of checks a dependency bump must pass, and one pull request per outdated
-package comes back, for a human to review. The model step is told to open the
-pull request and stop, and `gh pr merge`, `gh pr review`, `gh pr edit` and a
-force push are denied in its settings; that is a guardrail, since the step can
-run `npm`, `node` and `git`. What enforces it is a ruleset on the app repo's
-default branch requiring a pull request and a review, with no bypass. When an
-upgrade needed code changes, the model runs `/simplify` and `/code-review --fix`
-on them before committing, and a correctness finding it leaves unfixed opens the
-pull request as a draft; a bump that touches only `package.json` and the lockfile
-skips the review. Background tasks are disabled for that step, because
-`/simplify`'s reviewers would otherwise still be running when the run reports
-its result and the step ends. The
-`deps-discover` and `deps-bump` actions under
-`.github/actions/` are the model-free half; each `action.yml` says what it does.
-
-Callers pin `@main`, the same "fetched, stays current" terms as the plugins.
-The discovery and bump logic is pure and covered:
-`node --test .github/actions/deps-discover/discover.test.mjs .github/actions/deps-bump/bump.test.mjs`.
 
 ## Skill evals
 
