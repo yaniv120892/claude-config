@@ -266,6 +266,11 @@ describe('the session PRs', () => {
 
     const rows = await prRows($)
     expect(rows.find(row => row.startsWith('PR #57'))).toMatch(/^PR #57 awaiting review ✓1 · .* · PR 57$/)
+
+    const band = await $.ui.mount({ plugin: 'mods', surface: 'terminal', component: 'AbovePrompt', props: BAND_PROPS })
+    const links = (await band.findAll({ type: 'Link' })).map(element => element.props.href)
+    expect(links).toEqual([URL_57])
+    await band.unmount()
   })
 
   test('finds PRs opened elsewhere this session, and says which is ready to merge', NO_GATE, async ($, on) => {

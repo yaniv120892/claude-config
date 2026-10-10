@@ -516,7 +516,7 @@ export const register: Register = (on, options) => {
       const shown = await read($, band)
       if (e.props.hasSurvey || shown === null) return next(e)
 
-      const { Box, Text } = $.ui.resolve(e)
+      const { Box, Text, Link } = $.ui.resolve(e)
       const { location: here, model: modelName, contextPercent: percent, usageLimits: limits, costUsd } = shown
       const now = await $.clock.now()
       const current = (await read($, prRead))?.pr ?? null
@@ -568,7 +568,7 @@ export const register: Register = (on, options) => {
             return (
               <Text key={pr.url} wrap="truncate-end">
                 <Text dimColor>PR </Text>
-                <Text bold>#{pr.number}</Text>
+                <Link href={pr.url} label={`#${pr.number}`} />
                 <Text color={status.color}> {status.label}</Text>
                 {(['fail', 'pending', 'pass'] as const).map(
                   state =>
