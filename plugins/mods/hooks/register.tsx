@@ -103,7 +103,10 @@ async function refuseDefaultBranchWrite($: Engine, command: string): Promise<{ d
     if (write.isOptedOut || write.directory === null) continue
     const branch = await git($, write.directory, ['symbolic-ref', '--quiet', '--short', 'HEAD'])
     if (branch?.exitCode !== 0 || !branch.stdout) continue
-    if (branch.stdout === (await defaultBranch($, write.directory))) return { deny: defaultBranchRefusal(branch.stdout) }
+    const base = await defaultBranch($, write.directory)
+    if (branch.stdout !== base) continue
+    if (write.deletedBranches?.every(deleted => deleted !== base)) continue
+    return { deny: defaultBranchRefusal(branch.stdout) }
   }
   return null
 }
