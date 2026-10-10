@@ -87,6 +87,27 @@ describe('what moves the PR and the band', () => {
     }
   })
 
+  test('changesPr: gh api calls that send to a PR, not reads or other endpoints', () => {
+    for (const command of [
+      'gh api repos/o/r/pulls/58/comments -f body=x -F line=1',
+      'gh api repos/o/r/pulls/58/comments/9/replies -f body="a reply"',
+      'gh api -X PATCH repos/o/r/pulls/58 -f title=y',
+      'gh api --method DELETE /repos/o/r/issues/58/labels/bug',
+      "gh api graphql -f query='mutation { resolveReviewThread(input: {threadId: \"x\"}) { clientMutationId } }'",
+    ]) {
+      expect(changesPr(command)).toBe(true)
+    }
+    for (const command of [
+      'gh api repos/o/r/pulls/58/comments',
+      'gh api -X GET repos/o/r/pulls/58/comments -f per_page=100',
+      'gh api repos/o/r/pulls/58/comments --jq .[].id',
+      "gh api graphql -f query='query { viewer { login } }'",
+      'gh api -X POST repos/o/r/dispatches -f event_type=x',
+    ]) {
+      expect(changesPr(command)).toBe(false)
+    }
+  })
+
   test('runsGit: any git or gh call', () => {
     expect(runsGit('cd x && git checkout main')).toBe(true)
     expect(runsGit('ls -la && cat README.md')).toBe(false)

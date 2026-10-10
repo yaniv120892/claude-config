@@ -171,16 +171,19 @@ async function readLocation($: Engine): Promise<GitLocation> {
   }
 }
 
-async function storePr($: Engine, found: PrRead): Promise<void> {
+async function storePr($: Engine, reading: Promise<PrRead>): Promise<void> {
+  const found = await reading
   const last = await read($, prRead)
   if (isSame(last, found)) return
   await update($, prRead, () => found)
 }
 
-/** Rereads each PR opened this session that is still open; a merged or closed one keeps its last read. */
-async function refreshSessionPrs($: Engine): Promise<void> {
-  const cwd = await $.session.cwd()
-  const known = await read($, sessionPrUrls)
+/**
+ * Rereads each PR opened this session that is still open; a merged or closed one keeps its last read.
+ * The one that was the branch's PR at the last read waits for `branchRead` rather than fetching twice.
+ */
+async function refreshSessionPrs($: Engine, branchRead: Promise<PrRead>): Promise<void> {
+  const [cwd, known, lastBranch] = await Promise.all([$.session.cwd(), read($, sessionPrUrls), read($, prRead)])
   const urls = [...new Set([...(await listSessionPrs($, cwd)), ...known])]
   if (!isSame(urls, known)) await update($, sessionPrUrls, () => urls)
   if (urls.length === 0) return
@@ -190,6 +193,10 @@ async function refreshSessionPrs($: Engine): Promise<void> {
     urls.map(async url => {
       const previous = last.find(pr => pr.url === url) ?? null
       if (previous !== null && previous.state !== 'OPEN') return previous
+      if (url === lastBranch?.pr?.url) {
+        const branch = (await branchRead).pr
+        if (branch?.url === url) return branch
+      }
       return (await readPrView($, url, cwd)).pr ?? previous
     }),
   )
@@ -290,8 +297,8 @@ function refreshPr($: Engine): Promise<void> {
   prInFlight = (async () => {
     do {
       isPrRereadWanted = false
-      await storePr($, await readPr($))
-      await refreshSessionPrs($)
+      const branchRead = readPr($)
+      await Promise.all([storePr($, branchRead), refreshSessionPrs($, branchRead)])
     } while (isPrRereadWanted)
   })().finally(() => {
     prInFlight = null
