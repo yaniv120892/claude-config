@@ -40,6 +40,10 @@ one thread never excuses skipping the nits in the same review:
    someone else's change, reply with a proposal and leave the decision to the
    author. Treat a bot finding as a bug report: verify it, then fix or refute
    it. After pushing for a changes-requested review, re-request the reviewer.
+   Zero unresolved threads is not zero findings: Qodo edits one PR-level
+   "Code Review by Qodo" comment in place on every push. Read that comment's
+   findings for the head commit and work each one not struck through or
+   marked Dismissed — a refutation goes as a reply on its inline comment.
 
 ## Red CI
 
@@ -77,10 +81,20 @@ failing check, why it is not this change's failure, and the fix ported (or
 that none exists yet). One comment per cause — a repeat event on the same
 established blocker is a silent re-check, not a new comment.
 
+## Approved
+
+An approval ends the stewardship only when the user authorized merging on
+approval. Without that, report the approval and stop. With it, and the head
+green, mergeable, and clear of open findings: squash-merge deleting the branch
+(`gh pr merge <n> --squash --delete-branch`), then run the repo's
+verify-on-deploy skill against the description's verification checklist, tick
+the boxes it proved, and report the ones it could not.
+
 ## Cadence
 
 Events under-deliver: CI success, pushes, and conflict transitions can arrive
-late or not at all. While the head is red, conflicted, or awaiting a re-check,
+late or not at all. While the head is red, conflicted, awaiting a re-check, or awaiting an
+approval the user authorized merging on,
 keep a check-in scheduled (~1 hour out) that re-reads merge state, CI on the
 latest commit, and open threads, then re-arms. Quiet check-ins re-arm silently.
 Stop when the pull request is merged or closed, or the user says stop.
