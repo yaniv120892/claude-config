@@ -59,6 +59,10 @@ Read those files rather than working from memory of them — a list cached here
 goes stale the week a rule is added, and under-reports exactly the newest rules.
 Cite each finding by the rule's bold name plus `file:line`.
 
+When the diff touches `CLAUDE.md`, `AGENTS.md`, or `.claude/rules/*`, also run
+`<PLUGIN_ROOT>/skills/pr-review/references/instruction-files.md` and file its
+rows here. Skip it for any other diff.
+
 The names that recur most, as a recall prompt only: Always Use Braces, Avoid
 TypeScript `as` Casts, Explicit Class Access Modifiers, No Abbreviated
 Identifiers, Self-Documenting Code Over Comments, Public-First Method Ordering,
