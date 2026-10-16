@@ -49,6 +49,12 @@ export function prReferences(args: string): PrReferences | null {
   return tokens.length === 0 ? null : found
 }
 
+/** The one session PR with this number; a number two of them share stays for gh to resolve. */
+export function sessionPrUrl(number: number, sessionUrls: readonly string[]): string | null {
+  const matches = sessionUrls.filter(url => prAddresses(url)[0]?.number === number)
+  return matches.length === 1 ? (matches[0] ?? null) : null
+}
+
 export const branchKey = (root: string, branch: string) => `${root}@${branch}`
 
 export function recordRun(runs: PrSkillRuns, targets: readonly string[], skill: string, now: string): PrSkillRuns {

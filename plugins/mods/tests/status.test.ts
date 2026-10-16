@@ -335,6 +335,21 @@ describe('the PR skill checklist', () => {
     expect(await row51($)).toContain('○simplify ○code-review ✓pr-review ○prune')
   })
 
+  test('counts a bare number for the session PR in another repository that has it', { options: { gitGate: false } }, async ($, on) => {
+    const { clock, pr, bash } = await setup($, on)
+    const url546 = 'https://github.com/owner/mastra/pull/546'
+    pr.byUrl[url546] = { ...PR_VIEW, number: 546, url: url546, headRefName: 'feat/pii', title: 'PII' }
+    bash.stdout = `${url546}\n`
+    await $.tool.call({ tool: 'Bash', command: 'gh pr create --fill' })
+    await clock.advance(1000)
+    await $.skill.prompt({ skill: 'simplify', text: 'Simplify.\n\nARGUMENTS: #546' })
+    await clock.advance(1000)
+    await $.command.run(slash('pr'))
+    const rows = await prRows($)
+    expect(rows.find(row => row.startsWith('PR #546'))).toContain('✓simplify')
+    expect(await row51($)).toContain('○simplify')
+  })
+
   test('reads the arguments from the Skill call or the slash command, where the skill text has none', async ($, on) => {
     const { clock, pr } = await setup($, on)
     pr.byUrl['57'] = { url: 'https://github.com/owner/claude-config/pull/57' }

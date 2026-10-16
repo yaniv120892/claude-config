@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { argumentsLine, prReferences, prSkillOf, prSkillRuns, recordRun } from '../hooks/pr-skills'
+import { argumentsLine, prReferences, prSkillOf, prSkillRuns, recordRun, sessionPrUrl } from '../hooks/pr-skills'
 
 const ROOT = '/w/claude-config'
 const URL_63 = 'https://github.com/owner/claude-config/pull/63'
@@ -33,6 +33,19 @@ describe('prReferences', () => {
     expect(prReferences('--comment high')).toBe(null)
     expect(prReferences('3 files')).toBe(null)
     expect(prReferences('plugins/mods')).toBe(null)
+  })
+})
+
+describe('sessionPrUrl', () => {
+  const OTHER_63 = 'https://github.com/owner/other/pull/63'
+
+  test('is the one session PR with that number, in any repository', () => {
+    expect(sessionPrUrl(63, [OTHER_63, 'https://github.com/owner/other/pull/64'])).toBe(OTHER_63)
+  })
+
+  test('is null when no session PR has it, or two do', () => {
+    expect(sessionPrUrl(65, [OTHER_63])).toBe(null)
+    expect(sessionPrUrl(63, [OTHER_63, URL_63])).toBe(null)
   })
 })
 

@@ -19,7 +19,7 @@ import {
   prViewError,
   THREADS_QUERY,
 } from './pr-data'
-import { argumentsLine, branchKey, PR_SKILLS, prReferences, prSkillOf, prSkillRuns, recordRun } from './pr-skills'
+import { argumentsLine, branchKey, PR_SKILLS, prReferences, prSkillOf, prSkillRuns, recordRun, sessionPrUrl } from './pr-skills'
 import { asRecord } from './store'
 import { asTally, countSkill, formatTally } from './tally'
 import { truncate } from './text'
@@ -293,27 +293,34 @@ async function prUrlOf($: Engine, cwd: string, number: number): Promise<string |
   }
 }
 
-/** The PRs the arguments name, else the branch the session is on. */
-async function runTargets($: Engine, root: string, cwd: string, args: string): Promise<string[]> {
+/**
+ * The PRs the arguments name, else the branch the session is on. A bare number is matched against
+ * the session's PRs first: the session often spans repos, and gh only sees the one at `cwd`.
+ */
+async function runTargets($: Engine, root: string | null, cwd: string, args: string): Promise<string[]> {
   const named = prReferences(args)
   if (named !== null) {
-    const resolved = await Promise.all(named.numbers.map(number => prUrlOf($, cwd, number)))
+    const sessionUrls = await read($, sessionPrUrls)
+    const resolved = await Promise.all(
+      named.numbers.map(number => sessionPrUrl(number, sessionUrls) ?? prUrlOf($, cwd, number)),
+    )
     const urls = [...new Set([...named.urls, ...resolved.filter(url => url !== null)])]
     if (urls.length > 0) return urls
   }
+  if (root === null) return []
   const branch = await currentBranch($, cwd)
   return branch === null ? [] : [branchKey(root, branch)]
 }
 
 async function recordPrSkill($: Engine, skill: string, args: string): Promise<void> {
   const [repo, cwd] = await Promise.all([$.session.repo(), $.session.cwd()])
-  if (repo === null) return
-  const targets = await runTargets($, repo.root, cwd, args)
+  const root = repo?.root ?? null
+  const targets = await runTargets($, root, cwd, args)
   if (targets.length === 0) return
   const [stored, now] = await Promise.all([$.store.get(PR_SKILLS_KEY), $.clock.now()])
   const runs = recordRun(asRecord<PrSkillRuns>(stored), targets, skill, new Date(now).toISOString())
   await $.store.set(PR_SKILLS_KEY, runs)
-  await update($, prSkills, () => ({ root: repo.root, runs }))
+  await update($, prSkills, () => ({ root, runs }))
 }
 
 const ALERTED_KEY = 'alertedWindows'
