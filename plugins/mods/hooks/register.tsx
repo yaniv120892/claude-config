@@ -140,8 +140,8 @@ function defaultBranchRefusal(branch: string): string {
 }
 
 const PR_POLL_MS = 90_000
-// The branch's own PR, then the newest opened this session: the band stays a few rows tall.
-const MAX_SESSION_PR_ROWS = 3
+// The branch's own PR, then the newest opened this session; the cap keeps a long session from flooding the band.
+const MAX_SESSION_PR_ROWS = 8
 // Bash calls a few hundred milliseconds apart share one refresh.
 const BAND_SETTLE_MS = 300
 
