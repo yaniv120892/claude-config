@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
-import type { CommandSpec, EngineInterface as Engine, Register } from 'claude-code'
+import type { CommandSpec, EngineInterface as Engine, Register, ToolCallResult, ToolResultOf } from 'claude-code'
 
-import type { Band, GitLocation, PrRead, PrSkillRuns, UsageLimit } from '../types'
+import type { Band, GitLocation, PlanTask, PrRead, PrSkillRuns, UsageLimit } from '../types'
 import { gitWrites, OPT_OUT } from './branch-guard'
 import { credentialReason, findCredential, findTerm, parseTerms, termPattern, termReason } from './credentials'
 import { changesPr, createsPr, GATED_COMMANDS, isGitWrite, runsGit } from './git-write'
@@ -19,6 +19,7 @@ import {
   prViewError,
   THREADS_QUERY,
 } from './pr-data'
+import { addTask, freshTasks, fromTodos, PLAN_KEY_PREFIX, planCount, planTitle, summarize, updateTask } from './plan'
 import { argumentsLine, branchKey, PR_SKILLS, prReferences, prSkillOf, prSkillRuns, recordRun, sessionPrUrl } from './pr-skills'
 import { asRecord } from './store'
 import { asTally, countSkill, formatTally } from './tally'
@@ -45,6 +46,7 @@ const prRead = atom({ plugin: 'mods', key: 'prRead' } as const, null)
 const sessionPrUrls = atom({ plugin: 'mods', key: 'sessionPrUrls' } as const, [])
 const sessionPrs = atom({ plugin: 'mods', key: 'sessionPrs' } as const, [], { shape: 'session-prs-2' })
 const prSkills = atom({ plugin: 'mods', key: 'prSkills' } as const, { root: null, runs: {} })
+const planTasks = atom({ plugin: 'mods', key: 'planTasks' } as const, [], { shape: 'plan-tasks-1' })
 
 const GIT_GATE_COMMAND: CommandSpec = {
   name: 'git-gate',
@@ -323,6 +325,47 @@ async function recordPrSkill($: Engine, skill: string, args: string): Promise<vo
   await update($, prSkills, () => ({ root, runs }))
 }
 
+/** Restores the plan a resumed session left, and drops every session's plan past its day. */
+async function loadPlans($: Engine): Promise<void> {
+  const [id, now, keys] = await Promise.all([$.session.id(), $.clock.now(), $.store.keys()])
+  planSession = id
+  for (const key of keys.filter(key => key.startsWith(PLAN_KEY_PREFIX))) {
+    const tasks = freshTasks(await $.store.get(key), now)
+    if (tasks === null) await $.store.delete(key)
+    else if (key === `${PLAN_KEY_PREFIX}${id}`) await update($, planTasks, () => tasks)
+  }
+}
+
+/** The plan's session id; after a /clear or /resume the atom is reloaded from that session's stored plan. */
+async function syncPlanSession($: Engine): Promise<string> {
+  const id = await $.session.id()
+  if (id === planSession) return id
+  planSession = id
+  const tasks = freshTasks(await $.store.get(`${PLAN_KEY_PREFIX}${id}`), await $.clock.now())
+  await update($, planTasks, () => tasks ?? [])
+  return id
+}
+
+/** Applies one main-loop task call to the plan, in call order, and stores it under the session's id. */
+function changePlan($: Engine, change: (tasks: readonly PlanTask[]) => PlanTask[]): Promise<void> {
+  planWrites = planWrites
+    .then(async () => {
+      const id = await syncPlanSession($)
+      const last = await read($, planTasks)
+      const tasks = change(last)
+      if (isSame(last, tasks)) return
+      await update($, planTasks, () => tasks)
+      await $.store.set(`${PLAN_KEY_PREFIX}${id}`, { tasks, updatedAt: await $.clock.now() })
+    })
+    .catch(error => $.ui.log(`mods: ${String(error)}`, { to: 'debug' }))
+  return planWrites
+}
+
+/** The tool's record, or null when it was refused or reported an error: such a call leaves the plan as it was. */
+function answerOf<Name extends string>(ran: ToolCallResult<Name>): ToolResultOf<Name> | null {
+  return ran.deny === undefined && ran.isError === undefined ? ran.result : null
+}
+
 const ALERTED_KEY = 'alertedWindows'
 const ALERT_TOAST_MS = 10_000
 
@@ -335,6 +378,10 @@ let prInFlight: Promise<void> | null = null
 let prSkillWrites: Promise<void> = Promise.resolve()
 // A PR skill's arguments, from the call that loads it, until its prompt fires.
 const prSkillArgs = new Map<string, string>()
+// Task calls in one turn can run in parallel; each change lands after the one before.
+let planWrites: Promise<void> = Promise.resolve()
+// The session the plan atom was loaded for; null until the first load.
+let planSession: string | null = null
 
 function notePrSkillArgs(skill: string, args: string): void {
   const prSkill = prSkillOf(skill)
@@ -493,6 +540,7 @@ export const register: Register = (on, options) => {
   const hasStatusBand = isOn('statusBand')
   isAlerting = isOn('alerts')
   const hasPrSkills = isOn('prSkills') && (hasStatusBand || isOn('prPane'))
+  const hasPlanProgress = isOn('planProgress') && hasStatusBand
   const blockedTerms = termPattern(parseTerms(options.blockedTerms))
   const commands = [
     ...(hasGitGate ? [GIT_GATE_COMMAND] : []),
@@ -516,6 +564,7 @@ export const register: Register = (on, options) => {
       })
       $.clock.every(PR_POLL_MS, () => inBackground($, refreshPr($)))
     }
+    if (hasPlanProgress) $.clock.after(0, () => inBackground($, loadPlans($)))
     return started
   })
 
@@ -588,6 +637,8 @@ export const register: Register = (on, options) => {
       const rows = current === null ? opened : [current, ...opened]
       const place = here.repo !== null && here.repo !== here.dir ? `${here.repo}/${here.dir}` : here.dir
       const skills = hasPrSkills ? await read($, prSkills) : null
+      const plan = hasPlanProgress ? summarize(await read($, planTasks)) : null
+      const activeTitle = plan === null ? null : planTitle(plan, e.props.bodyColumns)
 
       return (
         <Box flexDirection="column">
@@ -625,6 +676,14 @@ export const register: Register = (on, options) => {
             })}
             {limits.length === 0 && costUsd !== null && <Text dimColor> {formatCost(costUsd)}</Text>}
           </Text>
+          {plan !== null && (
+            <Text wrap="truncate-end">
+              <Text color={plan.phase === 'building' ? 'yellow' : undefined} dimColor={plan.phase !== 'building'}>
+                {planCount(plan)}
+              </Text>
+              {activeTitle !== null && <Text> · {activeTitle}</Text>}
+            </Text>
+          )}
           {rows.map(pr => {
             const status = prStatus(pr)
             const counts = countChecks(pr.checks)
@@ -674,6 +733,39 @@ export const register: Register = (on, options) => {
           })}
         </Box>
       )
+    })
+  }
+
+  if (hasPlanProgress) {
+    // A subagent's task calls are its own plan: counting them would inflate the main one.
+    on('tool.call', { tool: 'TodoWrite' }, async ($, e, next) => {
+      const ran = await next(e)
+      if (e.agentId === undefined && answerOf(ran) !== null) await changePlan($, () => fromTodos(e.todos))
+      return ran
+    }).catch(($, e, next) => next(e))
+
+    on('tool.call', { tool: 'TaskCreate' }, async ($, e, next) => {
+      const ran = await next(e)
+      const id = answerOf(ran)?.task.id
+      if (e.agentId === undefined && id !== undefined) await changePlan($, tasks => addTask(tasks, id, e.subject))
+      return ran
+    }).catch(($, e, next) => next(e))
+
+    on('tool.call', { tool: 'TaskUpdate' }, async ($, e, next) => {
+      const ran = await next(e)
+      if (e.agentId === undefined && answerOf(ran)?.success === true) {
+        await changePlan($, tasks => updateTask(tasks, e))
+      }
+      return ran
+    }).catch(($, e, next) => next(e))
+
+    on('session.end', async ($, e, next) => {
+      // The process goes on under another session after /clear or /resume; its next task call loads that plan.
+      if (e.reason === 'clear' || e.reason === 'resume') {
+        planSession = null
+        await update($, planTasks, () => [])
+      }
+      return next(e)
     })
   }
 

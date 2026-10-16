@@ -73,6 +73,20 @@ export type PrSkillState = {
   runs: PrSkillRuns
 }
 
+export type PlanTask = {
+  id: string
+  subject: string
+  /** The status the model declared; a deleted task is dropped, never kept. */
+  status: 'pending' | 'in_progress' | 'completed'
+}
+
+/** One session's plan in the store, under `planProgress:<session id>`. */
+export type StoredPlan = {
+  tasks: PlanTask[]
+  /** Epoch milliseconds of the last task call that changed it. */
+  updatedAt: number
+}
+
 declare module 'claude-code' {
   interface PluginState {
     mods: {
@@ -87,6 +101,8 @@ declare module 'claude-code' {
       sessionPrs: Shaped<PullRequest[]>
       /** Which PR skills ran on each PR, mirrored from the store so the band reads it without I/O. */
       prSkills: PrSkillState
+      /** The main loop's plan, from its TodoWrite, TaskCreate and TaskUpdate calls; a subagent's never land here. */
+      planTasks: Shaped<PlanTask[]>
     }
   }
 }
