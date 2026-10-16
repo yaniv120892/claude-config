@@ -33,6 +33,7 @@ done in 41s, peak RSS 412MB
 - **Paste real output**, trimmed to the lines carrying the claim. A description of the output is not the output.
 - **Close with `**Not proven locally:**`** naming what the run could not reach. `## Verify on dev` opens with that same line as its `**Only dev can prove:**` — carry it down as-is rather than rewording it.
 - Where there is genuinely no *before* — a brand-new endpoint — the 404 from the base branch is the before. Show it.
+- **When the before can't be reproduced locally, capture it on dev.** Dev runs the base branch, so a request or a message sent there, or a UI flow recorded there, is the before half — check what dev is running first (the deployed image tag or commit), and say which in the run line. The after half then comes from the PR's ticket env or a local run against the same input. **Never production**: not for a request, not for a chat message, not even when the before is "it gets blocked" — a read-only-looking flow on prod still writes analytics and traces against real data.
 
 **What counts as the run:**
 - A live call: `curl` against the local service, plus the response body.
