@@ -1,13 +1,13 @@
 ---
 name: writing-pr-description
-description: Use when a pull or merge request body is being written or rewritten — opening one with `gh pr create`, editing one with `gh pr edit`, a PR sitting with an empty or auto-generated body, or a reviewer asking for more context in the description. Fills in the repo's own PR template when there is one; otherwise a plain-language Motivation, a file-anchored Implementation, a Proof of Work from running the code before and after, and Verify-on-dev acceptance criteria, with shorter forms for docs-only, config-only, and package-bump changes.
+description: Use when a pull or merge request body is being written or rewritten — opening one with `gh pr create`, editing one with `gh pr edit`, a PR sitting with an empty or auto-generated body, or a reviewer asking for more context in the description. Fills in the repo's own PR template when there is one; otherwise a plain-language Motivation, a file-anchored Implementation, before/after Mermaid diagrams of the affected flow, a Before / After behaviour table, a Proof of Work from running the code before and after, and Verify-on-dev acceptance criteria, with shorter forms for docs-only, config-only, and package-bump changes.
 ---
 
 # Writing PR Descriptions
 
 ## Overview
 
-A PR description is the primary context reviewers and future readers have for understanding a change. It must answer four questions, each for a different reader: **Why was this needed?** — in plain words, for the product person. **Which files changed, and what does each do for the feature?** — for the reviewer. **What happened when you ran it, before and after?** — for anyone who has to trust it. **What gets checked once it is deployed?** — for whoever is on the other side of the merge.
+A PR description is the primary context reviewers and future readers have for understanding a change. It must answer four questions, each for a different reader: **Why was this needed?** — in plain words, for the product person. **Which files changed, and what does each do for the feature?** — for the reviewer. **How did the flow and the behaviour change?** — a before/after diagram and table, for anyone who needs the shape at a glance. **What happened when you ran it, before and after?** — for anyone who has to trust it. **What gets checked once it is deployed?** — for whoever is on the other side of the merge.
 
 Those four are the default shape. **A PR template already in the repo replaces it** — see **The repo's own template wins**. The last two exist only when the change *does* something at runtime; **Pick the form first** decides which sections a given diff gets.
 
@@ -53,11 +53,13 @@ Report the subagent's result back to the user when it completes.
 | Preamble (optional, before `## Motivation`) | 1–2 lines. Usually skip it. |
 | `## Motivation` | **2–3 sentences.** |
 | `## Implementation` | **2–4 bullets**, ~2 lines each. |
+| `## Visualization` | Two Mermaid diagrams (before, after), ≤12 nodes each, one caption line. |
+| `## Before / After` | One table, 2–5 rows, one short phrase per cell. |
 | `## Proof of Work` | 3–4 short lines framing the pasted output (how you ran it, without, with, `**Not proven locally:**`); the output itself trimmed to the lines carrying the claim. |
 | `## Verify on dev` | 1 framing line + 3–5 boxes. |
-| Any optional prose section | ≤3 sentences or ≤3 bullets. A diagram: ≤12 nodes and one caption line. |
+| Any optional prose section | ≤3 sentences or ≤3 bullets. |
 
-**Pasted command output does not count toward the word budget** — it is evidence, not prose.
+**Pasted command output and Mermaid source do not count toward the word budget** — they are evidence and picture, not prose.
 
 The commonest failure is a *well-written* description that is simply too long — every sentence defensible, the whole thing three times the size it needed. Two habits cause it, and both are worth naming because they feel like diligence:
 
@@ -97,7 +99,7 @@ Read any whose name is about proof, evidence, QA, or PR descriptions. A repo ski
 | Only documentation | `references/docs-only.md` | Motivation + Implementation. No Proof of Work. |
 | Only configuration | `references/config-only.md` | One prose block + a before/after table. Nothing else. |
 | A package bump + call-sites | `references/package-bump.md` | Motivation + Implementation + one-line Proof of Work |
-| Anything else, or a mix | Full structure (below) | All three, **plus `## Verify on dev` whenever the change ships in a deployed service** |
+| Anything else, or a mix | Full structure (below) | Motivation, Implementation, Visualization, Before / After, Proof of Work, **plus `## Verify on dev` whenever the change ships in a deployed service** |
 
 **Judge by what consumes the file, not by its extension.** A `.yaml`, `.json` or `.prisma` under a docs path that nothing generates from is docs. A `.md` that CI publishes or that ships in an image is not. A workflow file, an eslint or tsconfig rule, or a Dockerfile edit alters what runs — it takes the full structure, not config-only, however self-explanatory its diff looks. **A mix falls back to the full structure**: a PR that changes docs *and* application code is not a docs PR. The short forms are for PRs where the excluded section would be genuinely empty, not for PRs where gathering it is inconvenient.
 
@@ -106,11 +108,15 @@ Read any whose name is about proof, evidence, QA, or PR descriptions. A repo ski
 ```markdown
 ## Motivation
 ## Implementation
+## Visualization
+## Before / After
 ## Proof of Work
 ## Verify on dev
 ```
 
-Add an optional section (`## Performance`, `## Migration`, `## Risk`, or a Mermaid diagram — `references/visualization.md`) only when the change raises a question the reviewer will otherwise ask. The budget table caps it.
+`## Visualization` and `## Before / After` are **required** in the full structure, including on each PR of a stack: every PR shows the flow of the components it touches before and after, and a table of what behaves differently. In a stack, "before" is the PR's own base, not `main`. With a repo template, append both after the template's sections when no slot fits them.
+
+Add an optional section (`## Performance`, `## Migration`, `## Risk`) only when the change raises a question the reviewer will otherwise ask. The budget table caps it.
 
 ## Section guidance — one file per section you write
 
@@ -120,9 +126,10 @@ The form you picked names its sections. Read one file per section you will write
 |---|---|
 | Motivation | `references/motivation.md` |
 | Implementation | `references/implementation.md` |
+| Visualization | `references/visualization.md` |
+| Before / After | `references/before-after.md` |
 | Proof of Work | `references/proof-of-work.md` |
 | Verify on dev | `references/verify-on-dev.md` — read `proof-of-work.md` first; this one carries its `**Not proven locally:**` line down |
-| Diagram (optional) | `references/visualization.md` |
 
 A short form's file replaces the per-section files, and is the whole description: the headings it lists are the headings the PR gets. With a repo template, `references/repo-template.md` plus the slot mapping above decide which files you need — decide first, then read; a slot you are not filling does not earn its file in context.
 

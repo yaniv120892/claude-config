@@ -1,15 +1,29 @@
-# Visualization — when the change has a shape
+# Visualization — the flow before and after
 
-Between Implementation and Proof of Work, add a diagram when prose would be bad at conveying blast radius. A picture answers "how much of the system does this touch, and how badly does it hurt if it is wrong" before the reviewer opens a file. GitHub renders Mermaid in PR bodies, so the diagram lives in the description itself — no image to commit, and it stays readable in both themes.
+Between Implementation and Before / After, draw the affected components **twice**: the flow as it runs on the base branch, and as it runs with this PR. Required in the full structure — the pair answers "what moved, and what now happens where" before the reviewer opens a file. GitHub renders Mermaid in PR bodies, so the diagrams live in the description itself, with no image to commit, and stay readable in both themes.
 
-**Add one when:**
+````markdown
+## Visualization
 
-- A request crosses a service boundary or comes back asynchronously — webhooks, callbacks, SSE, cron, anything where the order of arrival is the risk.
-- The change moves a responsibility between layers, or introduces a new one.
-- Several components are affected and the reviewer would otherwise have to reconstruct the flow from the file list.
-- Concurrency changes: something that ran once now runs N times in parallel.
+**Before**
+```mermaid
+...the base branch's flow...
+```
 
-**Skip it when** the change is local — a validation rule, a formatter, a component's props. A diagram of a two-file fix is the same padding as a twenty-bullet Implementation, and it counts against the length budget the same way.
+**After**
+```mermaid
+...the same components with this PR...
+```
+
+<one line: what to take from the difference>
+````
+
+- **Same components, same layout, in both.** The reader diffs the two pictures by eye; a node that moves or is renamed between them reads as a change. Add or remove only what the PR adds or removes.
+- **Mark the change in the After diagram**: fill the touched nodes, and outline nodes not touched but reading the same code (Blast radius, below). In a sequence diagram, a `Note` on the new step does the same job.
+- **Draw only what this PR touches plus one hop either side.** In a stack, the "before" is the PR's own base: a bottom PR that adds an uncalled module shows the module standing alone after, with nothing calling it yet. Saying so is the point.
+- **A local change still gets the pair**, just small: three or four nodes showing the one step that behaves differently. Twelve nodes per diagram is the ceiling.
+
+Pick the diagram type by the question:
 
 ### Async flows — sequence diagram
 
@@ -58,4 +72,4 @@ flowchart LR
 
 Filled = changed by this PR. Outlined = **not** changed but reading the same code, so a reviewer sees immediately that the assistant and the trends page inherit the new behaviour. That second category is the one worth drawing — it is how a "small" change turns out to be critical.
 
-Caption every diagram with one line of prose saying what to take from it. Keep it to a dozen nodes; past that it stops being a glance.
+Caption the pair with one line saying what to take from the difference. Keep each to a dozen nodes; past that it stops being a glance.
