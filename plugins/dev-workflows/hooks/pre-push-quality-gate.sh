@@ -9,9 +9,11 @@ set -uo pipefail
 IFS= read -r -d '' payload
 if command -v jq >/dev/null 2>&1; then
   # One jq pass for both fields: this runs on every Bash call, including the vast
-  # majority that exit at the match check below.
-  IFS=$'\t' read -r target payload_cwd < <(
-    printf '%s' "$payload" | jq -r '[.tool_input.command // "", .cwd // ""] | @tsv'
+  # majority that exit at the match check below. NUL-separated, not @tsv: @tsv
+  # escapes a newline to a literal `\n`, which hid a push on any later line of a
+  # multi-line command and let it skip the gate.
+  { IFS= read -r -d '' target; IFS= read -r -d '' payload_cwd; } < <(
+    printf '%s' "$payload" | jq -j '(.tool_input.command // ""), "\u0000", (.cwd // ""), "\u0000"'
   )
 else
   target=$payload
@@ -43,17 +45,26 @@ grep -qE "$GIT_PUSH_INVOCATION" <<<"$target" || exit 0
 # without a package.json.
 #
 # Only what precedes the push counts: in `cd a && test; cd b && git push` the
-# push happens from b, so scan the text up to the matched invocation and take the
-# LAST directive in it, not the first anywhere in the command.
-before_push="${target%%push*}"
+# push happens from b, so scan the text up to the end of the matched invocation
+# and take the LAST directive in it, not the first anywhere in the command. Cut at
+# the invocation itself, not the first "push" substring — worktree and branch
+# paths routinely contain the word. Newlines are separators like `;`.
+single_line_command="${target//$'\n'/;}"
+[[ "$single_line_command" =~ $GIT_PUSH_INVOCATION ]]
+push_invocation="${BASH_REMATCH[0]}"
+through_push="${single_line_command%%"$push_invocation"*}$push_invocation"
+readonly CD_DIRECTIVE='.*(^|[;&|(][[:space:]]*)cd[[:space:]]+([^[:space:];&|)]+)'
+readonly GIT_DIRECTORY_FLAG='.*git[[:space:]]+-C[[:space:]]+([^[:space:]]+)'
 target_directory=""
-if [[ "$before_push" =~ .*(^|[\;\&\|][[:space:]]*)cd[[:space:]]+([^[:space:]\;\&\|]+) ]]; then
+if [[ "$through_push" =~ $CD_DIRECTIVE ]]; then
   target_directory="${BASH_REMATCH[2]//\"/}"
 fi
-if [[ "$before_push" =~ .*git[[:space:]]+-C[[:space:]]+([^[:space:]]+) ]]; then
+if [[ "$through_push" =~ $GIT_DIRECTORY_FLAG ]]; then
   target_directory="${BASH_REMATCH[1]//\"/}"
 fi
-[ -z "$target_directory" ] && target_directory="$payload_cwd"
+# A relative directive is relative to where the command runs, not to the hook's
+# own cwd, which is the session's directory.
+[ -n "$payload_cwd" ] && cd "$payload_cwd" 2>/dev/null
 [ -n "$target_directory" ] && cd "${target_directory/#\~/$HOME}" 2>/dev/null
 
 # Run from the repository root so the checks see its package.json, not a

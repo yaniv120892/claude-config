@@ -42,5 +42,17 @@ report "last cd before push wins (fail)"  2 "$(fire "cd $TMP/repoB && echo hi; c
 # A cd AFTER the push must not be mistaken for the push's directory.
 report "cd after push ignored"            2 "$(fire "cd $TMP/repoA && $PUSH; cd $TMP/repoB" "$TMP/repoB")"
 
+# The hook process runs in the session's directory, not the pushed repo's.
+fire_from() {  # $1 = hook process cwd, $2 = command text, $3 = payload cwd
+  (cd "$1" && fire "$2" "$3")
+}
+mkdir -p "$TMP/fix-push-gate" && cp -R "$TMP/repoA/." "$TMP/fix-push-gate/"
+report "path containing push is honoured" 2 "$(fire_from "$TMP/repoB" "cd $TMP/fix-push-gate && $PUSH" "$TMP/repoB")"
+report "git -C path containing push"      2 "$(fire_from "$TMP/repoB" "git -C $TMP/fix-push-gate p""ush" "$TMP/repoB")"
+report "multi-line cd then push"          2 "$(fire_from "$TMP/repoB" "cd $TMP/repoA
+$PUSH" "$TMP/repoB")"
+report "subshell cd is honoured"          2 "$(fire_from "$TMP/repoB" "(cd $TMP/repoA && $PUSH)" "$TMP/repoB")"
+report "relative cd uses payload cwd"     2 "$(fire_from "$TMP/repoB" "cd repoA && $PUSH" "$TMP")"
+
 rm -rf "$TMP"
 summarize
