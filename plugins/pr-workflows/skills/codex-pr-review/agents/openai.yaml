@@ -1,0 +1,4 @@
+interface:
+  display_name: "Codex PR Review"
+  short_description: "Second-model review of PRs with Codex CLI, triaged into fix or push back"
+  default_prompt: "Use $codex-pr-review to get a Codex review of these PRs and act on each finding."
