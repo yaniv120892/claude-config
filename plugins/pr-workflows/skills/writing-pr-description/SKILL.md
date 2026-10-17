@@ -55,11 +55,11 @@ Report the subagent's result back to the user when it completes.
 | `## Implementation` | **2–4 bullets**, ~2 lines each. |
 | `## Visualization` | Two Mermaid diagrams (before, after), ≤12 nodes each, one caption line. |
 | `## Before / After` | One table, 2–5 rows, one short phrase per cell. |
-| `## Proof of Work` | 3–4 short lines framing the pasted output (how you ran it, without, with, `**Not proven locally:**`); the output itself trimmed to the lines carrying the claim. |
+| `## Proof of Work` | 3–4 visible lines (how you ran it, the without and with result in one phrase each, `**Not proven locally:**`); the pasted output goes in a collapsed `<details>` block under them, trimmed to the lines carrying the claim. |
 | `## Verify on dev` | 1 framing line + 3–5 boxes. |
 | Any optional prose section | ≤3 sentences or ≤3 bullets. |
 
-**Pasted command output and Mermaid source do not count toward the word budget** — they are evidence and picture, not prose.
+**Mermaid source and output inside a collapsed `<details>` block do not count toward the word budget; everything a reviewer sees on opening the PR does.** Pasted output left open in the body counts, and is the commonest way a description that obeys every prose budget still runs past 1,000 words.
 
 The commonest failure is a *well-written* description that is simply too long — every sentence defensible, the whole thing three times the size it needed. Two habits cause it, and both are worth naming because they feel like diligence:
 
@@ -116,7 +116,7 @@ Read any whose name is about proof, evidence, QA, or PR descriptions. A repo ski
 
 `## Visualization` and `## Before / After` are **required** in the full structure, including on each PR of a stack: every PR shows the flow of the components it touches before and after, and a table of what behaves differently. In a stack, "before" is the PR's own base, not `main`. With a repo template, append both after the template's sections when no slot fits them.
 
-Add an optional section (`## Performance`, `## Migration`, `## Risk`) only when the change raises a question the reviewer will otherwise ask. The budget table caps it.
+Add an optional section (`## Performance`, `## Migration`, `## Risk`) only when the change raises a question the reviewer will otherwise ask. The budget table caps it, and one is the usual maximum. A `## Summary` beside `## Motivation`, or `## Notes`, `## Prerequisites` and `## Reviewer attention` side by side, repeat each other: a stack or merge-order note is one line in Motivation, and the points a reviewer must not miss share one optional section.
 
 ## Section guidance — one file per section you write
 

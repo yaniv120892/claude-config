@@ -10,22 +10,28 @@ Run the service locally where the change is reachable that way (`docker compose 
 ````markdown
 ## Proof of Work
 
-Ran the worker locally over 200 source images with `scripts/repro-oom.sh` (included below).
+Ran the worker locally over 200 source images with `scripts/repro-oom.sh`.
+**Without this change** it is killed at 12 images (peak RSS 3.9GB); **with it** all 200 finish in 41s (peak RSS 412MB).
+**Not proven locally:** the dev pod is capped at 4Gi, half this laptop's headroom.
 
-**Without this change** — resident memory climbs until the process is killed:
+<details><summary>Output</summary>
+
+Without:
 ```
 [worker] processed 12 images
 Killed (exit 137), peak RSS 3.9GB
 ```
 
-**With this change** — the same run finishes, memory flat:
+With:
 ```
 [worker] processed 200 images
 done in 41s, peak RSS 412MB
 ```
 
-**Not proven locally:** the dev pod is capped at 4Gi, half this laptop's headroom.
+</details>
 ````
+
+**The visible lines carry the verdict; the `<details>` block carries the evidence.** A reviewer reads the result without scrolling past logs, and can still open them. Several scenarios become one short table (scenario, without, with) above a single `<details>` holding all their output, not one open block per scenario. Videos and GIFs stay visible: they are the evidence a UI reviewer opens the PR for.
 
 - **Tests are not evidence anywhere in the description** (Core principle). The shape to catch yourself writing here is "Also ran/added the new `x.test.ts` (`→ ok`)", tacked on after real output because it felt generous — or the same sentence relocated to a risk note. Cut it; what you ran above already carries the section.
 - **Both halves, same command.** One-sided output proves the code runs, not that it fixes anything.
