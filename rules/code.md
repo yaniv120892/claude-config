@@ -140,3 +140,7 @@ configuring it a single atomic step nobody can sequence; the first request after
 > in the host (Vercel: production **and** preview); where a third party issues the value, extract
 > it from that provider rather than inventing one; and update the consuming service or monitor in
 > the same change, so a new gate cannot lock out the caller it was meant to admit.
+
+**Handlers Read at One Level of Abstraction** — a handler that inlines the upstream call, status mapping, logging and response building makes the reader parse plumbing to find the flow
+> Pattern: A route or request handler reads as lookup → relay → error mapping; the upstream call, and any other step with its own details, lives in a named function.
+> Avoid: A handler body mixing `fetch`, status branching, logging and `new Response` — it passes review because no "Step 1" comment flags it.
