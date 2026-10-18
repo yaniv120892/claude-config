@@ -16,6 +16,12 @@ Read with `code.md`, which holds the language-agnostic rules.
 > Pattern: Narrow properly — a type guard, an `if (!x) { throw }` guard, or an annotated
 > assignment. Reserve `as unknown as T` for a genuinely unexpressible bridge.
 
+**Parse Untrusted JSON With a Schema, Not a Hand-Written Guard** — a `body as {…}` plus a
+`typeof` guard checks less than it looks like and has to be kept in step with the type by hand
+> Pattern: When the project already depends on zod, `safeParse` the `response.json()` /
+> `JSON.parse` result and derive the type with `z.infer`, so schema and type cannot drift.
+> Avoid: `(body as { regions?: unknown })?.regions` followed by a bespoke `isFoo(value): value is Foo`.
+
 **Avoid `Pick` for Small Field Selections** — obscures intent for 1–3 static fields
 > Pattern: Inline `{ priority: number }` or name a dedicated type. Reserve `Pick` for
 > genuinely generic use.
