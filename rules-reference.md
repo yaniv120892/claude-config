@@ -159,6 +159,11 @@ limits each colored green below 50%, yellow below 75%, red from 75% up. The READ
 > Avoid: `const body = response.Body as SomeInterface`, `value as string`, or any cast that papers over a missing type guard.
 > Example: Instead of `const body = response.Body as { transformToString(): Promise<string> }`, check `if (!response.Body) { throw new Error(...) }` and then call `response.Body.transformToString()` directly using the SDK's native type.
 
+**Parse Untrusted JSON With a Schema, Not a Hand-Written Guard** — a cast plus a `typeof` guard checks less than it looks like, and the guard and the type must be kept in step by hand
+> Pattern: Where the project already has zod, `safeParse` the `response.json()` / `JSON.parse` result and derive the type with `z.infer<typeof schema>`. Filter a list entry by entry (`flatMap` over `safeParse`) when one bad item should not discard the rest.
+> Avoid: `const regions = (body as { regions?: unknown } | null)?.regions` followed by a bespoke `isRegion(value): value is Region` that re-lists every field.
+> Example: `const regionSchema = z.object({ label: z.string(), site: z.string(), language: z.string() }); type Region = z.infer<typeof regionSchema>;` replaces a hand-written `Region` type and its `isRegion` guard.
+
 **Prefer Established npm Packages Over Hand-Rolled Implementations** — Libraries are battle-tested, maintained, and edge-case aware
 > Pattern: Before writing custom parsing, formatting, transformation, or data-structure logic, check whether a well-maintained npm package already solves the problem (e.g., `csv-parse`/`csv-stringify` for CSV, `lodash` for collections, `date-fns` for dates). Use the package unless the dependency weight clearly outweighs the benefit.
 > Avoid: Hand-rolling CSV parsers, date formatters, deep-merge utilities, or other logic that well-known libraries already handle correctly.
