@@ -89,6 +89,11 @@ limits each colored green below 50%, yellow below 75%, red from 75% up. The READ
 > Pattern: Use `T[]` shorthand for array types (e.g., `string[]`, `{ id: number }[]`)
 > Avoid: `Array<T>` generic syntax (e.g., `Array<string>`, `Array<{ id: number }>`)
 
+**Object Parameter for 2+ Arguments** — positional parameters of the same type swap silently, and call sites don't say what each value is
+> Pattern: A function with two or more parameters takes one destructured object (`invalid({ tenant, problem })`), spec helpers included.
+> Avoid: `invalid(tenant, problem)` where both are strings. Exceptions: a callback shape a library imposes (`map`, `reduce`, Nest decorators) and constructors that inject providers.
+> Example: Ron's #671 review flagged `invalid`, `toLanguageRegion`, `assertUniqueLanguages`, `assertUniqueSites` and `bestMatch`; `matchesSite` and `resolveConfig` already took an object.
+
 **Self-Documenting Code Over Comments** — Code should explain itself; comments are a last resort
 > Pattern: Only add a comment when the code contains a genuine hack, a non-obvious invariant, a workaround for a specific external bug, or behaviour that would actively surprise an experienced reader. The bar is high: if a competent developer would understand the code without the comment in under 5 seconds, delete it.
 > Avoid: Comments that restate what the type system, decorators, or field names already express (e.g. explaining that an `@IsOptional()` field is optional); task-ticket references (`// ABC-123: ...`); backward-compat explanations where the optionality itself is self-evident; and any comment explaining *what* the code does rather than *why* a surprising choice was made.
