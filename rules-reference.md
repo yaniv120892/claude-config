@@ -92,7 +92,12 @@ limits each colored green below 50%, yellow below 75%, red from 75% up. The READ
 **Object Parameter for 2+ Arguments** — positional parameters of the same type swap silently, and call sites don't say what each value is
 > Pattern: A function with two or more parameters takes one destructured object (`invalid({ tenant, problem })`), spec helpers included.
 > Avoid: `invalid(tenant, problem)` where both are strings. Exceptions: a callback shape a library imposes (`map`, `reduce`, Nest decorators) and constructors that inject providers.
-> Example: Ron's #671 review flagged `invalid`, `toLanguageRegion`, `assertUniqueLanguages`, `assertUniqueSites` and `bestMatch`; `matchesSite` and `resolveConfig` already took an object.
+> Example: Ron's #671 review flagged `invalid`, `toLanguageRegion`, `assertUniqueLanguages`, `assertUniqueSites` and `bestMatch`; `matchesSite` and `resolveConfig` already took an object. bazak-platform-dal#153 repeated it (`createMarkdown`, `uploadPdf`, `labelForWrite`, `filterKeys`) because this rule lived only here, not in the loaded `rules/code.md`.
+
+**Name Functions That Outlive Their Expression** — a function returned from a factory or stored as a value is read later, away from where it was built; an anonymous arrow gives the reader and the stack trace nothing to call it
+> Pattern: A factory returns a named function expression — `return function indexesLabelledFile(name) { … }` — so the name states what the predicate decides and shows up in stack traces and debugger frames.
+> Avoid: `return (name) => labelIncludes(…) === true;` from a factory such as `storeFilter`. Arrows passed straight into `map`/`filter`/`sort` stay arrows: they are read where they are written.
+> Example: Ron's bazak-platform-dal#153 review: `storeFilter` returned two anonymous arrows, renamed `indexesEveryFile` and `indexesLabelledFile`.
 
 **Self-Documenting Code Over Comments** — Code should explain itself; comments are a last resort
 > Pattern: Only add a comment when the code contains a genuine hack, a non-obvious invariant, a workaround for a specific external bug, or behaviour that would actively surprise an experienced reader. The bar is high: if a competent developer would understand the code without the comment in under 5 seconds, delete it.

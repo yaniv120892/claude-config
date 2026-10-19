@@ -79,6 +79,12 @@ decision, and a duplicate `type` is a compile error where a duplicate `interface
 > Pattern: Refactor, retype, restructure to satisfy the rule.
 > Avoid: `// eslint-disable*` except as an absolute last resort.
 
+**Name Functions That Outlive Their Expression** — a function returned from a factory or stored
+as a value is read later, away from where it was built; an anonymous arrow gives the reader and the
+stack trace nothing to call it
+> Pattern: `return function indexesLabelledFile(name) { … }`.
+> Avoid: `return (name) => …` from a factory. Callbacks passed straight to `map`/`filter` stay arrows.
+
 **Prefer Established npm Packages Over Hand-Rolled Implementations** — libraries are edge-case
 aware
 > Pattern: Check for a maintained package before writing parsing, formatting, or data-structure
