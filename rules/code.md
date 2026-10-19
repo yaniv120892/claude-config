@@ -53,6 +53,13 @@ code it describes stays right
 **Prefer `switch` Over `else if` Chains** — when branching one value against several literals
 > Pattern: `switch` with an explicit `default`.
 
+**Object Parameter for 2+ Arguments** — positional parameters of the same type swap silently,
+and call sites don't say what each value is
+> Pattern: Two or more parameters → one destructured object (`invalid({ tenant, problem })`),
+> spec helpers and private methods included.
+> Avoid: `invalid(tenant, problem)`. Exceptions: a callback shape a library imposes (`map`,
+> `reduce`, decorators) and constructors that inject providers.
+
 **No Abbreviated Identifiers** — names self-explanatory without surrounding context
 > Pattern: Full words. `connectionConfig`, `FingerprintAccumulator`.
 > Avoid: `cfg`, `ctx`, `mgr`, `svc`, `evt`, `res`, `req`, `msg`, `acc`; single letters outside
