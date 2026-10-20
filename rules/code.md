@@ -53,6 +53,12 @@ code it describes stays right
 **Prefer `switch` Over `else if` Chains** — when branching one value against several literals
 > Pattern: `switch` with an explicit `default`.
 
+**Put a Loop's Stop Condition in Its Header** — `for (;;)` / `while (true)` with a `break` buried
+in the body hides when the loop ends
+> Pattern: Extract the per-step lookup into a named helper so the header can test it:
+> `let next = find(x); while (next) { …; next = find(…); }`.
+> Avoid: `for (;;) { const a = …; if (!ok(a)) { break; } … }`.
+
 **Object Parameter for 2+ Arguments** — positional parameters of the same type swap silently,
 and call sites don't say what each value is
 > Pattern: Two or more parameters → one destructured object (`invalid({ tenant, problem })`),

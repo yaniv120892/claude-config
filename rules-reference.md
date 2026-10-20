@@ -189,6 +189,11 @@ limits each colored green below 50%, yellow below 75%, red from 75% up. The READ
 > Avoid: Long `else if` chains evaluating the same variable against different values (e.g., `if (char === '"') { ... } else if (char === ',') { ... } else if ...`).
 > Example: `switch (char) { case '"': ...; break; case ',': ...; break; default: cell += char; }` — not a chain of `else if (char === ...)`.
 
+**Put a Loop's Stop Condition in Its Header** — An endless loop with a `break` in the middle makes the reader trace the body to learn when it stops; the header should say it
+> Pattern: When the stop check depends on values computed each step, extract that computation into a named helper returning the next item (or an empty/undefined sentinel), and loop on it: `let turn = uncheckedTurnBefore(blocked); while (turn.length > 0) { dropped.unshift(...turn); turn = uncheckedTurnBefore(dropped[0]); }`.
+> Avoid: `for (;;)` or `while (true)` whose only exit is a `break` after inline lookups — `for (;;) { const parent = parentOf(x); const previous = …; if (!isUnchecked(previous)) { break; } … }`.
+> Exception: genuine event or retry loops that exit by `return`/`throw` from several points (a stream reader, a backoff loop) — there a single header condition would be contrived.
+
 **No Abbreviated Identifiers** — Names must be self-explanatory without domain knowledge or context
 > Pattern: Use full, descriptive names for types, variables, and parameters. A reader should understand the role of an identifier from its name alone without referring to surrounding code.
 > Avoid: Single-letter variables outside conventional loop indices (`i`, `j`) and sort comparators (`a`, `b`); cryptic abbreviations like `Acc`, `Cfg`, `Ctx`, `Mgr`, `Svc`, `Evt`, `Res`, `Req`, `Msg`.
