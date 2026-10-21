@@ -12,7 +12,9 @@ import {
   CHECK_STATES,
   countChecks,
   isReadyToMerge,
+  parsePeopleMarks,
   parsePrView,
+  peopleLabel,
   parseThreads,
   prAddresses,
   PR_FIELDS,
@@ -43,9 +45,9 @@ import {
 
 const gitGrant = atom({ plugin: 'mods', key: 'gitGrant' } as const, false)
 const band = atom({ plugin: 'mods', key: 'band' } as const, null, { shape: 'band-3' })
-const prRead = atom({ plugin: 'mods', key: 'prRead' } as const, null)
+const prRead = atom({ plugin: 'mods', key: 'prRead' } as const, null, { shape: 'pr-read-2' })
 const sessionPrUrls = atom({ plugin: 'mods', key: 'sessionPrUrls' } as const, [])
-const sessionPrs = atom({ plugin: 'mods', key: 'sessionPrs' } as const, [], { shape: 'session-prs-2' })
+const sessionPrs = atom({ plugin: 'mods', key: 'sessionPrs' } as const, [], { shape: 'session-prs-3' })
 const prSkills = atom({ plugin: 'mods', key: 'prSkills' } as const, { root: null, runs: {} })
 const planTasks = atom({ plugin: 'mods', key: 'planTasks' } as const, [], { shape: 'plan-tasks-1' })
 
@@ -565,6 +567,7 @@ export const register: Register = (on, options) => {
   const hasPrSkills = isOn('prSkills') && (hasStatusBand || isOn('prPane'))
   const hasPlanProgress = isOn('planProgress') && hasStatusBand
   const hasTimeAwareness = isOn('timeAwareness')
+  const peopleMarks = parsePeopleMarks(options.peopleMarks)
   const blockedTerms = termPattern(parseTerms(options.blockedTerms))
   const commands = [
     ...(hasGitGate ? [GIT_GATE_COMMAND] : []),
@@ -724,6 +727,7 @@ export const register: Register = (on, options) => {
               <Text key={pr.url} wrap="truncate-end">
                 <Text dimColor>PR </Text>
                 <Link href={pr.url} label={`#${pr.number}`} />
+                {pr.people.length > 0 && <Text> {peopleLabel(pr.people, peopleMarks)}</Text>}
                 <Text color={status.color}> {status.label}</Text>
                 {(['fail', 'pending', 'pass'] as const).map(
                   state =>

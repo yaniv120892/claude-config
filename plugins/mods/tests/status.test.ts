@@ -237,6 +237,15 @@ describe('the session PRs', () => {
     ...fields,
   })
 
+  test('shows who is on each PR by their mark', { options: { gitGate: false, peopleMarks: 'alice=🦊,bob=🐢' } }, async ($, on) => {
+    const { clock, pr, bash } = fakeRepo(on, { hasPr: false })
+    pr.byUrl[URL_57] = view(57, URL_57, { assignees: [{ login: 'alice' }], reviewRequests: [{ login: 'bob' }, { login: 'carol' }] })
+    bash.stdout = `${URL_57}\n`
+    await $.tool.call({ tool: 'Bash', command: 'gh pr create --fill' })
+    await clock.advance(1000)
+    expect((await prRows($)).find(row => row.startsWith('PR #57'))).toMatch(/^PR #57 🦊 🐢 @carol changes requested/)
+  })
+
   test('adds the PR a gh pr create printed, even on a branch with no PR', NO_GATE, async ($, on) => {
     const { clock, pr, bash } = fakeRepo(on, { hasPr: false })
     pr.byUrl[URL_57] = view(57, URL_57, { reviewDecision: 'REVIEW_REQUIRED', mergeStateStatus: 'BLOCKED' })

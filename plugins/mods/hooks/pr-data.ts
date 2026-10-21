@@ -1,7 +1,7 @@
 import type { CheckState, MergeState, PrCheck, PrThread, PullRequest } from '../types'
 import { truncate } from './text'
 
-export const PR_FIELDS = 'number,title,url,headRefName,state,isDraft,mergeable,reviewDecision,mergeStateStatus,author,statusCheckRollup'
+export const PR_FIELDS = 'number,title,url,headRefName,state,isDraft,mergeable,reviewDecision,mergeStateStatus,author,statusCheckRollup,assignees,reviewRequests,latestReviews'
 export const THREADS_QUERY = `query($owner: String!, $repo: String!, $number: Int!) {
   repository(owner: $owner, name: $repo) {
     pullRequest(number: $number) {
@@ -60,6 +60,7 @@ export function parsePrView(json: string): Omit<PullRequest, 'threads' | 'resolv
   const mergeable = view.mergeable
   const mergeState = String(view.mergeStateStatus)
   const author = view.author as { login?: unknown } | null | undefined
+  const authorLogin = typeof author?.login === 'string' ? author.login : 'ghost'
   return {
     number: Number(view.number),
     title: String(view.title),
@@ -73,9 +74,43 @@ export function parsePrView(json: string): Omit<PullRequest, 'threads' | 'resolv
         ? decision
         : null,
     mergeState: MERGE_STATES.has(mergeState) ? (mergeState as MergeState) : 'UNKNOWN',
-    author: typeof author?.login === 'string' ? author.login : 'ghost',
+    author: authorLogin,
+    people: prPeople(view, authorLogin),
     checks,
   }
+}
+
+function logins(list: unknown, pick: (entry: Record<string, unknown>) => unknown): string[] {
+  if (!Array.isArray(list)) return []
+  return list
+    .map(entry => (entry !== null && typeof entry === 'object' ? pick(entry as Record<string, unknown>) : null))
+    .map(person => (person as { login?: unknown } | null | undefined)?.login)
+    .filter((login): login is string => typeof login === 'string')
+}
+
+/** Assignees, then requested reviewers, then those who reviewed, once each and never the author. A team review request has no login and is left out. */
+function prPeople(view: Record<string, unknown>, author: string): string[] {
+  const all = [
+    ...logins(view.assignees, entry => entry),
+    ...logins(view.reviewRequests, entry => entry),
+    ...logins(view.latestReviews, entry => entry.author),
+  ]
+  return [...new Set(all)].filter(login => login !== author)
+}
+
+/** `alice=🦊, bob=🐢` → login to mark; an entry without `=` or a mark is skipped. Logins match case-insensitively. */
+export function parsePeopleMarks(text: unknown): Map<string, string> {
+  const marks = new Map<string, string>()
+  for (const entry of String(text ?? '').split(',')) {
+    const [login, mark] = entry.split('=').map(part => part.trim())
+    if (login && mark) marks.set(login.toLowerCase(), mark)
+  }
+  return marks
+}
+
+/** The mark set for each person, or `@login` for one with none. */
+export function peopleLabel(people: readonly string[], marks: ReadonlyMap<string, string>): string {
+  return people.map(login => marks.get(login.toLowerCase()) ?? `@${login}`).join(' ')
 }
 
 type ThreadsAnswer = {

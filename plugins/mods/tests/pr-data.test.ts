@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { checkState, countChecks, isReadyToMerge, parsePrView, parseThreads, prAddresses, prStatus, prViewError } from '../hooks/pr-data'
+import { checkState, countChecks, isReadyToMerge, parsePeopleMarks, parsePrView, peopleLabel, parseThreads, prAddresses, prStatus, prViewError } from '../hooks/pr-data'
 import { PR_VIEW, THREADS } from './fixtures'
 
 describe('parsePrView', () => {
@@ -11,6 +11,19 @@ describe('parsePrView', () => {
     expect(parsed.reviewDecision).toBe(null)
     expect(parsed.checks.map(check => check.state)).toEqual(['pass', 'fail', 'pending', 'skipped', 'pending'])
     expect(parsed.checks[4]?.name).toBe('ci/legacy')
+  })
+
+  test('reads who is on the PR: assignees, requested reviewers, reviewers, once each, never the author', () => {
+    const parsed = parsePrView(
+      JSON.stringify({
+        ...PR_VIEW,
+        assignees: [{ login: 'author' }, { login: 'alice' }],
+        reviewRequests: [{ login: 'bob' }, { name: 'core-team' }],
+        latestReviews: [{ author: { login: 'alice' } }, { author: { login: 'carol' } }, { author: null }],
+      }),
+    )
+    expect(parsed.people).toEqual(['alice', 'bob', 'carol'])
+    expect(parsePrView(JSON.stringify(PR_VIEW)).people).toEqual([])
   })
 
   test('counts the checks by state', () => {
@@ -97,4 +110,16 @@ test('prAddresses finds each PR link once, with its repository', () => {
   ])
   expect(prAddresses('[{"url":"https://github.com/a/b/pull/1"},{"url":"https://github.com/a/b/pull/2"}]')).toHaveLength(2)
   expect(prAddresses('no links')).toEqual([])
+})
+
+describe('people marks', () => {
+  test('map each login to its mark, case-insensitively, and show @login for the rest', () => {
+    const marks = parsePeopleMarks(' Alice=🦊, bob = 🐢 ,broken, =🐙')
+    expect([...marks]).toEqual([
+      ['alice', '🦊'],
+      ['bob', '🐢'],
+    ])
+    expect(peopleLabel(['alice', 'Bob', 'carol'], marks)).toBe('🦊 🐢 @carol')
+    expect(parsePeopleMarks(undefined).size).toBe(0)
+  })
 })
