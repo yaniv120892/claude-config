@@ -5,8 +5,8 @@ description: Use to run the full review battery on a pull request you authored, 
 
 # Polish My PR
 
-One pass over a PR you own: review it four ways, fix every finding, push, wait for CI, then answer
-the bots. It ends at a green PR with every thread answered. Merging and pinging reviewers stay
+One pass over a PR you own: review it three ways, fix every finding, prune comments, push, wait for
+CI, then answer the bots. It ends at a green PR with every thread answered. Merging and pinging reviewers stay
 with the user.
 
 **Announce at start:** "I'm using the pr-polish skill."
@@ -18,19 +18,22 @@ and ask one question to confirm. Resolve `owner/repo`, the worktree path, and th
 
 ## Step 2 — Review
 
-1. Launch `/code-review` and `/pr-workflows:pr-review` for the PR, and `/simplify` for the diff, in one
-   message. Both reviews only read; `/simplify` edits.
-2. Run `/prune-comments` on the diff once `/simplify` has finished, so the two never edit the same file
-   at once.
+Launch `/code-review` and `/pr-workflows:pr-review` for the PR, and `/simplify` for the diff, in one
+message. Both reviews only read; `/simplify` edits.
 
 `/pr-workflows:pr-review` ends by offering to post its findings as PR comments. Skip that step: these are
 your own changes, so fix the findings instead of commenting on them.
 
 ## Step 3 — Fix all issues
 
-Dedupe the findings across the four tools, then fix each real one. Skip a finding only when it is a
-false positive, sits outside the diff, or would change intended behaviour, and say which in the report.
-A skipped finding gets one line of reasoning, not an argument.
+Wait for all three tools to finish. Dedupe their findings, then fix each real one. Skip a finding only
+when it is a false positive, sits outside the diff, or would change intended behaviour, and say which in
+the report. A skipped finding gets one line of reasoning, not an argument.
+
+## Step 3b — Prune comments
+
+Only after every fix in Step 3 is in, run `/prune-comments` on the diff. Running it last means it sees
+the comments the fixes added or made stale, and it never edits a file another tool is still changing.
 
 ## Step 4 — Commit and push
 

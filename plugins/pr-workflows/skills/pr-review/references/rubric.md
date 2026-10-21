@@ -51,8 +51,14 @@ concurrency problems that matter most.
 
 ## 3. Rules (highest priority, reported separately)
 
-Read the repo's own `CLAUDE.md` and `.claude/rules/*`, and apply the global
-rules in `~/.claude/shared-rules.md` and `~/.claude/rules/*`. Cite `file:line`.
+Read every `CLAUDE.md` and `AGENTS.md` on the path from the repo root down to
+each changed file's directory, the repo's `.claude/rules/*`, and the global
+`~/.claude/CLAUDE.md` with every file it imports (`@path` lines, followed
+recursively — `shared-rules.md`, `work-context.local.md`, …) and
+`~/.claude/rules/*`. Apply them all. Cite `file:line`.
+
+A monorepo keeps its per-app rules in `apps/<app>/CLAUDE.md`; reading only the
+root file misses exactly the rules for the code under review.
 Keep these in a section **separate** from correctness findings.
 
 Read those files rather than working from memory of them — a list cached here
