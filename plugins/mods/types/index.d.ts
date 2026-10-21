@@ -36,6 +36,8 @@ export type PullRequest = {
   reviewDecision: 'APPROVED' | 'CHANGES_REQUESTED' | 'REVIEW_REQUIRED' | null
   mergeState: MergeState
   author: string
+  /** Logins of the assignees, requested reviewers and reviewers, the author left out. */
+  people: string[]
   checks: PrCheck[]
   /** The unresolved review threads. */
   threads: PrThread[]
@@ -94,8 +96,8 @@ declare module 'claude-code' {
       gitGrant: boolean
       /** Null until the band's first read. A reload that changes Band's fields bumps the atom's shape tag. */
       band: Shaped<Band | null>
-      /** Null until the PR's first read. */
-      prRead: PrRead | null
+      /** Null until the PR's first read. A reload that changes PullRequest's fields bumps the atom's shape tag. */
+      prRead: Shaped<PrRead | null>
       /** The PRs opened this session, newest first: the URLs found, and each one's last read. */
       sessionPrUrls: string[]
       sessionPrs: Shaped<PullRequest[]>

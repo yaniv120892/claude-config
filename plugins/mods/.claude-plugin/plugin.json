@@ -1,7 +1,7 @@
 {
   "name": "mods",
-  "description": "Function-hook mods for the Claude Code harness: a git write gate that asks the person, not the model; a guard that refuses commits and pushes on the default branch; a status band with the location, model, context, 5-hour and weekly usage, and the branch's PR and the PRs opened this session, each with its review state, threads, CI and whether it is ready to merge; a plan line with the main agent's declared task progress and the active task; a toast when a usage limit nears its cap; a /pr pane with buttons into the PR skills; a checklist of whether simplify, code-review, pr-review and prune-comments ran on each PR; a guard that refuses credentials in tracked files; the reply-style rule as a system-prompt section; a /skill-tally of which skills actually fire; and time awareness: the local time, time away and slow tool calls, told to the model. Each one has a switch in /config.",
-  "version": "0.8.0",
+  "description": "Function-hook mods for the Claude Code harness: a git write gate that asks the person, not the model; a guard that refuses commits and pushes on the default branch; a status band with the location, model, context, 5-hour and weekly usage, and the branch's PR and the PRs opened this session, each with who is on it, its review state, threads, CI and whether it is ready to merge; a plan line with the main agent's declared task progress and the active task; a toast when a usage limit nears its cap; a /pr pane with buttons into the PR skills; a checklist of whether simplify, code-review, pr-review and prune-comments ran on each PR; a guard that refuses credentials in tracked files; the reply-style rule as a system-prompt section; a /skill-tally of which skills actually fire; and time awareness: the local time, time away and slow tool calls, told to the model. Each one has a switch in /config.",
+  "version": "0.9.0",
   "author": { "name": "Yaniv Daye" },
   "homepage": "https://github.com/yaniv120892/claude-config",
   "repository": "https://github.com/yaniv120892/claude-config",
@@ -73,6 +73,12 @@
       "title": "Skill tally",
       "description": "Count each skill that loads, across sessions, and show the counts with /skill-tally",
       "default": true
+    },
+    "peopleMarks": {
+      "type": "string",
+      "title": "People marks",
+      "description": "Comma-separated login=emoji pairs, such as alice=🦊, bob=🐢. Each PR row in the band shows its assignees, requested reviewers and reviewers by these marks; a login with no mark shows as @login",
+      "default": ""
     },
     "timeAwareness": {
       "type": "boolean",
