@@ -65,6 +65,17 @@ covers threads anchored to a line. Read general notes separately and ignore the 
 gh pr view <NUMBER> --repo <slug> --json comments --jq '.comments[] | {author:.author.login, body}'
 ```
 
+**Review bodies are in neither list.** A reviewer who submits "Request changes" or "Comment" with a
+summary often puts questions there, and a re-review usually repeats any that went unanswered. Read
+them too:
+
+```bash
+gh pr view <NUMBER> --repo <slug> --json reviews --jq '.reviews[] | select(.body != "") | {author:.author.login, state, submittedAt, body}'
+```
+
+A review body has no thread to reply in. Answer it with a PR comment that @-mentions the reviewer
+and names the item it answers (`@ron G3: …`), or the reviewer will not see that it was answered.
+
 ## Step 3 — Triage each comment (the judgment)
 
 For each comment, open the file at its anchor and decide against the SPECIFIC concern raised:
@@ -163,6 +174,17 @@ directly. Ask the user whether to reply to that Slack thread with the literal te
 lightweight ack that the feedback was handled. Only post if they confirm; use `slack_send_message`
 with `thread_ts` set to the parent message's timestamp. Do not post unprompted.
 
+**Verify before the ack, even when the user pre-approved it.** `replied` tells the reviewer every
+item is answered on GitHub, so it is false if one is not. Re-fetch the PR just before sending, and
+send only when all of these hold:
+
+- every inline thread, every review body, and every general reviewer comment has a reply of yours
+  posted after it, on GitHub, where the reviewer looks for it
+- each item a reply calls fixed is in a pushed commit (the PR head contains its SHA)
+- the PR description still matches the change, since a reviewer reads it as part of the review
+
+If any check fails, fix that first, then send.
+
 ## Gate outward-facing actions
 
 - **Resolving is the reviewer's call by default — leave threads open** unless the user asks you to
@@ -187,3 +209,5 @@ with `thread_ts` set to the parent message's timestamp. Do not post unprompted.
 | Silently fixing a generic/recurring pattern with no follow-up               | Ask the codify-rule question (Step 4a) before push — don't bury it in the Step 7 report |
 | Asking to codify something already in `CLAUDE.md`/`.claude/rules/`          | Grep first (Step 4a) — only ask about genuinely new preferences                         |
 | Forgetting to offer the Slack ack when the request came in via a Slack link | Track Slack origin from Step 0 and ask in Step 8 before wrapping up                     |
+| Missing a question asked in a review body                                   | Read `reviews` as well as threads and comments (Step 2); answer with an @-mention       |
+| Sending `replied` on Slack before every item is answered on GitHub          | Re-fetch the PR and run the Step 8 checks first, even when the user pre-approved it     |
