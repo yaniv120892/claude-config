@@ -116,6 +116,19 @@ Conventional commit with the PR's ticket scope (`fix(AIP-XXXX): …`); `fix`/`fe
 not — see global commit rules. Push to the **source branch** (never force-push, never a new branch).
 Capture the pushed SHA — you reference it in the fix replies.
 
+## Step 5a — Align the PR description with the fixes
+
+Fixes change what the PR does, and the description goes stale with them: a scope line that no longer
+covers a newly touched config, a "falls back to X" that a fix changed, proof that covers only the
+original change, a spec count that moved. Reviewers read the description as part of the review, and
+on squash-merge it becomes the commit body.
+
+Re-read the description against the full diff at the pushed head (`gh pr diff <NUMBER>`), not just
+against your fixes. Change every line the fixes made wrong, and add any proof a reviewer asked for,
+such as a live check, in the description's existing sections. Edit it with
+`gh pr edit <NUMBER> --body-file <file>`, following the `writing-pr-description` skill's
+conventions. Do this before Step 6, so a reply can point to the description.
+
 ## Step 6 — Ask the one gate question, then reply
 
 **Ask the user how to post replies: via API into each thread, or draft-only for them to paste.**
@@ -211,3 +224,4 @@ If any check fails, fix that first, then send.
 | Forgetting to offer the Slack ack when the request came in via a Slack link | Track Slack origin from Step 0 and ask in Step 8 before wrapping up                     |
 | Missing a question asked in a review body                                   | Read `reviews` as well as threads and comments (Step 2); answer with an @-mention       |
 | Sending `replied` on Slack before every item is answered on GitHub          | Re-fetch the PR and run the Step 8 checks first, even when the user pre-approved it     |
+| Leaving the PR description describing the pre-fix change                    | Re-read it against the pushed diff and update it before replying (Step 5a)              |
