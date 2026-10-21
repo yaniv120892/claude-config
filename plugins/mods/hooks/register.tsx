@@ -4,6 +4,7 @@ import type { CommandSpec, EngineInterface as Engine, Register, ToolCallResult, 
 import type { Band, GitLocation, PlanTask, PrRead, PrSkillRuns, UsageLimit } from '../types'
 import { gitWrites, OPT_OUT } from './branch-guard'
 import { credentialReason, findCredential, findTerm, parseTerms, termPattern, termReason } from './credentials'
+import { LAST_ACTIVE_KEY_PREFIX, LAST_ACTIVE_TTL_MS, parseUtcOffset, promptClock, slowToolNote } from './clock'
 import { changesPr, createsPr, GATED_COMMANDS, isGitWrite, runsGit } from './git-write'
 import {
   basename,
@@ -532,6 +533,28 @@ const TALLY_COMMAND: CommandSpec = {
   argumentHint: '[reset]',
 }
 
+/** Minutes east of UTC from the host's `date`, which follows its DST; the module's own Date may not know the zone. */
+async function utcOffset($: Engine, now: number): Promise<number> {
+  try {
+    const offset = parseUtcOffset((await $.process.run(['date', '+%z'], { timeoutMs: 2000 })).stdout)
+    if (offset !== null) return offset
+  } catch {}
+  return -new Date(now).getTimezoneOffset()
+}
+
+async function markActive($: Engine): Promise<void> {
+  const [id, now] = await Promise.all([$.session.id(), $.clock.now()])
+  await $.store.set(`${LAST_ACTIVE_KEY_PREFIX}${id}`, now)
+}
+
+async function dropStaleActivity($: Engine): Promise<void> {
+  const [now, keys] = await Promise.all([$.clock.now(), $.store.keys()])
+  for (const key of keys.filter(key => key.startsWith(LAST_ACTIVE_KEY_PREFIX))) {
+    const at = await $.store.get(key)
+    if (typeof at !== 'number' || now - at > LAST_ACTIVE_TTL_MS) await $.store.delete(key)
+  }
+}
+
 // A /config change reloads this module, so a mod switched off registers nothing.
 export const register: Register = (on, options) => {
   const isOn = (name: string): boolean => options[name] !== false
@@ -541,6 +564,7 @@ export const register: Register = (on, options) => {
   isAlerting = isOn('alerts')
   const hasPrSkills = isOn('prSkills') && (hasStatusBand || isOn('prPane'))
   const hasPlanProgress = isOn('planProgress') && hasStatusBand
+  const hasTimeAwareness = isOn('timeAwareness')
   const blockedTerms = termPattern(parseTerms(options.blockedTerms))
   const commands = [
     ...(hasGitGate ? [GIT_GATE_COMMAND] : []),
@@ -565,6 +589,7 @@ export const register: Register = (on, options) => {
       $.clock.every(PR_POLL_MS, () => inBackground($, refreshPr($)))
     }
     if (hasPlanProgress) $.clock.after(0, () => inBackground($, loadPlans($)))
+    if (hasTimeAwareness) $.clock.after(0, () => inBackground($, dropStaleActivity($)))
     return started
   })
 
@@ -617,12 +642,16 @@ export const register: Register = (on, options) => {
     })
   }
 
-  if (hasStatusBand) {
+  if (hasStatusBand || hasTimeAwareness) {
     on('turn.complete', async ($, e, next) => {
       const completed = await next(e)
-      if (e.agentId === undefined) queueBandRefresh($)
+      if (e.agentId === undefined && hasStatusBand) queueBandRefresh($)
+      if (e.agentId === undefined && hasTimeAwareness) inBackground($, markActive($))
       return completed
     })
+  }
+
+  if (hasStatusBand) {
 
 
     on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
@@ -940,6 +969,28 @@ export const register: Register = (on, options) => {
         .filter(command => command.source === 'plugin' && command.name.includes(':'))
         .map(command => command.name)
       return { text: formatTally(asTally(await $.store.get(TALLY_KEY)), known) }
+    })
+  }
+
+  // Stored by session id, not in $.state, so a `claude --resume` days later still knows when the session last ran.
+  if (hasTimeAwareness) {
+    on('prompt.submit', async ($, e, next) => {
+      const [id, now] = await Promise.all([$.session.id(), $.clock.now()])
+      const stored = await $.store.get(`${LAST_ACTIVE_KEY_PREFIX}${id}`)
+      const clock = promptClock(now, await utcOffset($, now), typeof stored === 'number' ? stored : null)
+      await $.store.set(`${LAST_ACTIVE_KEY_PREFIX}${id}`, now)
+      return next({ ...e, context: [...(e.context ?? []), clock] })
+    })
+    // duration_ms is the tool's own run time, without the permission prompt or other hooks.
+    on('classic.PostToolUse', async ($, e, next) => {
+      const ran = await next(e)
+      const note = slowToolNote(e.tool_name, e.duration_ms)
+      return note === null ? ran : { ...ran, additionalContext: [...(ran.additionalContext ?? []), note] }
+    })
+    on('classic.PostToolUseFailure', async ($, e, next) => {
+      const ran = await next(e)
+      const note = slowToolNote(e.tool_name, e.duration_ms)
+      return note === null ? ran : { ...ran, additionalContext: [...(ran.additionalContext ?? []), note] }
     })
   }
 }
