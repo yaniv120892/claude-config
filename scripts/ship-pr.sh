@@ -23,7 +23,8 @@ branch=$(git rev-parse --abbrev-ref HEAD)
 worktree=$(git rev-parse --show-toplevel)
 main_checkout=$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")
 
-previous_account=$(gh api user --jq .login)
+# gh's stored account name, not `gh api user`: they differ after a GitHub username rename.
+previous_account=$(gh auth status --active --json hosts --jq '.hosts["github.com"][0].login')
 trap 'gh auth switch -u "$previous_account" >/dev/null' EXIT
 gh auth switch -u "$OWNER_ACCOUNT" >/dev/null
 
