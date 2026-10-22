@@ -35,7 +35,8 @@ fi
 # a quoted string with a bare token so `GIT_SSH_COMMAND="ssh -i key" git push`
 # — whose value contains a space — still matches, not just the unquoted case.
 readonly ENV_ASSIGNMENT='([A-Za-z_][A-Za-z0-9_]*=("[^"]*"|'\''[^'\'']*'\''|[^[:space:]]*)[[:space:]]+)*'
-readonly GIT_PUSH_INVOCATION="(^|[;&|]|&&|\|\||\\$\()[[:space:]]*${ENV_ASSIGNMENT}(sudo[[:space:]]+)?${ENV_ASSIGNMENT}git([[:space:]]+-[^[:space:]]+([[:space:]]+[^-][^[:space:]]*)?)*[[:space:]]+push([[:space:];&|)]|\$)"
+readonly GIT_INVOCATION="(^|[;&|]|&&|\|\||\\$\()[[:space:]]*${ENV_ASSIGNMENT}(sudo[[:space:]]+)?${ENV_ASSIGNMENT}git([[:space:]]+-[^[:space:]]+([[:space:]]+[^-][^[:space:]]*)?)*[[:space:]]+"
+readonly GIT_PUSH_INVOCATION="${GIT_INVOCATION}push([[:space:];&|)]|\$)"
 grep -qE "$GIT_PUSH_INVOCATION" <<<"$target" || exit 0
 
 # Check the repository the push actually comes from, not whatever directory the
@@ -52,7 +53,8 @@ grep -qE "$GIT_PUSH_INVOCATION" <<<"$target" || exit 0
 single_line_command="${target//$'\n'/;}"
 [[ "$single_line_command" =~ $GIT_PUSH_INVOCATION ]]
 push_invocation="${BASH_REMATCH[0]}"
-through_push="${single_line_command%%"$push_invocation"*}$push_invocation"
+before_push="${single_line_command%%"$push_invocation"*}"
+through_push="$before_push$push_invocation"
 readonly CD_DIRECTIVE='.*(^|[;&|(][[:space:]]*)cd[[:space:]]+([^[:space:];&|)]+)'
 readonly GIT_DIRECTORY_FLAG='.*git[[:space:]]+-C[[:space:]]+([^[:space:]]+)'
 target_directory=""
@@ -97,6 +99,15 @@ if git rev-parse --verify --quiet "refs/remotes/origin/$base_branch" >/dev/null;
   commits_behind=$(git rev-list --count "HEAD..origin/$base_branch" 2>/dev/null || echo 0)
   if [ "$commits_behind" -gt 0 ]; then
     echo "Branch is $commits_behind commit(s) behind origin/$base_branch." >&2
+    # This hook runs before any of the command does, so a merge or commit placed
+    # ahead of the push in the same command has not happened yet: "run git merge"
+    # would name a step the command already contains, and retrying it as-is is
+    # blocked forever.
+    if grep -qE "${GIT_INVOCATION}(merge|pull|rebase|commit)([[:space:];&|)]|\$)" <<<"$before_push"; then
+      echo "This command updates the branch before pushing, but this check runs before any of it, so it still sees the old HEAD." >&2
+      echo "Run the merge or commit as its own command, then push in a separate one." >&2
+      exit 2
+    fi
     echo "CI builds the merge, not this tree — these checks would validate code that will never exist." >&2
     echo "Run: git merge --no-edit origin/$base_branch   (then push again to re-run the gate)" >&2
     exit 2
