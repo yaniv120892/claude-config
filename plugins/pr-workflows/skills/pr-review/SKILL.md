@@ -2,13 +2,13 @@
 name: pr-review
 argument-hint: <PR numbers or URLs> (one or more, required)
 allowed-tools: Bash(gh:*), Bash(git:*), Bash(python3:*), Read, Grep, Glob, Agent, Skill, mcp__notion__notion-search, mcp__notion__notion-fetch
-description: Use when reviewing one or more pull requests named by number or URL, or when asked whether a PR is safe to merge. Fans out one subagent per PR in parallel, merges every finding into a single severity-sorted report with a documentation-drift check, and posts inline comments after one approval. Requires explicit PR targets — it never reviews the current branch. For re-checking comments an author says they already fixed, use pr-second-review instead.
+description: Use when reviewing one or more pull requests named by number or URL, or when asked whether a PR is safe to merge. Fans out a code-review and an observability subagent per PR in parallel, merges every finding into a single severity-sorted report with a documentation-drift check, and posts inline comments after one approval. Requires explicit PR targets — it never reviews the current branch. For re-checking comments an author says they already fixed, use pr-second-review instead.
 ---
 
 # Pull Request Review
 
-Reviews a batch of pull requests. One subagent per PR, all in parallel. Every
-PR gets a code review and a documentation-drift check. Findings merge into one
+Reviews a batch of pull requests. Two subagents per PR, all in parallel. Every
+PR gets a code review, a documentation-drift check, and an observability check. Findings merge into one
 report, you approve once, everything posts.
 
 ## Step 1 — Require explicit targets
@@ -67,6 +67,26 @@ Agent({
 })
 ```
 
+In the same message, dispatch a second agent per PR for observability, so it
+reads the diff with fresh eyes instead of as the tail of a long code review:
+
+```
+Agent({
+  description: "Observability PR <n>",
+  model: "sonnet",
+  subagent_type: "general-purpose",
+  prompt: "Check observability for pull request <owner/repo>#<n>.
+
+    Head SHA: <sha>  — already resolved, do not re-fetch it.
+    Changed files: <paths>
+    Local clone: <absolute path of the repo under ~/bazak, if present>
+
+    Read <PLUGIN_ROOT>/skills/pr-review/references/observability.md and follow
+    it exactly. Fetch the diff ONCE. Do not delegate further. Do not post
+    anything. Return only the section its Output specifies."
+})
+```
+
 Resolve the head SHA and changed-file list yourself before dispatching and fill
 them into the prompt's two slots — it saves each agent a call and makes a stall
 easier to retry:
@@ -79,7 +99,7 @@ gh pr view <n> --repo <slug> --json headRefOid,files \
 Do not review inline yourself. The orchestrator never loads the rubric; that is
 the point of keeping it in `references/`.
 
-**If an agent stalls or fails**, re-dispatch only that PR with the same prompt.
+**If an agent stalls or fails**, re-dispatch only that agent with the same prompt.
 The others' results still stand — never re-run the whole batch.
 
 ## Step 3 — Merge into one report
@@ -98,6 +118,9 @@ the batch is the first row regardless of which PR it came from. Then:
   mixing them buries the bugs.
 - **Docs alignment** — per PR: Notion page, what the diff contradicts, one line
   on what to update.
+- **Observability** — a separate table: missing logs, events to add, and
+  existing events or log lines whose consumers (alerts, insights) the diff
+  breaks. Then each PR's line naming which consumers were checked.
 - **CI** — per PR: which jobs, which commit, green or not. Say plainly when you
   could not verify.
 - **Verdict** — one line per PR.
@@ -114,7 +137,8 @@ Wait. Nothing posts before an explicit yes.
 ## Step 5 — Post
 
 On yes, use the **post-pr-inline-comments** skill for every finding, pinned to
-its file and line. Docs-alignment findings post as a general note on the PR.
+its file and line — observability findings included. Docs-alignment findings
+post as a general note on the PR.
 
 Pass each PR's head SHA — the one you resolved in step 2 — through that skill's
 `--head-sha`. A batch posts many comments per PR, and without it every single
