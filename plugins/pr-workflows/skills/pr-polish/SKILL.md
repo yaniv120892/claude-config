@@ -5,7 +5,7 @@ description: Use to run the full review battery on a pull request you authored, 
 
 # Polish My PR
 
-One pass over a PR you own: review it three ways, fix every finding, prune comments, push, wait for
+One pass over a PR you own: review it three ways, fix every finding, audit the result against your rules, prune comments, push, wait for
 CI, then answer the bots. It ends at a green PR with every thread answered. Merging and pinging reviewers stay
 with the user.
 
@@ -30,9 +30,24 @@ Wait for all three tools to finish. Dedupe their findings, then fix each real on
 when it is a false positive, sits outside the diff, or would change intended behaviour, and say which in
 the report. A skipped finding gets one line of reasoning, not an argument.
 
+## Step 3a — Rules audit
+
+After the Step 3 fixes are in, launch one read-only `general-purpose` subagent to audit the PR diff
+against the rules alone, not correctness. Running after the fixes means it also catches violations the
+fixes introduced. Pass it paths, never file contents:
+
+- the worktree path and `git diff origin/<base>...HEAD` as the diff to audit;
+- the rule sources: section 3 of `<PLUGIN_ROOT>/skills/pr-review/references/rubric.md` lists them —
+  the repo's `CLAUDE.md`/`AGENTS.md` chain and `.claude/rules/*`, plus `~/.claude/CLAUDE.md` with its
+  `@` imports followed recursively and `~/.claude/rules/*`. It reads each file itself, not from memory;
+- only lines the diff adds or changes are in scope;
+- output: one row per violation — rule name, rule `file:line`, code `file:line`, the fix — or "none".
+
+Fix every violation it reports, applying the same skip criteria as Step 3.
+
 ## Step 3b — Prune comments
 
-Only after every fix in Step 3 is in, run `/prune-comments` on the diff. Running it last means it sees
+Only after every fix in Steps 3 and 3a is in, run `/prune-comments` on the diff. Running it last means it sees
 the comments the fixes added or made stale, and it never edits a file another tool is still changing.
 
 ## Step 4 — Commit and push
@@ -59,5 +74,5 @@ for, the new head SHA before deciding there is nothing new. Then:
 
 ## Report
 
-Per tool, what was fixed and what was skipped and why; the CI result on the head SHA; the state of
+Per tool, the rules audit included, what was fixed and what was skipped and why; the CI result on the head SHA; the state of
 each bot thread.
