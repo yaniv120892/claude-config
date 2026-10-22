@@ -93,7 +93,10 @@ into that repo, so an edit is live on this machine and absent everywhere else un
 > Pattern: Any change under the `claude-config` checkout — rules, settings, keybindings,
 > plugins — gets a branch, a PR, a squash-merge to `main`, and a local fast-forward so the
 > symlink target matches `origin`. This is standing authorization: do it without asking, in
-> the same session that made the change. `readlink ~/.claude/shared-rules.md` names the
+> the same session that made the change. Once committed in its worktree, run
+> `scripts/ship-pr.sh "<conventional title>" [body-file]`: it pushes and merges as the repo
+> owner's gh account (the work account gets a 403), restores the active account, and refreshes
+> the touched plugins. `readlink ~/.claude/shared-rules.md` names the
 > checkout. It must never be `~/.claude/plugins/marketplaces/<name>`: `claude plugin
 > marketplace update` replaces that clone wholesale, so every symlink into it dangles and
 > the hooks they point at silently stop running.
