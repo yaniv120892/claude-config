@@ -40,7 +40,8 @@ repeats cheaply
 config values, or directory layout is a cache that goes stale; the lookup can't go stale
 > Pattern: Document only what looking can't find — the unwritten convention, the why behind a
 > choice, the gotcha no config confesses; point at the file for the rest.
-> Avoid: Command lists and layout maps that duplicate one cheap lookup.
+> Avoid: Command lists, layout maps and hand-kept lists of test files that duplicate one cheap
+> lookup.
 
 **Pointer Wording Decides Whether the Doc Gets Read** — a doc behind a weak pointer is a
 variance bug: some runs reach it, some don't
