@@ -69,7 +69,8 @@ Qodo reviews each push a few minutes after it lands. Wait until it has commented
 for, the new head SHA before deciding there is nothing new. Then:
 
 - Unanswered threads: run `/pr-workflows:address-pr-feedback`, which fixes, pushes, and replies in each
-  thread. Return to Step 5 after its push.
+  thread. Then run `/prune-comments` on the diff again, since those fixes can add comments; commit and
+  push anything it changes. Return to Step 5 after the last push.
 - None: say so.
 
 ## Report
