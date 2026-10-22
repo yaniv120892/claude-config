@@ -56,8 +56,11 @@ the comments the fixes added or made stale, and it never edits a file another to
   `GIT_SEQUENCE_EDITOR=true git rebase -i --autosquash origin/<base>`, then `git push --force-with-lease`.
 - Otherwise: a new commit.
 
-Messages are Conventional Commits and follow the repo's attribution rules. When a fix touches what the PR
-body's Proof of Work demonstrates, rerun that proof and update the body.
+Messages are Conventional Commits and follow the repo's attribution rules.
+
+After the push, align the PR description with the fixes as `/pr-workflows:address-pr-feedback` Step 5a
+describes: re-read it against the full diff at the pushed head and change every line the fixes made
+wrong. When a fix touches what the Proof of Work demonstrates, rerun that proof and update it too.
 
 ## Step 5 — CI
 
