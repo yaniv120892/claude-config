@@ -6,9 +6,9 @@
 source "$(dirname "${BASH_SOURCE[0]}")/harness.sh"
 
 # Evaluate the matcher's own declarations rather than textually extracting the
-# pattern — GIT_PUSH_INVOCATION interpolates ENV_ASSIGNMENT, so its source line
+# pattern — GIT_PUSH_INVOCATION interpolates GIT_INVOCATION and ENV_ASSIGNMENT, so its source line
 # is no longer a standalone literal.
-PATTERN=$(eval "$(grep -E "^readonly (ENV_ASSIGNMENT|GIT_PUSH_INVOCATION)=" "$HOOK")"; printf '%s' "$GIT_PUSH_INVOCATION")
+PATTERN=$(eval "$(grep -E "^readonly (ENV_ASSIGNMENT|GIT_INVOCATION|GIT_PUSH_INVOCATION)=" "$HOOK")"; printf '%s' "$GIT_PUSH_INVOCATION")
 
 check() {
   local expected="$1" text="$2" actual

@@ -29,6 +29,8 @@ git merge --no-edit origin/main        # or rebase, per the repo's convention
 
 Then run the checks below. **Order is not negotiable**: syncing after the checks means pushing a merge nothing validated.
 
+Run the merge, or the commit that concludes it, as its own command, never chained into the push (`git merge … && git push`). The hook checks a command before any of it runs, so it still sees the unsynced HEAD and refuses the push.
+
 If the merge conflicts, resolve it and regenerate lockfiles with the repo's tooling before continuing. If dependencies changed in the merge, re-run the install (`npm ci`) — a stale `node_modules` invalidates every check that follows.
 
 ## The Gate (MANDATORY)
@@ -84,13 +86,13 @@ Check `package.json` first if unsure what scripts exist:
 cat package.json | grep -A 20 '"scripts"'
 ```
 
-| Script missing | Action |
-|---|---|
-| format/prettier | Fall back to `npx prettier --check .` |
-| `lint` | Check for `eslint`, `tslint`, `check` |
-| `typecheck` | Check for `tsc`, `types`, `check-types`; else `npx tsc --noEmit` |
-| `build` | Check for `compile`, `tsc`, `bundle` |
-| `test` | Check for `test:unit`, `spec`, `jest`, `vitest` |
+| Script missing  | Action                                                           |
+| --------------- | ---------------------------------------------------------------- |
+| format/prettier | Fall back to `npx prettier --check .`                            |
+| `lint`          | Check for `eslint`, `tslint`, `check`                            |
+| `typecheck`     | Check for `tsc`, `types`, `check-types`; else `npx tsc --noEmit` |
+| `build`         | Check for `compile`, `tsc`, `bundle`                             |
+| `test`          | Check for `test:unit`, `spec`, `jest`, `vitest`                  |
 
 If the script genuinely doesn't exist in the project, note it explicitly — don't silently skip.
 
@@ -101,15 +103,15 @@ only difference between a gate that passed and a gate that was never there —
 
 ## Common Mistakes
 
-| Mistake | Fix |
-|---|---|
+| Mistake                                          | Fix                                                 |
+| ------------------------------------------------ | --------------------------------------------------- |
 | Running the gate without fetching the base first | CI builds the merge, not your tree — sync is step 0 |
-| Syncing after the checks instead of before | The merge you push is then unvalidated |
-| Running only tests before push | Each step catches a different failure mode |
-| Treating `build` as a typecheck | It skips test files; run `tsc --noEmit` separately |
-| Trusting a green summary over the exit code | Some runners print passing totals and exit 1 |
-| Skipping prettier "because it's cosmetic" | Formatting failures block CI; run it |
-| `--no-verify` to bypass hooks | Never. Fix the underlying issue |
+| Syncing after the checks instead of before       | The merge you push is then unvalidated              |
+| Running only tests before push                   | Each step catches a different failure mode          |
+| Treating `build` as a typecheck                  | It skips test files; run `tsc --noEmit` separately  |
+| Trusting a green summary over the exit code      | Some runners print passing totals and exit 1        |
+| Skipping prettier "because it's cosmetic"        | Formatting failures block CI; run it                |
+| `--no-verify` to bypass hooks                    | Never. Fix the underlying issue                     |
 
 ## Red Flags — STOP
 
@@ -124,15 +126,15 @@ only difference between a gate that passed and a gate that was never there —
 
 ## Why Each Step Matters
 
-| Step | Catches |
-|---|---|
+| Step           | Catches                                                          |
+| -------------- | ---------------------------------------------------------------- |
 | sync with base | Type and API drift from work merged while you were on the branch |
-| format | Formatting drift that fails CI format checks |
-| lint | Code quality issues, unused vars, rule violations |
-| typecheck | Compilation errors anywhere in the project, test files included |
-| build | Bundler, import, and codegen failures the typechecker cannot see |
-| test | Regressions, broken logic, failing assertions |
+| format         | Formatting drift that fails CI format checks                     |
+| lint           | Code quality issues, unused vars, rule violations                |
+| typecheck      | Compilation errors anywhere in the project, test files included  |
+| build          | Bundler, import, and codegen failures the typechecker cannot see |
+| test           | Regressions, broken logic, failing assertions                    |
 
 ## What this gate cannot do
 
-Syncing narrows the window between your tree and CI's; it does not close it. The base can still move between your last check and CI's run, and only a merge queue removes that entirely. The gate's promise is that a failure caused by *known* upstream work never reaches CI — not that CI can never surprise you.
+Syncing narrows the window between your tree and CI's; it does not close it. The base can still move between your last check and CI's run, and only a merge queue removes that entirely. The gate's promise is that a failure caused by _known_ upstream work never reaches CI — not that CI can never surprise you.

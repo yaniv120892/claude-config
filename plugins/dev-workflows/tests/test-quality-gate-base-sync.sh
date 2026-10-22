@@ -46,6 +46,21 @@ case "$(stderr_of "$PUSH" "$TMP/work")" in
   *) report "block names the merge command" 0 1 ;;
 esac
 
+# The hook runs before the command, so a merge or a merge commit ahead of the
+# push has not happened yet. The block must say to split them, not tell the
+# caller to run the merge their command already contains.
+for synced in "git merge --no-edit origin/main && $PUSH" "git add -A && git commit --no-edit && $PUSH"; do
+  report "same-command sync is still refused: $synced" 2 "$(fire "$synced" "$TMP/work")"
+  case "$(stderr_of "$synced" "$TMP/work")" in
+    *"as its own command"*) report "same-command sync says to split: $synced" 0 0 ;;
+    *) report "same-command sync says to split: $synced" 0 1 ;;
+  esac
+done
+case "$(stderr_of "$PUSH" "$TMP/work")" in
+  *"as its own command"*) report "plain push keeps the merge advice" 0 1 ;;
+  *) report "plain push keeps the merge advice" 0 0 ;;
+esac
+
 # The sync check must run before the expensive steps — a stale branch should not
 # pay for a build first. A failing build with the branch behind still reports the
 # sync problem, which it can only do by short-circuiting ahead of it.
