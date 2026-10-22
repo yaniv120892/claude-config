@@ -85,6 +85,13 @@ stack trace nothing to call it
 > Pattern: `return function indexesLabelledFile(name) { … }`.
 > Avoid: `return (name) => …` from a factory. Callbacks passed straight to `map`/`filter` stay arrows.
 
+**Name a JSX Event Handler Once It Has Logic** — `open => !open && onDecide('edit')` makes the
+reader decode a condition inside the markup
+> Pattern: A handler with a condition, a branch or more than one call becomes a named function
+> in the component (`function closeAsEdit(open) {…}`), as `preventDialogDismissal` does.
+> Avoid: Conditional arrows in a JSX prop. A single forwarding call, `onClick={() => onDecide('edit')}`,
+> can stay inline.
+
 **Prefer Established npm Packages Over Hand-Rolled Implementations** — libraries are edge-case
 aware
 > Pattern: Check for a maintained package before writing parsing, formatting, or data-structure

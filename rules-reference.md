@@ -99,6 +99,11 @@ limits each colored green below 50%, yellow below 75%, red from 75% up. The READ
 > Avoid: `return (name) => labelIncludes(…) === true;` from a factory such as `storeFilter`. Arrows passed straight into `map`/`filter`/`sort` stay arrows: they are read where they are written.
 > Example: Ron's bazak-platform-dal#153 review: `storeFilter` returned two anonymous arrows, renamed `indexesEveryFile` and `indexesLabelledFile`.
 
+**Name a JSX Event Handler Once It Has Logic** — `open => !open && onDecide('edit')` makes the reader decode a condition inside the markup, where the eye is reading layout
+> Pattern: A handler with a condition, a branch or more than one statement becomes a named function declared in the component body (`function closeAsEdit(open: boolean) { if (!open) { onDecide('edit'); } }` → `onOpenChange={closeAsEdit}`), or at module level when it closes over nothing (`preventDialogDismissal` in `language-switch-dialog.tsx`).
+> Avoid: Conditional or multi-statement arrows in a JSX prop. A single forwarding call (`onClick={() => onDecide('edit')}`) stays inline: it reads as well as its name would.
+> Example: Ron's bazak-frontend#505 review flagged `onOpenChange={open => !open && onDecide('edit')}` in `pii-warning-dialog.tsx`.
+
 **Self-Documenting Code Over Comments** — Code should explain itself; comments are a last resort
 > Pattern: Only add a comment when the code contains a genuine hack, a non-obvious invariant, a workaround for a specific external bug, or behaviour that would actively surprise an experienced reader. The bar is high: if a competent developer would understand the code without the comment in under 5 seconds, delete it.
 > Avoid: Comments that restate what the type system, decorators, or field names already express (e.g. explaining that an `@IsOptional()` field is optional); task-ticket references (`// ABC-123: ...`); backward-compat explanations where the optionality itself is self-evident; and any comment explaining *what* the code does rather than *why* a surprising choice was made.
@@ -198,6 +203,11 @@ limits each colored green below 50%, yellow below 75%, red from 75% up. The READ
 > Pattern: Use full, descriptive names for types, variables, and parameters. A reader should understand the role of an identifier from its name alone without referring to surrounding code.
 > Avoid: Single-letter variables outside conventional loop indices (`i`, `j`) and sort comparators (`a`, `b`); cryptic abbreviations like `Acc`, `Cfg`, `Ctx`, `Mgr`, `Svc`, `Evt`, `Res`, `Req`, `Msg`.
 > Example: `type FingerprintAccumulator` not `type Acc`; `(acc) => acc.count` not `(a) => a.count`; `connectionConfig` not `cfg`.
+
+**Rename When a Change Widens What a Name Carries** — a name that describes only the old case misleads every reader of `instanceof X` or `readX()` into thinking only that case reaches it
+> Pattern: When a diff routes a new case through an existing type, function or error, rename it in the same PR so the name covers every case it now carries, and move callers, docs and specs with it. Where the wider concept already has a name in the diff (a union type such as `PiiRefusal`), reuse it.
+> Avoid: Leaving the narrow name and calling the rename "churn" or out of scope. The rename is cheapest in the PR that widened the meaning; every later PR adds callers that also have to move.
+> Example: bazak-frontend#505 routed the PII `needs_confirmation` result through `PiiBlockedError`, `readPiiBlock` and `dropBlockedMessage`. The polish pass skipped the rename as churn; Ron's review asked for it, and it landed as `PiiRefusalError` / `readPiiRefusal` / `dropRefusedMessage`.
 
 **HTTP Client Wrappers** — Encapsulate all HTTP calls to an external service behind a dedicated client module
 > Pattern: Create a client module (e.g. `src/providers/ffmpegOnlineClient.ts`) that owns the base URL, headers, and transport concerns. Expose one typed function per endpoint. Any caller — activity, step, or helper — imports and calls the client function instead of calling `gotJson`/`fetch` directly.

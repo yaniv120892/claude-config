@@ -71,6 +71,14 @@ and call sites don't say what each value is
 > Avoid: `cfg`, `ctx`, `mgr`, `svc`, `evt`, `res`, `req`, `msg`, `acc`; single letters outside
 > loop indices (`i`, `j`) and sort comparators (`a`, `b`).
 
+**Rename When a Change Widens What a Name Carries** — a name that describes only the old case
+misleads every reader of `instanceof X` or `readX()` into thinking only that case reaches it
+> Pattern: When a diff routes a new case through an existing type, function or error, rename it
+> in the same PR to cover both (`PiiBlockedError` → `PiiRefusalError` once it also carries
+> `needs_confirmation`). Callers, docs and specs go with it.
+> Avoid: Leaving the narrow name and calling the rename "churn". A review asks for it anyway, and
+> the rename only gets more expensive.
+
 **Name Opaque Tokens Once, In the Module That Owns Them** — the compiler cannot catch a
 typo'd protocol token; a pasted copy compiles clean and fails at runtime
 > Pattern: A literal meaningful only to whoever memorized the protocol (`'P2025'`,
