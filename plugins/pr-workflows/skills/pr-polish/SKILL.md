@@ -16,6 +16,14 @@ with the user.
 A PR number or URL. With none, run `gh pr view --json number,url,headRefName`, name the PR it finds,
 and ask one question to confirm. Resolve `owner/repo`, the worktree path, and the head SHA.
 
+## Step 1b — Sync with base
+
+Run `git fetch origin <base>`. When the head is behind `origin/<base>`, bring the base in before reviewing,
+so every review sees the code that will merge: a merge commit, as `steward` resolves conflicts — or, for a
+PR whose commits are reviewed one by one, a rebase onto `origin/<base>` with `git push --force-with-lease`,
+since Step 4's autosquash rebase would flatten a merge commit anyway. Resolve conflicts, regenerate
+lockfiles and generated files with the repo's own tooling, run its build and tests, and push.
+
 ## Step 2 — Review
 
 Launch `/code-review` and `/pr-workflows:pr-review` for the PR, and `/simplify` for the diff, in one
