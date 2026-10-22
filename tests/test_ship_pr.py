@@ -2,7 +2,10 @@
 """Check scripts/ship-pr.sh hands the gh account back however it exits.
 
 The script switches to the repo owner's account to push. Leaving that account
-active means every later `gh` call in a work repo runs as the wrong user.
+active means every later `gh` call in a work repo runs as the wrong user. The fake
+`gh api user` answers a different name on purpose: after a GitHub rename, gh's
+stored account name no longer matches the live login, and only the stored one
+can be switched back to.
 
 Run: python3 tests/test_ship_pr.py
 """
@@ -19,7 +22,8 @@ SCRIPT = os.path.join(ROOT, "scripts", "ship-pr.sh")
 FAKE_GH = """#!/usr/bin/env bash
 echo "$*" >> "$GH_LOG"
 case "$1 $2" in
-  "api user") echo work-account ;;
+  "auth status") echo work-account ;;
+  "api user") echo renamed-login ;;
   "pr view") exit 1 ;;
   "pr create") exit 1 ;;
 esac
