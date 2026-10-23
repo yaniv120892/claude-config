@@ -165,3 +165,7 @@ configuring it a single atomic step nobody can sequence; the first request after
 **Handlers Read at One Level of Abstraction** — a handler that inlines the upstream call, status mapping, logging and response building makes the reader parse plumbing to find the flow
 > Pattern: A route or request handler reads as lookup → relay → error mapping; the upstream call, and any other step with its own details, lives in a named function.
 > Avoid: A handler body mixing `fetch`, status branching, logging and `new Response` — it passes review because no "Step 1" comment flags it.
+
+**Mock Only at System Boundaries** — a test that mocks your own module pins the structure, so it breaks on a refactor that kept the behaviour and never runs the real integration
+> Pattern: Mock third-party APIs, time, and randomness; use a real test DB or temp dir where cheap. Inject a dependency instead of constructing it inside, and prefer per-operation client functions (`getUser`, `createOrder`) over one generic fetcher, so each mock returns one shape.
+> Avoid: `vi.mock('./order-validator')` or any mock of a module in the same codebase; `new StripeClient(...)` inside the function under test.
