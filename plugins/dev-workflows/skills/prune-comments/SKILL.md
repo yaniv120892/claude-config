@@ -49,6 +49,12 @@ Beyond what `code.md` lists, these are the ones it does not name:
   JSDoc that adds nothing a signature does not already state.
 - Commented-out code — git has it.
 - Comments describing behaviour that the code no longer has.
+- **Block comments on a constant declaration.** A constant is a name bound to a value;
+  if it needs a paragraph, the name is wrong. Fold the reason into the name
+  (`PRUNE_GRACE_MS` → `SIBLING_WRITE_GRACE_MS`), and put the argument for the value in
+  the module's decision doc or on the function that reads it. A one-line clause is
+  still allowed where a name cannot carry it (an upstream API's ceiling, a secret name
+  that must not be renamed).
 
 A stale comment is the failure mode this skill exists for, so it earns its own
 section in the closing report: the behaviour the comment claimed, and the line

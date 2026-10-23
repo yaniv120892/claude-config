@@ -133,7 +133,8 @@ Provenance note: the first seven are derived from the `superpowers` plugin
 (`obra/superpowers-marketplace`), vendored into `~/.claude-personal/skills` while
 the plugin itself is disabled. They are carried here so a new machine works
 offline, but upstream may have moved on — worth diffing against the plugin
-occasionally rather than assuming these are current.
+occasionally rather than assuming these are current. All seven were later removed:
+the `superpowers` plugin is installed now, and the copies only duplicated it.
 
 ---
 
