@@ -1,6 +1,6 @@
 # Visualization — the flow before and after
 
-Between Implementation and Before / After, draw the affected components **twice**: the flow as it runs on the base branch, and as it runs with this PR. Required in the full structure — the pair answers "what moved, and what now happens where" before the reviewer opens a file. GitHub renders Mermaid in PR bodies, so the diagrams live in the description itself, with no image to commit, and stay readable in both themes.
+Inside Reviewer details, after Implementation, draw the affected components **twice**: the flow as it runs on the base branch, and as it runs with this PR. Required in the full structure — the pair answers "what moved, and what now happens where" before the reviewer opens a file. GitHub renders Mermaid in PR bodies, so the diagrams live in the description itself, with no image to commit, and stay readable in both themes.
 
 ````markdown
 ## Visualization
