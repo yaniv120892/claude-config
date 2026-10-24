@@ -98,6 +98,17 @@ Two that those files do not carry, and that this review owns:
 - **Shared resolver / mapper / formatter edits.** A PR scoped to one provider can silently re-map every other caller through a function they share. Establish the full caller set before accepting the change, and name that set in the finding.
 - **Renamed identifiers crossing a process boundary** — event names and enum strings, alongside the metric-label case the backend file covers. Nothing fails to compile; the downstream consumer just stops matching after deploy.
 
+### New request or endpoint (do this explicitly)
+
+For every request the diff adds — a fetch, a proxy route, a public endpoint —
+answer both before reviewing how it is built:
+
+- **Does it need to exist?** Does the server already derive this from data it already receives? Read the downstream handler's fallback for the field the call fills in. Name the decision the response changes and every caller of the new endpoint. If the server would reach the same answer without it, the fix is deleting the call, endpoint and proxy — **HIGH**.
+- **What does it add to a hot path?** If the request is awaited on page load, first message, checkout or any step a user waits on: state the worst case (timeout × retries), who pays it (every tenant, or only those the answer matters for), and what the user sees when it fails. An unconditional await, a multi-second timeout, or an upstream outage that surfaces as a user-facing error is **HIGH** unless the diff makes it cheap — cached, parallel, skipped when irrelevant, or degrading silently.
+
+A feature split across client, proxy and server PRs hides both: read the other
+sides of the call, not just this PR's.
+
 ### Test gap (do this explicitly)
 
 Does a test exercise the behaviour this diff *changes*, or only assert what was
