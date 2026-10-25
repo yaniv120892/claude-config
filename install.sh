@@ -4,8 +4,9 @@
 #
 # Everything is symlinked, so editing a file here takes effect immediately and
 # `git status` in this repo is the single source of truth for what you've changed.
-# The one exception is settings.json, which is copied and never overwritten,
-# because it accumulates machine-local state you don't want clobbered.
+# The one exception is settings.json, which is copied, because it accumulates
+# machine-local state you don't want clobbered. A kept copy only gains the
+# top-level keys it lacks; a key it already has is never overwritten.
 #
 # Usage:
 #   ./install.sh                      # personal profile → ~/.claude
@@ -91,6 +92,31 @@ link() {
   say "  link:   $destination -> $source"
 }
 
+# A kept settings.json never sees a top-level key the repo added after the first
+# copy. Add each one it lacks, backing the file up first; a key it already has
+# is the machine's own choice and stays as it is.
+merge_missing_settings() {
+  python3 - "$1" "$REPO_DIR/settings/settings.json" "$DRY_RUN" "$BACKUP_DIR" <<'PY' || say "  note:   could not merge into $1 (not JSON, or no python3) — compare it by hand"
+import json, os, shutil, sys
+
+path, shipped_path, dry_run, backup_dir = sys.argv[1], sys.argv[2], sys.argv[3] == "1", sys.argv[4]
+with open(path, encoding="utf-8") as handle:
+    kept = json.load(handle)
+with open(shipped_path, encoding="utf-8") as handle:
+    shipped = json.load(handle)
+missing = [key for key in shipped if key not in kept]
+for key in missing:
+    print(f"  {'would: add' if dry_run else 'add:   '} {key} to {path}")
+if missing and not dry_run:
+    os.makedirs(backup_dir, exist_ok=True)
+    shutil.copy2(path, os.path.join(backup_dir, "settings.json"))
+    kept.update((key, shipped[key]) for key in missing)
+    with open(path, "w", encoding="utf-8") as handle:
+        json.dump(kept, handle, indent=2, ensure_ascii=False)
+        handle.write("\n")
+PY
+}
+
 # A kept settings.json outlives what this repo ships: warn about each command it
 # runs from a ~/.claude path that is gone, and each plugin the repo's settings
 # enable that it never mentions (one it sets false is a profile's choice).
@@ -141,7 +167,8 @@ install_claude() {
   # settings.json is copied, not linked: Claude Code writes machine-local state
   # into it, which must not flow back into the repo.
   if [ -e "$TARGET/settings.json" ]; then
-    say "  keep:   $TARGET/settings.json (exists — compare against settings/settings.json yourself)"
+    say "  keep:   $TARGET/settings.json (exists — nested keys are not merged; compare them yourself)"
+    merge_missing_settings "$TARGET/settings.json"
     check_kept_settings "$TARGET/settings.json"
   else
     run cp "$REPO_DIR/settings/settings.json" "$TARGET/settings.json"

@@ -37,8 +37,9 @@ claude
 
 `install.sh` symlinks, so editing a file here takes effect immediately and
 `git status` is the single source of truth for what you've changed. The exception
-is `settings.json`, which is copied once and never overwritten, because Claude
-Code writes machine-local state into it. Anything replaced is moved to
+is `settings.json`, which is copied rather than linked, because Claude Code
+writes machine-local state into it. Re-running `install.sh` adds each top-level
+key the repo's copy has and yours lacks, and never overwrites one you have. Anything replaced is moved to
 `~/.claude-config-backups/<timestamp>/` first.
 
 Add `--profile work` or `--target ~/.claude-personal` for a second profile.
