@@ -33,6 +33,13 @@ resolve one either, derive it from the current branch with `gh pr view --json nu
 which PR you resolved to** before continuing. Check the PR state — if it is already merged, say so
 and confirm the user still wants replies/fixes before pushing anything.
 
+## Step 1b — Sync with base
+
+Run `git fetch origin <base>`. When the head is behind `origin/<base>`, merge `origin/<base>` into the
+source branch before fixing anything, so every fix lands on the code that will merge — a merge commit, as
+`steward` resolves conflicts, never a rebase and force-push. Resolve conflicts, regenerate lockfiles and
+generated files with the repo's own tooling, run its build and tests, and push.
+
 ## Step 2 — List the incoming comments
 
 ```bash
@@ -225,3 +232,4 @@ If any check fails, fix that first, then send.
 | Missing a question asked in a review body                                   | Read `reviews` as well as threads and comments (Step 2); answer with an @-mention       |
 | Sending `replied` on Slack before every item is answered on GitHub          | Re-fetch the PR and run the Step 8 checks first, even when the user pre-approved it     |
 | Leaving the PR description describing the pre-fix change                    | Re-read it against the pushed diff and update it before replying (Step 5a)              |
+| Fixing comments on a branch that is behind its base                         | Merge `origin/<base>` in first and push (Step 1b) — never rebase and force-push         |
