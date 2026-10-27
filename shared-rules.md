@@ -2,7 +2,8 @@
 
 Only rules that apply to **every** session live here. Language and file-type rules are
 path-scoped in `~/.claude/rules/` and load only when a matching file is read:
-`code.md` (any source file), `typescript.md`, `python.md`, `authoring-docs.md`.
+`code.md` (any source file), `typescript.md`, `python.md`, `authoring-docs.md`, `config.md`,
+`tooling.md` (lint, format, tsconfig, CI and observability setup — the shared packages).
 Full rationale and worked examples for every rule, plus the situational ones kept out of
 the always-loaded set, are in `~/.claude/rules-reference.md` — read it when a rule's
 application is unclear or before codifying a new one. Pass the path; never paste it in.

@@ -306,6 +306,33 @@ limits each colored green below 50%, yellow below 75%, red from 75% up. The READ
 > Corollary: when the default disables something, "not configured" and "configured but broken" look identical from the outside. If that distinction matters — monitoring is the obvious case, since a disabled heartbeat and a dead cron are indistinguishable — log once on the disabled path so the state is observable.
 > Corollary: **the default keeps the deploy alive; it does not make the feature work.** Open a provisioning ticket in the same breath as the code change, because the two halves have different owners and different tools, and only the code half leaves a trace anyone reviews. Merged code reading an unprovisioned var is silently inert — the repo is green, CI is green, the PR is closed, and the feature simply never runs until someone happens to notice. Combined with the corollary above, this is the whole failure: a good default makes the missing config invisible, so the ticket is what makes it visible again. The ticket covers (a) set the var in the host, production **and** preview — a preview-only miss surfaces as "works on prod, broken in review apps" much later; (b) where a third party issues the value — a monitoring provider, an API vendor — extract it from that provider rather than inventing one locally, since a locally-invented secret authenticates nothing; (c) update the consuming service or monitor in the same change, so a newly added gate does not lock out the caller it was introduced to admit. Applies whether the var is required or optional.
 
+## Repo Tooling
+
+Path-scoped in `rules/tooling.md` (loads on package.json, lint/format/tsconfig files, CI
+workflows and observability wiring).
+
+**Consume the Shared Tooling, Never Copy It** — per-repo copies of the same config drift apart
+within weeks, and every fix then has to land in each one
+> Pattern: Every JS/TS repo depends on the public package `yaniv120892/dev-config`, pinned by
+> release tag as a git dependency (`github:yaniv120892/dev-config#v0.1.1`), the same model as
+> the `my-ui` design system. It provides ESLint flat-config presets (base, `node`, `next`),
+> the Prettier config (single quotes, width 100, trailing commas), tsconfig presets (`node`,
+> `next`, `library`), the lint-staged config, and a reusable GitHub Actions quality gate
+> (`npm ci`, `format:check`, `lint --max-warnings=0`, `typecheck`, `test`, `build`). Deployed
+> apps also depend on `yaniv120892/observability` — the my-expenses stack (pino with redaction
+> and Better Stack shipping, Sentry, Better Stack heartbeats, capped Telegram ops alerts, health
+> and deep-health routes) with `/next` and `/node` adapters.
+> Avoid: Local style config or a `warn` override of a shared rule. The user's code rules (braces,
+> no `as`, `type` over `interface`, `T[]`, explicit member accessibility, await over `.then`,
+> no abbreviated declarations) are `error` in the shared config, and adopting it means fixing
+> the repo's violations in the same PR rather than relaxing the rule locally.
+> Why one package and tags: Vercel caches git dependencies by version, so every change bumps
+> `version` and gets a `gh release create` tag; consumers move by editing the tag. A rule that
+> turns out wrong everywhere (v0.1.0 forbade `public` on constructors, contradicting Explicit
+> Class Access Modifiers) is fixed and released in the package, never patched per repo.
+> Rollout shape: one PR per repo, with config, prettier reflow, `eslint --fix` output and hand
+> fixes in separate commits so each is reviewable alone. arbox-autobook PR #4 is the reference.
+
 ## Python Coding Preferences
 
 **Python Type Hints** — Static analysis and tool schema generation depend on complete annotations
