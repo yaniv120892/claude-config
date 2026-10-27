@@ -314,7 +314,7 @@ workflows and observability wiring).
 **Consume the Shared Tooling, Never Copy It** — per-repo copies of the same config drift apart
 within weeks, and every fix then has to land in each one
 > Pattern: Every JS/TS repo depends on the public package `yaniv120892/dev-config`, pinned by
-> release tag as a git dependency (`github:yaniv120892/dev-config#v0.1.1`), the same model as
+> release tag as a git dependency (`github:yaniv120892/dev-config#<tag>`), the same model as
 > the `my-ui` design system. It provides ESLint flat-config presets (base, `node`, `next`),
 > the Prettier config (single quotes, width 100, trailing commas), tsconfig presets (`node`,
 > `next`, `library`), the lint-staged config, and a reusable GitHub Actions quality gate
