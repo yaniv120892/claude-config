@@ -35,8 +35,13 @@ your own changes, so fix the findings instead of commenting on them.
 ## Step 3 — Fix all issues
 
 Wait for all three tools to finish. Dedupe their findings, then fix each real one. Skip a finding only
-when it is a false positive, sits outside the diff, or would change intended behaviour, and say which in
-the report. A skipped finding gets one line of reasoning, not an argument.
+when it is a false positive or sits outside the diff, and say which in the report. A skipped finding gets
+one line of reasoning, not an argument.
+
+A finding whose fix would change intended behaviour is the user's call, not a skip: whether the
+behaviour is intended is exactly what the finding questions. Collect every such finding and ask once,
+in one `AskUserQuestion` batch — per finding, the behaviour today, the behaviour after the fix, and your
+recommendation first. Apply the answers, and report each one as fixed or kept by the user's choice.
 
 ## Step 3a — Rules audit
 
