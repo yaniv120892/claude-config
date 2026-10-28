@@ -144,6 +144,13 @@ same field silently skips it, and every test of the guarded path still passes
 > Avoid: A guard in one controller action, or a service method that only the "primary" entry
 > point calls, while a generic update spreads the same field straight into the write.
 
+**Report a Decision's Reason From the Site That Made It** — a reason re-derived afterwards from
+the same inputs runs its own copy of the rules, and the copy drifts from the decision it explains
+> Pattern: Return or attach the reason (the label word, the matched rule, the failing check) at
+> the point the decision is made, and carry it with the result.
+> Avoid: A post-pass that searches the inputs again to explain an outcome already decided — it
+> reports a reason that did not decide it, or none where one did.
+
 **Every New Env Var Has a Default** — a var that throws when unset makes deploying the code and
 configuring it a single atomic step nobody can sequence; the first request after deploy 500s
 > Pattern: Read new vars through the optional accessor so unset resolves to a defined value
