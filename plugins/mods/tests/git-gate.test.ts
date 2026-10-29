@@ -3,7 +3,7 @@ import { describe, expect, test } from 'claude-code/testing'
 
 import { slash } from './slash'
 
-import { changesPr, isGitWrite, runsGit } from '../hooks/git-write'
+import { allowRules, changesPr, isAllowedBy, isGitWrite, runsGit } from '../hooks/git-write'
 
 // The cases settings/tests/test-require-git-approval.sh held for the shell
 // gate this mod replaced. Both halves matter: a gate that asks about reads
@@ -114,14 +114,49 @@ describe('what moves the PR and the band', () => {
   })
 })
 
+describe('isAllowedBy', () => {
+  test('covers a write its rule matches', () => {
+    expect(isAllowedBy(['Bash(git *)'], 'git commit -m "x\n\nbody"')).toBe(true)
+    expect(isAllowedBy(['Bash(git push:*)'], 'git push origin main')).toBe(true)
+    expect(isAllowedBy(['Bash(gh pr merge 12 --squash)'], 'gh pr merge 12 --squash')).toBe(true)
+    expect(isAllowedBy(['Bash(git *)'], 'cd /tmp && git commit -m x && ~/bin/ship.sh')).toBe(true)
+  })
+
+  test('needs every write covered', () => {
+    expect(isAllowedBy(['Bash(git *)'], 'git commit -m x && gh pr merge 3')).toBe(false)
+    expect(isAllowedBy(['Bash(git push:*)'], 'git pushx')).toBe(false)
+    expect(isAllowedBy(['Bash(git commit:*)'], 'git push')).toBe(false)
+    expect(isAllowedBy(['Read(*)', 'Bash(gh api *)'], 'git push')).toBe(false)
+    expect(isAllowedBy([], 'git push')).toBe(false)
+  })
+
+  test('never covers a write behind a wrapper or a substitution', () => {
+    expect(isAllowedBy(['Bash(timeout *)', 'Bash(git *)'], 'timeout 60 git push')).toBe(false)
+    expect(isAllowedBy(['Bash(echo *)'], 'echo "$(git push)"')).toBe(false)
+    expect(isAllowedBy(['Bash(bash *)'], 'bash -c "git push"')).toBe(false)
+    expect(isAllowedBy(['Bash(*)'], 'CLAUDE_GIT_OK=1 git commit -m x')).toBe(false)
+  })
+
+  test('allowRules reads permissions.allow and nothing else', () => {
+    expect(allowRules({ permissions: { allow: ['Bash(git *)', 3], deny: ['Bash(rm *)'] } })).toEqual(['Bash(git *)'])
+    expect(allowRules(null)).toEqual([])
+    expect(allowRules({ permissions: { allow: 'Bash(git *)' } })).toEqual([])
+  })
+})
+
 type Answer = 'Allow once' | 'Allow for this session' | 'Deny'
 
 describe('the gate', () => {
   // The test's own hooks sit beneath the plugin: one answers the dialog the
   // way the person would, one stands for the shell.
-  const harness = (on: On, answer: Answer) => {
+  const harness = (on: On, answer: Answer, allow: string[] = []) => {
     const asked: string[] = []
     const ran: string[] = []
+    on('env.get', ($, e) => ({ value: e.name === 'HOME' ? '/home/me' : undefined }))
+    on('fs.read', ($, e) => {
+      if (e.path !== '/home/me/.claude/settings.json') throw new Error(`unexpected read of ${e.path}`)
+      return { value: JSON.stringify({ permissions: { allow } }) }
+    })
     on('tool.call', { tool: 'AskUserQuestion' }, ($, e) => {
       const question = e.questions[0]?.question ?? ''
       asked.push(question)
@@ -172,6 +207,14 @@ describe('the gate', () => {
     const result = await $.tool.call({ tool: 'Bash', command: 'git push' })
     expect(ran).toEqual([])
     expect(result.isError === true || result.deny !== undefined).toBe(true)
+  })
+
+  test('skips the dialog for a write the user settings already allow', async ($, on) => {
+    const { asked, ran } = harness(on, 'Deny', ['Bash(git *)'])
+    await $.tool.call({ tool: 'Bash', command: 'git commit -m x' })
+    await $.tool.call({ tool: 'Bash', command: 'gh pr merge 3' })
+    expect(asked.length).toBe(1)
+    expect(ran).toEqual(['git commit -m x'])
   })
 
   test('never asks about a read', async ($, on) => {

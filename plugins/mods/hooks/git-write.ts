@@ -120,6 +120,43 @@ export function isGitWrite(command: string): boolean {
   )
 }
 
+/**
+ * Whether Claude Code's `Bash(...)` allow rules already cover every write in
+ * the command: `Bash(git push:*)` a prefix, `*` any text, otherwise exact.
+ * Only a segment that starts with `git` or `gh` can be covered, so a wrapper
+ * (`timeout 60 git push`) or a substitution (`echo "$(git push)"`) still asks.
+ */
+export function isAllowedBy(rules: readonly string[], command: string): boolean {
+  const patterns = rules.flatMap(rule => {
+    const pattern = /^Bash\((.+)\)$/s.exec(rule)?.[1]
+    return pattern === undefined ? [] : [bashRulePattern(pattern)]
+  })
+  const writes = splitCommands(command)
+    .map(words => words.map(word => word.text))
+    .filter(texts => isGitWrite(texts.join(' ')))
+  return (
+    writes.length > 0 &&
+    writes.every(texts => {
+      const program = texts[0]?.split('/').pop()
+      const segment = texts.join(' ')
+      return (program === 'git' || program === 'gh') && patterns.some(pattern => pattern.test(segment))
+    })
+  )
+}
+
+/** The `Bash(...)` entries of a settings file's `permissions.allow`. */
+export function allowRules(settings: unknown): string[] {
+  const allow = (settings as { permissions?: { allow?: unknown } } | null)?.permissions?.allow
+  return Array.isArray(allow) ? allow.filter((rule): rule is string => typeof rule === 'string') : []
+}
+
+function bashRulePattern(rule: string): RegExp {
+  const glob = (text: string) => text.split('*').map(part => part.replace(/[.+?^${}()|[\]\\]/g, '\\$&')).join('.*')
+  if (rule.endsWith(':*')) return new RegExp(`^${glob(rule.slice(0, -2))}(?:\\s.*)?$`, 's')
+  if (rule.endsWith(' *')) return new RegExp(`^${glob(rule.slice(0, -2))}(?: .*)?$`, 's')
+  return new RegExp(`^${glob(rule)}$`, 's')
+}
+
 export function changesPr(command: string): boolean {
   return calls(command).some(call => {
     if (call.program === 'git') return call.subcommand === 'push'
