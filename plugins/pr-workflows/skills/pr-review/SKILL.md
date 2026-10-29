@@ -167,7 +167,8 @@ anchoring that contract exists to produce.
 
 From a Slack target, once everything has posted, reply in the thread
 (`slack_send_message` with `channel_id` and `thread_ts` = `ts`) with exactly
-`replied`.
+`commented`. `replied` is the author's ack in `address-pr-feedback`; a reviewer
+posting it reads as the author answering.
 
 ## Step 6 — Approve, only when told
 
