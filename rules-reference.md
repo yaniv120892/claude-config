@@ -151,6 +151,11 @@ limits each colored green below 50%, yellow below 75%, red from 75% up. The READ
 > Avoid: Braceless one-liners like `if (condition) doSomething();`, `if (condition)\n  doSomething();`, or `if (!x) return null;`
 > Example: `if (condition) { doSomething(); }` — `if (!x) { return null; }` — not `if (!x) return null;`
 
+**Prisma: Look Up by Key With `findUnique`, Even With Extra Filters** — since Prisma 5 (`extendedWhereUnique` went GA), `WhereUniqueInput` accepts non-unique filters (`NOT`/`AND`/`OR`, scalar and relation filters) beside the unique key
+> Pattern: Keep `findUnique` for a one-row-by-key lookup and add the filter to its `where`: `findUnique({ where: { id, ...VISIBLE_THREAD_WHERE } })`. It states the one-row intent, and Prisma batches concurrent `findUnique` calls into one query (the dataloader that `findFirst` skips). Check the generated `<Model>WhereUniqueInput` if unsure which filters it takes.
+> Avoid: Switching to `findFirst` because the `where` gained a non-unique filter, the pre-Prisma-5 habit. The switch also renames every `findUnique` mock in the tests for no behaviour change.
+> Example: bazak-platform-dal#192 changed three `mastraThread.findUnique` lookups in `threads.service.ts` to `findFirst` when they gained the deletion-visibility filter, along with about a dozen mocks. They were reverted to `findUnique` with the same `where`.
+
 **Fix ESLint Issues Instead of Suppressing** — Lint rules exist for a reason; disabling them hides problems
 > Pattern: When ESLint flags an issue, fix the underlying code to satisfy the rule. Refactor, retype, or restructure as needed.
 > Avoid: Adding `// eslint-disable-next-line` or `// eslint-disable` comments. Only use them as an absolute last resort when there is genuinely no way to satisfy the rule.
