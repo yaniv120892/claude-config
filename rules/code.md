@@ -21,6 +21,14 @@ description: "Language-agnostic craft rules: comments, naming, control flow, err
 
 Language-agnostic. TypeScript specifics are in `typescript.md`, Python in `python.md`.
 
+**A Repo's Established Style Wins Over These Rules** — a diff that follows a global rule against
+the code around it leaves the repo with two styles, and every reviewer has to ask which is right
+> Pattern: Where the repo's own rules (`CLAUDE.md`, `.claude/rules/`) or the consistent style of
+> the surrounding code differ from a rule here, follow the repo, and say so where the rule would
+> otherwise be reported (a rules audit, a review).
+> Avoid: Adding braces, removing casts or changing mock style in a diff whose neighbours do it the
+> other way; reporting such a difference as a violation to fix.
+
 
 **Self-Documenting Code Over Comments** — the most-repeated review comment; the bar is high
 > Pattern: Comment only for a genuine hack, a non-obvious invariant, a workaround for a
