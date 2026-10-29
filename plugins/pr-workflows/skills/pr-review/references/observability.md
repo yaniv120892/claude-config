@@ -11,9 +11,9 @@ logger, which event helper, naming) override anything generic here.
 
 | Signal | Emitted by | Consumed by |
 |---|---|---|
-| Logs | the repo's logger (Pino/Mastra in `bazak-mastra`, Nest `Logger` in `third-party-gw-api`) → Cloud Logging | log-based alert policies and enrichment profiles in `~/bazak/bazak-infra`: `terraform/modules/cluster-addons/*monitoring.tf`, `files/cloud-monitoring-slack-notifier/profiles.yaml` |
+| Logs | the repo's logger → the log backend | log-based alert policies, in the infra repo `~/.claude/work-context.local.md` names |
 | Product / analytics events | PostHog `capture` calls, or the repo's wrapper around them | PostHog insights, dashboards, funnels, cohorts, feature-flag targeting |
-| LLM traces | Mastra observability exporters (`TRACE_EXPORTER`) → PostHog `$ai_*` events | PostHog LLM analytics, conversation scoring |
+| LLM traces | the agent framework's trace exporter → PostHog `$ai_*` events | PostHog LLM analytics, conversation scoring |
 
 ## The three questions
 
@@ -50,9 +50,9 @@ This is the check most likely to break production silently. Flag when the diff:
 
 For each one, find the consumers:
 
-- **Logs**: grep `~/bazak/bazak-infra` for the message text or field name.
-  A hit in a `*monitoring.tf` filter or `profiles.yaml` means the alert goes
-  quiet the day this ships.
+- **Logs**: grep the alert-policy files `~/.claude/work-context.local.md` names for the message text or
+  field name. A hit in an alert filter means the alert goes quiet the day this
+  ships.
 - **Events**: if the PostHog MCP (`mcp__posthog__exec`) is available, look up
   the event definition and the insights that use it. If it is not, say the
   consumers were not checked rather than guessing.
@@ -70,7 +70,7 @@ Return this section, nothing else:
 ````markdown
 ### G. Observability — <owner/repo>#<n>
 | tag | severity | file:line | comment |
-| G1 | HIGH | src/x.ts:42 | Renames log `upstream timeout` → `gw timeout`; `third-party-gw-monitoring.tf:31` filters on the old text, so the timeout alert goes silent. |
+| G1 | HIGH | src/x.ts:42 | Renames log `upstream timeout` → `gw timeout`; `gateway-monitoring.tf:31` filters on the old text, so the timeout alert goes silent. |
 ````
 
 Severity: HIGH breaks an existing alert/dashboard or leaks PII/secrets; MEDIUM

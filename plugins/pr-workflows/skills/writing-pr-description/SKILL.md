@@ -55,7 +55,7 @@ Report the subagent's result back to the user when it completes.
 | `## Motivation` | visible | **2–3 sentences.** |
 | `## What changes` | visible | **2–4 bullets**, one sentence each. |
 | `## Proof of Work` | visible | 3–4 lines (how you ran it, without and with in one phrase each, `**Not proven locally:**`), plus any GIF or video. Pasted output goes in its own collapsed `<details>` under them. |
-| Merge order or risk | visible | One bold-led line after Proof of Work, only when there is one (`**Merge after** mastra#568.`). |
+| Merge order or risk | visible | One bold-led line after Proof of Work, only when there is one (`**Merge after** api#568.`). |
 | `## Implementation` | details | **2–4 bullets**, ~2 lines each. |
 | `## Visualization` | details | Two Mermaid diagrams (before, after), ≤12 nodes each, one caption line. |
 | `## Verify on dev` | details | 1 framing line + 3–5 boxes. |
@@ -111,7 +111,7 @@ Read any whose name is about proof, evidence, QA, or PR descriptions. A repo ski
 ## Motivation
 ## What changes
 ## Proof of Work
-**Merge after** mastra#568.          ← only when there is an order or a risk
+**Merge after** api#568.          ← only when there is an order or a risk
 
 <details><summary>Reviewer details</summary>
 
