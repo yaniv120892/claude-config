@@ -79,6 +79,17 @@ misleads every reader of `instanceof X` or `readX()` into thinking only that cas
 > Avoid: Leaving the narrow name and calling the rename "churn". A review asks for it anyway, and
 > the rename only gets more expensive.
 
+**Name an Endpoint for What It Does, Never for Who Calls It** — a caller baked into a file,
+class or comment reads as a restriction, so the next consumer either duplicates the endpoint or
+reuses one whose name now lies
+> Pattern: Name controllers, routes, modules and their doc comments after the surface they are
+> mounted on (`external` / `internal`, the auth model the code actually depends on) and the
+> operation (`ConversationDeletionsExternalController`, "marks requests done"). Who calls an
+> endpoint today goes in docs.
+> Avoid: `-backoffice.controller.ts`, `MastraFacing`, "the frontend's side of X", "called by the
+> scoring job". Statements about who owns the data (Mastra owns `mastra_messages`) are facts
+> about the data, not the caller, and stay.
+
 **Name Opaque Tokens Once, In the Module That Owns Them** — the compiler cannot catch a
 typo'd protocol token; a pasted copy compiles clean and fails at runtime
 > Pattern: A literal meaningful only to whoever memorized the protocol (`'P2025'`,
