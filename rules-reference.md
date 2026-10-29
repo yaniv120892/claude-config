@@ -89,6 +89,11 @@ limits each colored green below 50%, yellow below 75%, red from 75% up. The READ
 
 ## Coding Preferences
 
+**A Repo's Established Style Wins Over These Rules** — a diff that follows a global rule against the code around it leaves the repo with two styles, and every reviewer has to ask which is right
+> Pattern: Where the repo's own rules (`CLAUDE.md`, `.claude/rules/`) or the consistent style of the surrounding code differ from a global rule, follow the repo, and say so where the rule would otherwise be reported (a rules audit, a review).
+> Avoid: Adding braces, removing casts or changing mock style in a diff whose neighbours do it the other way; reporting such a difference as a violation to fix.
+> Example: A pr-polish rules audit on bazak-mastra #620 flagged braceless guards, `as T` casts moved unchanged from the scoring client, and a mocked in-repo fetch helper — all matching the repo's existing code. Yaniv ruled that repo style keeps winning in every such conflict.
+
 **Array Type Syntax** — Consistent, concise type annotations
 > Pattern: Use `T[]` shorthand for array types (e.g., `string[]`, `{ id: number }[]`)
 > Avoid: `Array<T>` generic syntax (e.g., `Array<string>`, `Array<{ id: number }>`)
