@@ -2,14 +2,15 @@
 name: pr-review
 argument-hint: <PR numbers or URLs, or a Slack thread link> (one or more, required)
 allowed-tools: Bash(gh:*), Bash(git:*), Bash(python3:*), Read, Grep, Glob, Agent, Skill, ToolSearch, mcp__notion__notion-search, mcp__notion__notion-fetch, mcp__claude_ai_Slack__slack_read_thread, mcp__claude_ai_Slack__slack_add_reaction, mcp__claude_ai_Slack__slack_send_message
-description: Use when reviewing one or more pull requests named by number or URL — or by a Slack thread link that lists them — or when asked whether a PR is safe to merge. Fans out a code-review and an observability subagent per PR in parallel, plus an instruction-file subagent when a PR touches CLAUDE.md, rules, skills, agents or commands, merges every finding into a single severity-sorted report with a documentation-drift check, and posts inline comments after one approval. Requires explicit PR targets — it never reviews the current branch. For re-checking comments an author says they already fixed, use pr-second-review instead.
+description: Use when reviewing one or more pull requests named by number or URL — or by a Slack thread link that lists them — or when asked whether a PR is safe to merge. Fans out a code-review, a built-in /code-review and an observability subagent per PR in parallel, plus an instruction-file subagent when a PR touches CLAUDE.md, rules, skills, agents or commands, merges every finding into a single severity-sorted report with a documentation-drift check, and posts inline comments after one approval. Requires explicit PR targets — it never reviews the current branch. For re-checking comments an author says they already fixed, use pr-second-review instead.
 ---
 
 # Pull Request Review
 
-Reviews a batch of pull requests. Two subagents per PR, all in parallel, and a
-third when the PR touches agent-facing markdown. Every PR gets a code review, a
-documentation-drift check, and an observability check. Findings merge into one
+Reviews a batch of pull requests. Three subagents per PR, all in parallel, and a
+fourth when the PR touches agent-facing markdown. Every PR gets a code review, a
+second pass from the built-in `/code-review` skill, a documentation-drift check,
+and an observability check. Findings merge into one
 report, you approve once, everything posts.
 
 ## Step 1 — Require explicit targets
@@ -98,10 +99,35 @@ Agent({
 })
 ```
 
+Also in the same message, dispatch Claude Code's built-in `/code-review` skill
+per PR. It is a second, independent correctness pass with its own recipe, so it
+catches what the rubric's checklist steers away from:
+
+```
+Agent({
+  description: "Built-in code review PR <n>",
+  model: "sonnet",
+  subagent_type: "general-purpose",
+  prompt: "Run Claude Code's built-in code-review skill on pull request
+    <PR URL>: call the Skill tool with skill \"code-review\" and args
+    \"medium <PR URL>\". Local clone: <absolute path, if present> — run from it.
+
+    Never pass --comment or --fix: the caller posts after the user approves.
+    If the skill tells you to report through the ReportFindings tool, do that,
+    and also return the same findings as text.
+
+    Return one row per finding — severity, file:line at head <sha>, the defect
+    in one sentence, the concrete failure scenario — and nothing else."
+})
+```
+
+The level is spelled out because the skill otherwise reuses whatever level was
+typed last.
+
 When a changed path is a `CLAUDE.md` or `AGENTS.md` at any depth, or sits under
 `.claude/rules/`, `.claude/agents/`, `.claude/commands/`, or a `skills/<name>/`
-directory, dispatch a third agent for that PR in the same message. Skip it for
-any other PR.
+directory, dispatch an instruction-file agent for that PR in the same message.
+Skip it for any other PR.
 
 ```
 Agent({
@@ -140,17 +166,20 @@ The others' results still stand — never re-run the whole batch.
 ```markdown
 ## Review — <N> pull requests
 
-| PR | Severity | file:line | Issue | Fix |
-|---|---|---|---|---|
+| PR  | Severity | file:line | Issue | Fix |
+| --- | -------- | --------- | ----- | --- |
 ```
 
 One table, sorted HIGH → MEDIUM → LOW across every PR, so the worst thing in
-the batch is the first row regardless of which PR it came from. Then:
+the batch is the first row regardless of which PR it came from. It holds both
+the rubric agent's correctness findings and the built-in `/code-review`
+findings: where both flag the same file:line, keep one row with the rubric
+agent's comment text. Then:
 
 - **Rule violations** — a separate table. A style violation is not a bug, and
   mixing them buries the bugs.
-- **Instruction files** — a separate table, only for PRs that got the third
-  agent: placement, globs that match nothing, dangling pointers, skill
+- **Instruction files** — a separate table, only for PRs that got the
+  instruction-file agent: placement, globs that match nothing, dangling pointers, skill
   descriptions.
 - **Docs alignment** — per PR: Notion page, what the diff contradicts, one line
   on what to update.
