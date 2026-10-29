@@ -89,7 +89,7 @@ Agent({
 
     Head SHA: <sha>  — already resolved, do not re-fetch it.
     Changed files: <paths>
-    Local clone: <absolute path of the repo under ~/bazak, if present>
+    Local clone: <absolute path of the repo's local clone, if present>
 
     Read <PLUGIN_ROOT>/skills/pr-review/references/observability.md and follow
     it exactly. Fetch the diff ONCE. Do not delegate further. Do not post

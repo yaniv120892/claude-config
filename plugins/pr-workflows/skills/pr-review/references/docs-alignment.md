@@ -5,14 +5,14 @@ lands? Read-only — this check **never writes to Notion**.
 
 ## Where the docs live
 
-Everything is under **Bazak R&D — Start here**
-(`37541069-d180-801a-96ec-fee7ced3522a`). The sections that go stale:
+Everything is under the docs root page `~/.claude/work-context.local.md` names, by title and page id.
+The sections that go stale:
 
 | Section | Goes stale when the diff touches |
 |---|---|
 | System architecture | a service boundary, data flow, auth/tenant scoping, a data store's owner, a scheduled job |
 | Design proposals and decisions | something a recorded decision said would work differently |
-| Tenant capabilities | what a tenant agent can do, which supplier tools it has |
+| Product capabilities | what an agent or feature can do, which integrations it has |
 | Channels and customer experience | an MCP connector, a channel surface, the consent/sign-in flow |
 
 ## How to check
