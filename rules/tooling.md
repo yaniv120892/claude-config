@@ -31,4 +31,7 @@ within weeks, and every fix then has to land in each one
 > overridden here; a repo may only *add* rules (arbox keeps `no-console` for `src`).
 > Exception: legacy `my-expenses-app` is not migrated.
 > Releasing either package: bump `version` on every change (Vercel caches same-version git
-> deps), squash-merge, `gh release create v<x.y.z>`, then bump the tag in consumers.
+> deps), squash-merge, `gh release create v<x.y.z>`, then bump the tag in consumers
+> with `npm install github:yaniv120892/<pkg>#<tag>` and check the lockfile's `resolved` names
+> the tag's commit — editing the pin and running a plain `npm install` keeps the old commit,
+> and `npm ci` then ships the old code with no error.
