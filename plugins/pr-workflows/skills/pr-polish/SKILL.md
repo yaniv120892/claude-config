@@ -5,7 +5,7 @@ description: Use to run the full review battery on a pull request you authored, 
 
 # Polish My PR
 
-One pass over a PR you own: review it three ways, fix every finding, audit the result against your rules, prune comments, push, wait for
+One pass over a PR you own: review and simplify it, fix every finding, audit the result against your rules, prune comments, push, wait for
 CI, then answer the bots. It ends at a green PR with every thread answered. Merging and pinging reviewers stay
 with the user.
 
@@ -26,15 +26,16 @@ lockfiles and generated files with the repo's own tooling, run its build and tes
 
 ## Step 2 — Review
 
-Launch `/code-review` and `/pr-workflows:pr-review` for the PR, and `/simplify` for the diff, in one
-message. Both reviews only read; `/simplify` edits.
+Launch `/pr-workflows:pr-review` for the PR and `/simplify` for the diff, in one message.
+`/pr-workflows:pr-review` only reads; `/simplify` edits. Do not also run `/code-review`:
+`/pr-workflows:pr-review` already runs it as one of its subagents.
 
 `/pr-workflows:pr-review` ends by offering to post its findings as PR comments. Skip that step: these are
 your own changes, so fix the findings instead of commenting on them.
 
 ## Step 3 — Fix all issues
 
-Wait for all three tools to finish. Dedupe their findings, then fix each real one. Skip a finding only
+Wait for both tools to finish. Dedupe their findings, then fix each real one. Skip a finding only
 when it is a false positive or sits outside the diff, and say which in the report. A skipped finding gets
 one line of reasoning, not an argument.
 
