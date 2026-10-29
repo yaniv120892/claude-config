@@ -5,7 +5,7 @@ import type { Band, GitLocation, PlanTask, PrRead, PrSkillRuns, UsageLimit } fro
 import { gitWrites, OPT_OUT } from './branch-guard'
 import { credentialReason, findCredential, findTerm, parseTerms, termPattern, termReason } from './credentials'
 import { LAST_ACTIVE_KEY_PREFIX, LAST_ACTIVE_TTL_MS, parseUtcOffset, promptClock, slowToolNote } from './clock'
-import { changesPr, createsPr, GATED_COMMANDS, isGitWrite, runsGit } from './git-write'
+import { allowRules, changesPr, createsPr, GATED_COMMANDS, isAllowedBy, isGitWrite, runsGit } from './git-write'
 import {
   basename,
   CHECK,
@@ -62,9 +62,12 @@ const DENY = 'Deny'
 const SHOWN_COMMAND_LENGTH = 200
 
 // The dialog is the person's to answer, never the model's. "Allow for this
-// session" holds until `/git-gate reset` or the session ends.
+// session" holds until `/git-gate reset` or the session ends. An allow rule in
+// the person's own settings.json is an answer given ahead of time; a repo's
+// committed .claude/settings.json is not read, so a clone cannot open the gate.
 async function gateGitWrite($: Engine, command: string): Promise<{ deny: string } | null> {
   if (!isGitWrite(command) || (await read($, gitGrant))) return null
+  if (isAllowedBy(await userAllowRules($), command)) return null
 
   let answer: string
   try {
@@ -87,6 +90,15 @@ async function gateGitWrite($: Engine, command: string): Promise<{ deny: string 
   if (answer === ONCE) return null
   const note = answer === DENY ? '' : ` They said: ${answer}`
   return { deny: `BLOCKED: the user declined this git/gh write.${note} Do not retry it unless they ask.` }
+}
+
+async function userAllowRules($: Engine): Promise<string[]> {
+  try {
+    const configDir = (await $.env.get('CLAUDE_CONFIG_DIR')) ?? `${await $.env.get('HOME')}/.claude`
+    return allowRules(JSON.parse(String(await $.fs.read(`${configDir}/settings.json`))))
+  } catch {
+    return []
+  }
 }
 
 const DEFAULT_BRANCH_CANDIDATES = ['main', 'master']
