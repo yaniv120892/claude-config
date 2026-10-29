@@ -81,7 +81,7 @@ gh pr view <NUMBER> --repo <slug> --json reviews --jq '.reviews[] | select(.body
 ```
 
 A review body has no thread to reply in. Answer it with a PR comment that @-mentions the reviewer
-and names the item it answers (`@alex G3: …`), or the reviewer will not see that it was answered.
+and names the item it answers (`@<reviewer> G3: …`), or the reviewer will not see that it was answered.
 
 ## Step 3 — Triage each comment (the judgment)
 
