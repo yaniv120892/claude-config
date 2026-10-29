@@ -1,8 +1,8 @@
 ---
 name: pr-review
-argument-hint: <PR numbers or URLs> (one or more, required)
-allowed-tools: Bash(gh:*), Bash(git:*), Bash(python3:*), Read, Grep, Glob, Agent, Skill, mcp__notion__notion-search, mcp__notion__notion-fetch
-description: Use when reviewing one or more pull requests named by number or URL, or when asked whether a PR is safe to merge. Fans out a code-review and an observability subagent per PR in parallel, merges every finding into a single severity-sorted report with a documentation-drift check, and posts inline comments after one approval. Requires explicit PR targets — it never reviews the current branch. For re-checking comments an author says they already fixed, use pr-second-review instead.
+argument-hint: <PR numbers or URLs, or a Slack thread link> (one or more, required)
+allowed-tools: Bash(gh:*), Bash(git:*), Bash(python3:*), Read, Grep, Glob, Agent, Skill, ToolSearch, mcp__notion__notion-search, mcp__notion__notion-fetch, mcp__claude_ai_Slack__slack_read_thread, mcp__claude_ai_Slack__slack_add_reaction, mcp__claude_ai_Slack__slack_send_message
+description: Use when reviewing one or more pull requests named by number or URL — or by a Slack thread link that lists them — or when asked whether a PR is safe to merge. Fans out a code-review and an observability subagent per PR in parallel, merges every finding into a single severity-sorted report with a documentation-drift check, and posts inline comments after one approval. Requires explicit PR targets — it never reviews the current branch. For re-checking comments an author says they already fixed, use pr-second-review instead.
 ---
 
 # Pull Request Review
@@ -15,6 +15,16 @@ report, you approve once, everything posts.
 
 A **target** is a PR number or URL. Collect every one from the request, accept
 several, and resolve each to `owner/repo` + number before dispatching.
+
+**A Slack link** (`https://<workspace>.slack.com/archives/<channel_id>/p<digits>`)
+stands for the PRs in its thread. `channel_id` is the segment after `archives/`;
+`ts` is the digits after `p` with a `.` inserted six from the end
+(`p1793262604241709` → `1793262604.241709`). Read the thread with
+`slack_read_thread` and take every PR URL in the parent message and replies as a
+target. Then load `slack_add_reaction` through `ToolSearch` and react `eyes` on
+the parent message, so the asker sees the review has started. Keep `channel_id`
+and `ts` — Steps 5 and 6 report back to that thread. A plain PR target touches
+no Slack.
 
 A branch, the current checkout, or local changes are not targets, even when the
 user names them outright ("review my current branch"). The current branch is
@@ -136,14 +146,32 @@ Wait. Nothing posts before an explicit yes.
 
 ## Step 5 — Post
 
-On yes, use the **post-pr-inline-comments** skill for every finding, pinned to
-its file and line — observability findings included. Docs-alignment findings
-post as a general note on the PR.
+On yes, post every finding pinned to its file and line — observability findings
+included — by calling the script directly. The `post-pr-inline-comments` skill
+is `disable-model-invocation`, so the `Skill` tool refuses it.
 
-Pass each PR's head SHA — the one you resolved in step 2 — through that skill's
-`--head-sha`. A batch posts many comments per PR, and without it every single
-one pays for its own `gh pr view`.
+```bash
+python3 <PLUGIN_ROOT>/skills/post-pr-inline-comments/post_inline_comment.py \
+  --pr <n> --repo <slug> --head-sha <sha> --file <path> --new-line <N> --body "..."
+```
+
+Docs-alignment findings post as a general note on the PR (`gh pr comment`).
+
+Pass each PR's head SHA — the one you resolved in step 2 — as `--head-sha`. A
+batch posts many comments per PR, and without it every single one pays for its
+own `gh pr view`.
 
 Post each subagent's comment text as-is — it already follows the comment
 contract in `references/rubric.md`, and rewording it here loses the file:line
 anchoring that contract exists to produce.
+
+From a Slack target, once everything has posted, reply in the thread
+(`slack_send_message` with `channel_id` and `thread_ts` = `ts`) with exactly
+`replied`.
+
+## Step 6 — Approve, only when told
+
+Never approve on your own. If the user then tells you to approve a PR, run
+`gh pr review <n> --repo <slug> --approve`. From a Slack target, react
+`white_check_mark` on the parent message and reply in the thread with exactly
+`approved`.
