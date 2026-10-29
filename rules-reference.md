@@ -354,6 +354,12 @@ within weeks, and every fix then has to land in each one
 > `version` and gets a `gh release create` tag; consumers move by editing the tag. A rule that
 > turns out wrong everywhere (v0.1.0 forbade `public` on constructors, contradicting Explicit
 > Class Access Modifiers) is fixed and released in the package, never patched per repo.
+> Lockfile trap: editing `#v0.2.0` to `#v0.2.1` and running a plain `npm install` can leave
+> the lockfile's `resolved` on the old commit. `package.json` then names the new tag while CI
+> and Vercel (`npm ci`) install the old code, silently. It hit all six consumers in the
+> 2026-10-29 rollout. Install with the full spec, `npm install github:yaniv120892/<pkg>#<tag>`,
+> and compare `resolved` with `git ls-remote <repo> <tag>`. Registry packages (`^1.2.3`) are
+> not affected; any `github:` dependency is.
 > Rollout shape: one PR per repo, with config, prettier reflow, `eslint --fix` output and hand
 > fixes in separate commits so each is reviewable alone. arbox-autobook PR #4 is the reference.
 
