@@ -2,13 +2,14 @@
 name: pr-review
 argument-hint: <PR numbers or URLs, or a Slack thread link> (one or more, required)
 allowed-tools: Bash(gh:*), Bash(git:*), Bash(python3:*), Read, Grep, Glob, Agent, Skill, ToolSearch, mcp__notion__notion-search, mcp__notion__notion-fetch, mcp__claude_ai_Slack__slack_read_thread, mcp__claude_ai_Slack__slack_add_reaction, mcp__claude_ai_Slack__slack_send_message
-description: Use when reviewing one or more pull requests named by number or URL — or by a Slack thread link that lists them — or when asked whether a PR is safe to merge. Fans out a code-review and an observability subagent per PR in parallel, merges every finding into a single severity-sorted report with a documentation-drift check, and posts inline comments after one approval. Requires explicit PR targets — it never reviews the current branch. For re-checking comments an author says they already fixed, use pr-second-review instead.
+description: Use when reviewing one or more pull requests named by number or URL — or by a Slack thread link that lists them — or when asked whether a PR is safe to merge. Fans out a code-review and an observability subagent per PR in parallel, plus an instruction-file subagent when a PR touches CLAUDE.md, rules, skills, agents or commands, merges every finding into a single severity-sorted report with a documentation-drift check, and posts inline comments after one approval. Requires explicit PR targets — it never reviews the current branch. For re-checking comments an author says they already fixed, use pr-second-review instead.
 ---
 
 # Pull Request Review
 
-Reviews a batch of pull requests. Two subagents per PR, all in parallel. Every
-PR gets a code review, a documentation-drift check, and an observability check. Findings merge into one
+Reviews a batch of pull requests. Two subagents per PR, all in parallel, and a
+third when the PR touches agent-facing markdown. Every PR gets a code review, a
+documentation-drift check, and an observability check. Findings merge into one
 report, you approve once, everything posts.
 
 ## Step 1 — Require explicit targets
@@ -97,6 +98,28 @@ Agent({
 })
 ```
 
+When a changed path is a `CLAUDE.md` or `AGENTS.md` at any depth, or sits under
+`.claude/rules/`, `.claude/agents/`, `.claude/commands/`, or a `skills/<name>/`
+directory, dispatch a third agent for that PR in the same message. Skip it for
+any other PR.
+
+```
+Agent({
+  description: "Instruction files PR <n>",
+  model: "sonnet",
+  subagent_type: "general-purpose",
+  prompt: "Check the instruction files in pull request <owner/repo>#<n>.
+
+    Head SHA: <sha>  — already resolved, do not re-fetch it.
+    Changed files: <paths>
+    Local clone: <absolute path of the repo's local clone, if present>
+
+    Read <PLUGIN_ROOT>/skills/pr-review/references/instruction-files.md and
+    follow it exactly. Fetch the diff ONCE. Do not delegate further. Do not post
+    anything. Return only the section its Output specifies."
+})
+```
+
 Resolve the head SHA and changed-file list yourself before dispatching and fill
 them into the prompt's two slots — it saves each agent a call and makes a stall
 easier to retry:
@@ -126,6 +149,9 @@ the batch is the first row regardless of which PR it came from. Then:
 
 - **Rule violations** — a separate table. A style violation is not a bug, and
   mixing them buries the bugs.
+- **Instruction files** — a separate table, only for PRs that got the third
+  agent: placement, globs that match nothing, dangling pointers, skill
+  descriptions.
 - **Docs alignment** — per PR: Notion page, what the diff contradicts, one line
   on what to update.
 - **Observability** — a separate table: missing logs, events to add, and
@@ -146,8 +172,8 @@ Wait. Nothing posts before an explicit yes.
 
 ## Step 5 — Post
 
-On yes, post every finding pinned to its file and line — observability findings
-included — by calling the script directly. The `post-pr-inline-comments` skill
+On yes, post every finding pinned to its file and line — observability and
+instruction-file findings included — by calling the script directly. The `post-pr-inline-comments` skill
 is `disable-model-invocation`, so the `Skill` tool refuses it.
 
 ```bash
