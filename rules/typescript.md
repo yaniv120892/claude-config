@@ -75,6 +75,13 @@ decision, and a duplicate `type` is a compile error where a duplicate `interface
 > layout invites.
 > Exception: activities/steps — short by design, input/output types co-located intentionally.
 
+**Prisma: Look Up by Key With `findUnique`, Even With Extra Filters** — since Prisma 5,
+`WhereUniqueInput` accepts non-unique filters (`NOT`/`AND`/`OR`, relation filters) beside the key
+> Pattern: `findUnique({ where: { id, ...VISIBLE_THREAD_WHERE } })`. It keeps the one-row-by-key
+> intent, and Prisma batches concurrent `findUnique` calls.
+> Avoid: Switching to `findFirst` when a by-key lookup gains a filter, which also renames every
+> test mock for no behaviour change.
+
 **Fix ESLint Issues Instead of Suppressing** — disabling hides the problem
 > Pattern: Refactor, retype, restructure to satisfy the rule.
 > Avoid: `// eslint-disable*` except as an absolute last resort.
