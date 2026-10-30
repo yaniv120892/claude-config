@@ -182,6 +182,7 @@ settings/settings.json            → <profile>/settings.json (copied)
 keybindings.json
 install.sh                        installs the non-plugin half, or the Codex setup
 scripts/agents_md.py              builds the Codex AGENTS.md from the profile
+scripts/code-improvement/         daily code-improvement run (launchd → cmux → claude)
 ```
 
 ## Two profiles

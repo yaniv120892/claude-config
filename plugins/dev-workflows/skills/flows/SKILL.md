@@ -33,7 +33,7 @@ Across repos: **`pr-feedback-harvest`**, **`dependency-bump`**.
 
 ## Standalone
 
-**`using-git-worktrees`**, **`run-service-in-docker`**, **`http-file-generator`**, **`recurring-maintenance`**, **`syncing-claude-config`**, **`open-with-cursor`**, **`wizard`**, **`research`**, **`retro`**, **`wait-what`**, **`domain-modeling`**.
+**`using-git-worktrees`**, **`run-service-in-docker`**, **`http-file-generator`**, **`recurring-maintenance`**, **`code-improvement`**, **`syncing-claude-config`**, **`open-with-cursor`**, **`wizard`**, **`research`**, **`retro`**, **`wait-what`**, **`domain-modeling`**.
 
 ## Trackers and infra
 
