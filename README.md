@@ -158,6 +158,7 @@ rule set costs nothing on unrelated prompts.
 | `typescript.md` | ts, tsx | Typing, `as` casts, derived types, access modifiers, type placement |
 | `python.md` | py | Type hints, Google docstrings, import order, tool-function error returns |
 | `config.md` | env, tf, tfvars, settings.json, compose, values, CI yaml | Secret handling, environment-variable wiring |
+| `migrations.md` | migrations directories, schema.prisma, sql | Expand/contract: every migration stays writable by the build still serving |
 | `authoring-docs.md` | md, mdx | Writing rules, skills, and agent-facing docs: invariants over violation lists, positive phrasing, no-op pruning, leading words, pointer wording |
 
 Verify what actually loaded in a session with `/context`.
