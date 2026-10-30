@@ -2,10 +2,21 @@ import { atom, read, update } from 'claude-code'
 import type { CommandSpec, EngineInterface as Engine, Register, ToolCallResult, ToolResultOf } from 'claude-code'
 
 import type { Band, GitLocation, PlanTask, PrRead, PrSkillRuns, UsageLimit } from '../types'
-import { gitWrites, OPT_OUT } from './branch-guard'
+import { branchName, gitWrites, OPT_OUT } from './branch-guard'
+import type { GitWrite } from './branch-guard'
 import { credentialReason, findCredential, findTerm, parseTerms, termPattern, termReason } from './credentials'
 import { LAST_ACTIVE_KEY_PREFIX, LAST_ACTIVE_TTL_MS, parseUtcOffset, promptClock, slowToolNote } from './clock'
-import { allowRules, changesPr, createsPr, GATED_COMMANDS, isAllowedBy, isGitWrite, runsGit } from './git-write'
+import {
+  allowRules,
+  changesPr,
+  createsPr,
+  GATE_SCOPE,
+  gitWriteCount,
+  isAllowedBy,
+  isGitWrite,
+  mergesPr,
+  runsGit,
+} from './git-write'
 import {
   basename,
   CHECK,
@@ -61,6 +72,9 @@ const SESSION = 'Allow for this session'
 const DENY = 'Deny'
 const SHOWN_COMMAND_LENGTH = 200
 
+// The gate asks only about a write that may land on the default branch: a commit
+// or push it cannot prove runs on, and sends to, a feature branch, and every
+// `gh pr merge`. A lookup that fails counts as unproven, so it asks.
 // The dialog is the person's to answer, never the model's. "Allow for this
 // session" holds until `/git-gate reset` or the session ends. An allow rule in
 // the person's own settings.json is an answer given ahead of time; a repo's
@@ -68,18 +82,19 @@ const SHOWN_COMMAND_LENGTH = 200
 async function gateGitWrite($: Engine, command: string): Promise<{ deny: string } | null> {
   if (!isGitWrite(command) || (await read($, gitGrant))) return null
   if (isAllowedBy(await userAllowRules($), command)) return null
+  if (await staysOffDefaultBranch($, command)) return null
 
   let answer: string
   try {
     answer = await $.ui.ask(
-      `Claude wants to run a git/gh write:\n\n${truncate(command, SHOWN_COMMAND_LENGTH)}\n\nRun it?`,
+      `Claude wants to run a git/gh write that may land on the default branch:\n\n${truncate(command, SHOWN_COMMAND_LENGTH)}\n\nRun it?`,
       { header: 'Git write', options: [ONCE, SESSION, DENY] },
     )
   } catch {
     return {
       deny:
-        'BLOCKED: git/gh writes need the user to approve them in a dialog, and none could be shown ' +
-        '(a headless run, or the dialog was dismissed). Tell the user what you want to run and stop.',
+        'BLOCKED: a git/gh write that may land on the default branch needs the user to approve it in a dialog, ' +
+        'and none could be shown (a headless run, or the dialog was dismissed). Tell the user what you want to run and stop.',
     }
   }
 
@@ -90,6 +105,54 @@ async function gateGitWrite($: Engine, command: string): Promise<{ deny: string 
   if (answer === ONCE) return null
   const note = answer === DENY ? '' : ` They said: ${answer}`
   return { deny: `BLOCKED: the user declined this git/gh write.${note} Do not retry it unless they ask.` }
+}
+
+/**
+ * Whether every write in the command provably stays off the default branch. The guard's
+ * parse must account for each commit and push the gate's own parse sees, so a write
+ * behind a wrapper the guard does not follow (`timeout 60 git push`) is unproven.
+ */
+async function staysOffDefaultBranch($: Engine, command: string): Promise<boolean> {
+  try {
+    if (mergesPr(command)) return false
+    const writes = gitWrites(command, await $.session.cwd(), (await $.env.get('HOME')) ?? null)
+    if (writes.length !== gitWriteCount(command)) return false
+    for (const write of writes) {
+      if (!(await writeStaysOffDefaultBranch($, write))) return false
+    }
+    return true
+  } catch (error) {
+    $.ui.log(`mods: the git write gate could not rule out the default branch: ${String(error)}`, { to: 'debug' })
+    return false
+  }
+}
+
+async function writeStaysOffDefaultBranch($: Engine, write: GitWrite): Promise<boolean> {
+  if (write.directory === null || write.overridesGit) return false
+  const head = await git($, write.directory, ['symbolic-ref', '--quiet', '--short', 'HEAD'])
+  if (head?.exitCode !== 0 || !head.stdout) return false
+  const base = await defaultBranch($, write.directory)
+  if (base === null || head.stdout === base) return false
+  const targets = await pushDestinations($, write.directory, head.stdout, write)
+  return targets !== null && targets.every(target => target !== base)
+}
+
+/** The remote branches a push may write; none for a commit, null when they cannot be told. */
+async function pushDestinations($: Engine, directory: string, branch: string, write: GitWrite): Promise<string[] | null> {
+  const push = write.push
+  if (push === null) return []
+  if (push.kind === 'unreadable') return null
+  if (push.kind === 'branches') return push.branches.map(target => (target === 'HEAD' ? branch : target))
+  // No refspec: depending on push.default it goes to the branch's own name or its upstream.
+  // `matching` and a configured remote.<name>.push can send more, so those are unreadable.
+  const config = await git($, directory, ['config', '--get-regexp', '^(push\\.default|remote\\..*\\.push)$'])
+  if (config === null || config.exitCode > 1) return null
+  for (const line of config.stdout.split('\n').filter(Boolean)) {
+    if (line.startsWith('remote.') || /^push\.default\s+matching$/.test(line)) return null
+  }
+  const upstream = await git($, directory, ['config', '--get', `branch.${branch}.merge`])
+  if (upstream === null || upstream.exitCode > 1) return null
+  return upstream.stdout ? [branch, branchName(upstream.stdout)] : [branch]
 }
 
 async function userAllowRules($: Engine): Promise<string[]> {
@@ -638,7 +701,7 @@ export const register: Register = (on, options) => {
       return {
         text: (await read($, gitGrant))
           ? 'Git write gate: writes are approved for this session. /git-gate reset revokes that.'
-          : `Git write gate: each ${GATED_COMMANDS.join(', ')} asks first.`,
+          : `Git write gate: asks first about ${GATE_SCOPE}. Commits and pushes on a feature branch, and gh pr create, run without asking.`,
       }
     })
   }

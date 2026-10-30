@@ -8,9 +8,27 @@ import { splitCommands } from './git-write'
 
 export const OPT_OUT = 'ALLOW_DEFAULT_BRANCH_WRITE=1'
 
+/**
+ * Where a push sends to. `branches` are the remote branches its refspecs name, `HEAD`
+ * standing for the current branch; `upstream` is a push with no refspec, which push.default
+ * and the branch's upstream decide; `unreadable` is one the text cannot pin down.
+ */
+export type PushTarget =
+  | { kind: 'branches'; branches: string[] }
+  | { kind: 'upstream'; remote: string | null }
+  | { kind: 'unreadable' }
+
 // `deletedBranches` names the branches a push only deletes; null for a commit, or a push
-// that sends anything or names a branch it cannot read.
-export type GitWrite = { directory: string | null; isOptedOut: boolean; deletedBranches: string[] | null }
+// that sends anything or names a branch it cannot read. `push` is null for a commit.
+// `overridesGit` is a git call that sets config, the repository or the work tree itself,
+// so a lookup in `directory` may not describe what it writes.
+export type GitWrite = {
+  directory: string | null
+  isOptedOut: boolean
+  deletedBranches: string[] | null
+  push: PushTarget | null
+  overridesGit: boolean
+}
 
 const ASSIGNMENT = /^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/s
 const WRAPPERS = new Set(['sudo', 'env', 'command', 'nice', 'time', 'exec'])
@@ -18,6 +36,19 @@ const SHELLS = new Set(['bash', 'sh', 'zsh'])
 const GIT_VALUE_OPTIONS = new Set(['-c', '--git-dir', '--work-tree', '--namespace', '--super-prefix', '--config-env'])
 const WRITES = new Set(['commit', 'push'])
 const PUSH_VALUE_OPTIONS = new Set(['-o', '--push-option', '--repo', '--receive-pack', '--exec'])
+// Push flags that leave the destination to the refspecs. Any other, `--all` and `--mirror`
+// among them, makes the push unreadable.
+const PUSH_PLAIN_FLAGS = new Set([
+  '-u', '--set-upstream', '-f', '--force', '--force-if-includes', '--no-force-if-includes',
+  '--no-force-with-lease', '--no-verify', '--verify', '-q', '--quiet', '-v', '--verbose', '-n',
+  '--dry-run', '--porcelain', '--progress', '--no-progress', '--atomic', '--no-atomic', '--tags',
+  '--follow-tags', '--no-follow-tags', '--thin', '--no-thin', '--no-signed', '--no-recurse-submodules',
+  '-4', '--ipv4', '-6', '--ipv6',
+])
+const PUSH_PLAIN_FLAG_PREFIXES = ['--force-with-lease', '--signed', '--recurse-submodules=', '--push-option=', '--repo=', '--receive-pack=', '--exec=']
+const GIT_OVERRIDES = new Set(['-c', '--config-env', '--git-dir', '--work-tree', '--namespace'])
+const GIT_OVERRIDE_VARIABLE = /^GIT_(CONFIG|DIR|WORK_TREE|NAMESPACE|COMMON_DIR|INDEX_FILE)[A-Z_0-9]*=/
+const UNREADABLE: PushTarget = { kind: 'unreadable' }
 
 type Scope = { directory: string | null; variables: Map<string, string> }
 
@@ -56,20 +87,56 @@ function writesIn(command: string, scope: Scope): GitWrite[] {
 
 function gitWrite(scope: Scope, args: readonly string[], prefix: readonly string[]): GitWrite | null {
   let directory = scope.directory
+  let overridesGit = prefix.some(assignment => GIT_OVERRIDE_VARIABLE.test(assignment))
   let index = 0
   while (index < args.length && (args[index] ?? '').startsWith('-')) {
-    const option = args[index]
+    const option = args[index] ?? ''
+    if (GIT_OVERRIDES.has(option.split('=')[0] ?? '')) overridesGit = true
     if (option === '-C') {
       directory = directory === null ? null : resolvePath(directory, expand(scope, args[index + 1]))
       index += 2
     } else {
-      index += GIT_VALUE_OPTIONS.has(option ?? '') ? 2 : 1
+      index += GIT_VALUE_OPTIONS.has(option) ? 2 : 1
     }
   }
   const subcommand = args[index] ?? ''
   if (!WRITES.has(subcommand)) return null
-  const deletedBranches = subcommand === 'push' ? pushDeletes(scope, args.slice(index + 1)) : null
-  return { directory, isOptedOut: prefix.includes(OPT_OUT), deletedBranches }
+  const isPush = subcommand === 'push'
+  const deletedBranches = isPush ? pushDeletes(scope, args.slice(index + 1)) : null
+  const push = isPush ? pushTarget(scope, args.slice(index + 1)) : null
+  return { directory, isOptedOut: prefix.includes(OPT_OUT), deletedBranches, push, overridesGit }
+}
+
+function pushTarget(scope: Scope, args: readonly string[]): PushTarget {
+  let isDelete = false
+  const positional: string[] = []
+  for (let index = 0; index < args.length; index++) {
+    const arg = args[index] ?? ''
+    if (arg === '--delete' || arg === '-d') isDelete = true
+    else if (PUSH_VALUE_OPTIONS.has(arg)) index++
+    else if (!arg.startsWith('-')) positional.push(arg)
+    else if (!PUSH_PLAIN_FLAGS.has(arg) && !PUSH_PLAIN_FLAG_PREFIXES.some(flag => arg.startsWith(flag))) return UNREADABLE
+  }
+  const expanded = positional.map(arg => expand(scope, arg))
+  if (!expanded.every(arg => arg !== null)) return UNREADABLE
+  const [remote = null, ...refspecs] = expanded
+  if (refspecs.length === 0) return isDelete ? UNREADABLE : { kind: 'upstream', remote }
+  const branches = refspecs.map(refspec => pushDestination(refspec, isDelete))
+  return branches.every(branch => branch !== null) ? { kind: 'branches', branches } : UNREADABLE
+}
+
+/** The remote branch a refspec writes or deletes: `HEAD:main`, `+x:refs/heads/main` and `main` all name main. */
+function pushDestination(refspec: string, isDelete: boolean): string | null {
+  const spec = isDelete ? refspec : refspec.replace(/^\+/, '')
+  const colon = spec.indexOf(':')
+  if (isDelete && colon !== -1) return null
+  const destination = colon === -1 ? spec : spec.slice(colon + 1)
+  if (destination === '' || /[:*]/.test(destination)) return null
+  return destination === '@' ? 'HEAD' : branchName(destination)
+}
+
+export function branchName(ref: string): string {
+  return ref.replace(/^(refs\/)?heads\//, '')
 }
 
 function pushDeletes(scope: Scope, args: readonly string[]): string[] | null {
