@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Install the launchd job that starts the daily code-improvement run.
-# If the Mac is asleep at the scheduled time, launchd runs it on wake.
+# Install the launchd watchdog that alerts when the resident code-improvement loop is not
+# running. The loop itself starts from a cmux terminal (start.sh), not from launchd.
 # Idempotent. Safe to re-run.
 
 set -euo pipefail
@@ -10,7 +10,7 @@ LABEL="com.yaniv.code-improvement"
 PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
 LOG_DIR="$HOME/.claude/state/code-improvement/logs"
 HOUR="${CODE_IMPROVEMENT_HOUR:-6}"
-MINUTE="${CODE_IMPROVEMENT_MINUTE:-43}"
+MINUTE="${CODE_IMPROVEMENT_MINUTE:-30}"
 
 mkdir -p "$LOG_DIR" "$(dirname "$PLIST")"
 
@@ -24,7 +24,7 @@ cat > "$PLIST" <<PLIST
 	<key>ProgramArguments</key>
 	<array>
 		<string>/bin/bash</string>
-		<string>$SCRIPT_DIR/run-daily.sh</string>
+		<string>$SCRIPT_DIR/check-loop.sh</string>
 	</array>
 	<key>StartCalendarInterval</key>
 	<dict>
@@ -51,4 +51,4 @@ for attempt in 1 2 3 4 5; do
   fi
   sleep 1
 done
-echo "Installed $LABEL: daily at $(printf '%02d:%02d' "$HOUR" "$MINUTE"). Run now with: launchctl kickstart gui/$(id -u)/$LABEL"
+echo "Installed $LABEL: checks the loop daily at $(printf '%02d:%02d' "$HOUR" "$MINUTE")."
