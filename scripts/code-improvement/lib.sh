@@ -34,6 +34,15 @@ ran_today() {
   [ "$(cat "$CODE_IMPROVEMENT_LAST_RUN_FILE" 2>/dev/null)" = "$(today)" ]
 }
 
+run_is_due() {
+  ! ran_today && [ "$(minutes_past_run_time)" -ge 0 ]
+}
+
+run_is_overdue() {
+  local grace_minutes="$1"
+  ! ran_today && [ "$(minutes_past_run_time)" -ge "$grace_minutes" ]
+}
+
 lock_holder_is_live() {
   local lock_dir="$1" script_name="$2"
   ps -p "$(cat "$lock_dir/pid" 2>/dev/null)" -o command= 2>/dev/null | grep -qE "/$script_name( |$)"

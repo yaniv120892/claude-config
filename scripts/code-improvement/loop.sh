@@ -24,9 +24,13 @@ trap 'rm -rf "$CODE_IMPROVEMENT_LOOP_LOCK"' EXIT
 
 echo "Code-improvement loop: runs daily at $CODE_IMPROVEMENT_RUN_AT. Leave this tab open."
 polls=0
-while [ "$MAX_POLLS" -eq 0 ] || [ "$polls" -lt "$MAX_POLLS" ]; do
+polls_remain() {
+  [ "$MAX_POLLS" -eq 0 ] || [ "$polls" -lt "$MAX_POLLS" ]
+}
+
+while polls_remain; do
   polls=$((polls + 1))
-  if ! ran_today && [ "$(minutes_past_run_time)" -ge 0 ]; then
+  if run_is_due; then
     today > "$CODE_IMPROVEMENT_LAST_RUN_FILE"
     bash "$SESSION"
     session_status=$?

@@ -17,7 +17,7 @@ alert_once_today() {
 
 if ! lock_holder_is_live "$CODE_IMPROVEMENT_LOOP_LOCK" loop.sh; then
   alert_once_today loop-down "The daily loop is not running. Start it from a cmux terminal: bash $SCRIPT_DIR/start.sh"
-elif ! ran_today && [ "$(minutes_past_run_time)" -ge "$GRACE_MINUTES" ]; then
+elif run_is_overdue "$GRACE_MINUTES"; then
   alert_once_today run-missing "Today's run has not started. Check the Code Improvement tab in cmux."
 fi
 find "$CODE_IMPROVEMENT_STATE_DIR" -maxdepth 1 -name 'alerted-*' -mtime +7 -delete 2>/dev/null

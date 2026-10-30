@@ -51,6 +51,13 @@ class Sandbox:
     """A state dir, a pinned clock, and stubs for session.sh and osascript."""
 
     def __init__(self, workspace: str, *, now: str, last_run: str | None) -> None:
+        """Lay out the sandbox.
+
+        Args:
+            workspace: A directory that does not exist yet.
+            now: The pinned time of day, HH:MM.
+            last_run: The recorded last run date, or None for a first start.
+        """
         self.workspace = workspace
         self.state = os.path.join(workspace, "state")
         os.makedirs(self.state)
@@ -156,7 +163,8 @@ def guard_scenarios(workspace_root: str) -> list[str]:
     failures = []
     sandbox = Sandbox(os.path.join(workspace_root, "bad-time"), now="09:00", last_run=YESTERDAY)
     result = sandbox.run("loop.sh", CODE_IMPROVEMENT_RUN_AT="7:15")
-    if result.returncode == 0 or read_lines(sandbox.session_calls):
+    accepted_bad_time = result.returncode == 0 or bool(read_lines(sandbox.session_calls))
+    if accepted_bad_time:
         failures.append("an unpadded run time is rejected before anything runs")
 
     sandbox = Sandbox(os.path.join(workspace_root, "second-loop"), now="09:00", last_run=YESTERDAY)
