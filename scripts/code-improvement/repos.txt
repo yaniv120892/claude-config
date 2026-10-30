@@ -1,6 +1,8 @@
-# One absolute repo path per line. The daily run works through them in order.
-/Users/yanivdaye/Develop/my-investments
-/Users/yanivdaye/Develop/my-expenses-website
-/Users/yanivdaye/Develop/my-shopping
-/Users/yanivdaye/Develop/park-pal
-/Users/yanivdaye/Develop/my-ui
+# One repo per line: its directory name under ~/Develop, then optional gate flags.
+# `--no-deploy` marks a repo with no deploy target (a library): merged is enough.
+# Runs top to bottom.
+my-investments
+my-expenses-website
+my-shopping
+park-pal
+my-ui --no-deploy

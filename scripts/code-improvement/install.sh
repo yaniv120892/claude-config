@@ -41,6 +41,14 @@ cat > "$PLIST" <<PLIST
 </plist>
 PLIST
 
+# bootout returns before the job is fully gone, so an immediate bootstrap can fail with EIO.
 launchctl bootout "gui/$(id -u)/$LABEL" 2>/dev/null || true
-launchctl bootstrap "gui/$(id -u)" "$PLIST"
+for attempt in 1 2 3 4 5; do
+  launchctl bootstrap "gui/$(id -u)" "$PLIST" 2>/dev/null && break
+  if [ "$attempt" -eq 5 ]; then
+    echo "launchctl bootstrap failed for $PLIST" >&2
+    exit 1
+  fi
+  sleep 1
+done
 echo "Installed $LABEL: daily at $(printf '%02d:%02d' "$HOUR" "$MINUTE"). Run now with: launchctl kickstart gui/$(id -u)/$LABEL"
