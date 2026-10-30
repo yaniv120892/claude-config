@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Install the launchd watchdog that alerts when the resident code-improvement loop is not
-# running. The loop itself starts from a cmux terminal (start.sh), not from launchd.
+# Install the hourly launchd watchdog that alerts when the resident code-improvement loop
+# is down or today's run has not started. The loop itself starts from a cmux terminal
+# (start.sh), not from launchd.
 # Idempotent. Safe to re-run.
 
 set -euo pipefail
@@ -8,11 +9,10 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LABEL="com.yaniv.code-improvement"
 PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
-LOG_DIR="$HOME/.claude/state/code-improvement/logs"
-HOUR="${CODE_IMPROVEMENT_HOUR:-6}"
-MINUTE="${CODE_IMPROVEMENT_MINUTE:-30}"
+source "$SCRIPT_DIR/lib.sh"
+CHECK_INTERVAL_SECONDS=3600
 
-mkdir -p "$LOG_DIR" "$(dirname "$PLIST")"
+mkdir -p "$(dirname "$PLIST")"
 
 cat > "$PLIST" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -26,17 +26,12 @@ cat > "$PLIST" <<PLIST
 		<string>/bin/bash</string>
 		<string>$SCRIPT_DIR/check-loop.sh</string>
 	</array>
-	<key>StartCalendarInterval</key>
-	<dict>
-		<key>Hour</key>
-		<integer>$HOUR</integer>
-		<key>Minute</key>
-		<integer>$MINUTE</integer>
-	</dict>
+	<key>StartInterval</key>
+	<integer>$CHECK_INTERVAL_SECONDS</integer>
 	<key>StandardOutPath</key>
-	<string>$LOG_DIR/launchd.out</string>
+	<string>$CODE_IMPROVEMENT_LOG_DIR/launchd.out</string>
 	<key>StandardErrorPath</key>
-	<string>$LOG_DIR/launchd.err</string>
+	<string>$CODE_IMPROVEMENT_LOG_DIR/launchd.err</string>
 </dict>
 </plist>
 PLIST
@@ -51,4 +46,4 @@ for attempt in 1 2 3 4 5; do
   fi
   sleep 1
 done
-echo "Installed $LABEL: checks the loop daily at $(printf '%02d:%02d' "$HOUR" "$MINUTE")."
+echo "Installed $LABEL: checks the loop every hour."
