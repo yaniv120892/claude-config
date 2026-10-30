@@ -2,6 +2,7 @@
 name: cmux-workspace
 user-invocable: false
 description: Use when automating inside the current cmux workspace without disrupting the user — scoping commands to caller context, building helper panes, avoiding focus changes, or working non-disruptively alongside the user.
+model: sonnet
 ---
 
 # cmux Workspace — Non-Disruptive Automation

@@ -2,6 +2,7 @@
 name: cmux
 user-invocable: false
 description: Use when controlling cmux topology — windows, workspaces, panes, surfaces, splits, focus, moves, reorders, flashes, settings, or config reloads. Also use when needing to identify the current cmux context or navigate between surfaces.
+model: sonnet
 ---
 
 # cmux Core Control

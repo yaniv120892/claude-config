@@ -2,6 +2,7 @@
 name: cmux-browser
 user-invocable: false
 description: Use when automating a browser inside cmux — opening URLs, navigating, clicking, filling forms, waiting for page state, taking screenshots, extracting data, or managing browser surfaces and tabs within a cmux layout.
+model: sonnet
 ---
 
 # cmux Browser Automation

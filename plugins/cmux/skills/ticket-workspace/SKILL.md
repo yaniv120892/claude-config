@@ -1,6 +1,7 @@
 ---
 name: ticket-workspace
 description: Use when given a Linear ticket (key or URL) and asked to open a workspace for it — "create a workspace for ABC-560", "open a cmux workspace for this ticket", "new workspace for <linear url>", or /ticket-workspace. Creates a cmux workspace named after the ticket, starts a Claude session in it renamed to match, and opens the ticket in a browser tab beside it.
+model: sonnet
 ---
 
 # Ticket Workspace

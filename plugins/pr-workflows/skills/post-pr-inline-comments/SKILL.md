@@ -2,6 +2,7 @@
 name: post-pr-inline-comments
 disable-model-invocation: true
 description: Use when posting review comments on a pull request — during code review, after analysis, or when asked to add comments to a PR. Always post as inline diff comments pinned to specific file lines, never as general notes.
+model: sonnet
 ---
 
 # Post Review Comments as Inline Diff Notes
