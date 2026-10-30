@@ -2,6 +2,7 @@
 name: cmux-agents
 user-invocable: false
 description: Use when setting up, managing, or troubleshooting cmux agent hook integrations — installing hooks for Claude Code, Codex, Gemini, OpenCode, or other agents, configuring Feed approvals, session restore, or understanding how the Feed bridge works.
+model: sonnet
 ---
 
 # cmux Agent Integrations

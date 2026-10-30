@@ -2,6 +2,7 @@
 name: cmux-notify
 user-invocable: false
 description: Use when sending notifications, status badges, progress bars, or log entries from within a cmux terminal — signaling task state, completion, errors, or progress to the user via the cmux sidebar and macOS notifications.
+model: sonnet
 ---
 
 # cmux Notifications, Status & Progress
