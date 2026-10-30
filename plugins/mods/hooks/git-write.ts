@@ -4,7 +4,9 @@
 // push`) cannot hide a write. Text that merely mentions a write is asked about
 // too: a false ask costs a click, a false pass an unapproved push.
 
-export const GATED_COMMANDS = ['git commit', 'git push', 'gh pr create', 'gh pr merge'] as const
+/** What the git write gate asks about, for `/git-gate`. */
+export const GATE_SCOPE =
+  'a git commit or git push that may land on the default branch, or that it cannot rule out, and every gh pr merge'
 
 const SEPARATORS = new Set([';', '&', '|', '(', ')', '{', '}', '\n', '`'])
 const GIT_VALUE_OPTIONS = new Set(['-C', '-c', '--git-dir', '--work-tree', '--namespace', '--super-prefix', '--config-env'])
@@ -155,6 +157,15 @@ function bashRulePattern(rule: string): RegExp {
   if (rule.endsWith(':*')) return new RegExp(`^${glob(rule.slice(0, -2))}(?:\\s.*)?$`, 's')
   if (rule.endsWith(' *')) return new RegExp(`^${glob(rule.slice(0, -2))}(?: .*)?$`, 's')
   return new RegExp(`^${glob(rule)}$`, 's')
+}
+
+/** Each git commit and git push the command runs, however it is reached. */
+export function gitWriteCount(command: string): number {
+  return calls(command).filter(call => call.program === 'git' && GIT_WRITES.has(call.subcommand ?? '')).length
+}
+
+export function mergesPr(command: string): boolean {
+  return calls(command).some(call => call.program === 'gh' && call.group === 'pr' && call.action === 'merge')
 }
 
 export function changesPr(command: string): boolean {

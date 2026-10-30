@@ -66,6 +66,62 @@ describe('gitWrites', () => {
   })
 })
 
+describe('where a push sends', () => {
+  const target = (command: string) => gitWrites(command, CWD, HOME)[0]?.push
+  const branches = (...names: string[]) => ({ kind: 'branches', branches: names })
+  const UNREADABLE = { kind: 'unreadable' }
+
+  test('reads the destination of each refspec', () => {
+    expect(target('git push origin HEAD')).toEqual(branches('HEAD'))
+    expect(target('git push -u origin @')).toEqual(branches('HEAD'))
+    expect(target('git push origin HEAD:main')).toEqual(branches('main'))
+    expect(target('git push origin x:refs/heads/main')).toEqual(branches('main'))
+    expect(target('git push origin +fix/a:heads/main fix/b')).toEqual(branches('main', 'fix/b'))
+    expect(target('git push origin :fix/a')).toEqual(branches('fix/a'))
+    expect(target('git push origin --delete refs/heads/fix/a')).toEqual(branches('fix/a'))
+    expect(target('git push --force-with-lease=fix/a:abc -o ci.skip origin fix/a')).toEqual(branches('fix/a'))
+    expect(target('R=origin B=fix/a; git push $R "HEAD:$B"')).toEqual(branches('fix/a'))
+  })
+
+  test('leaves a push with no refspec to its upstream', () => {
+    expect(target('git push')).toEqual({ kind: 'upstream', remote: null })
+    expect(target('git push -u origin')).toEqual({ kind: 'upstream', remote: 'origin' })
+  })
+
+  test('cannot read --all, --mirror, an unknown flag, a pattern, a matching push or an unset variable', () => {
+    for (const command of [
+      'git push --all origin',
+      'git push --mirror origin',
+      'git push --branches origin',
+      'git push --prune origin fix/a',
+      'git push -uf origin fix/a',
+      'git push origin "refs/heads/*:refs/heads/*"',
+      'git push origin :',
+      'git push origin HEAD:',
+      'git push origin HEAD:$UNSET',
+      'git push $UNSET HEAD',
+      'git push origin --delete',
+      'git push origin --delete a:b',
+    ]) {
+      expect(target(command)).toEqual(UNREADABLE)
+    }
+  })
+
+  test('is null for a commit', () => {
+    expect(target('git commit -m x')).toBe(null)
+  })
+
+  test('marks a git call that sets its own config, repository or work tree', () => {
+    const overrides = (command: string) => gitWrites(command, CWD, HOME)[0]?.overridesGit
+    for (const command of ['git -c push.default=matching push', 'git --git-dir=/x/.git commit', 'git --work-tree /x commit', 'GIT_DIR=/x git commit', 'GIT_CONFIG_PARAMETERS=x git push']) {
+      expect(overrides(command)).toBe(true)
+    }
+    for (const command of ['git commit -m x', 'git -C /w/x push', 'GIT_SSH_COMMAND="ssh -i k" git push']) {
+      expect(overrides(command)).toBe(false)
+    }
+  })
+})
+
 test('resolvePath folds . and .. against the base', () => {
   expect(resolvePath('/a/b', '../c/./d')).toBe('/a/c/d')
   expect(resolvePath('/a/b', '/x')).toBe('/x')
