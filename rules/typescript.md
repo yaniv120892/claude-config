@@ -92,12 +92,23 @@ stack trace nothing to call it
 > Pattern: `return function indexesLabelledFile(name) { … }`.
 > Avoid: `return (name) => …` from a factory. Callbacks passed straight to `map`/`filter` stay arrows.
 
-**Name a JSX Event Handler Once It Has Logic** — `open => !open && onDecide('edit')` makes the
-reader decode a condition inside the markup
-> Pattern: A handler with a condition, a branch or more than one call becomes a named function
-> in the component (`function closeAsEdit(open) {…}`), as `preventDialogDismissal` does.
-> Avoid: Conditional arrows in a JSX prop. A single forwarding call, `onClick={() => onDecide('edit')}`,
-> can stay inline.
+**Name a Callback Once It Has Logic** — `open => !open && onDecide('edit')` in a JSX prop, or
+`onFinish: () => { a(); b(); }` in an options object, makes the reader decode behaviour inside a
+call's arguments, and the same body tends to get pasted at a second exit point
+> Pattern: A callback with a condition, a branch or more than one call becomes a named function
+> beside the state it uses (`function closeAsEdit(open) {…}`, `function finishTurn() {…}`), and
+> every exit point that runs the same steps calls it.
+> Avoid: Conditional or multi-statement arrows in a JSX prop or an options object. A single
+> forwarding call, `onClick={() => onDecide('edit')}`, can stay inline.
+
+**Take the Promise, Not a Thunk, When the Helper Awaits It Immediately** — a `() => Promise<T>`
+parameter the helper calls on its first line adds nothing but an anonymous arrow at every call site
+> Pattern: `track({ turn: generateReply({…}) })` with `turn: Promise<T>`, when the callee is `async`
+> (a synchronous throw becomes a rejection) and the helper does no work before awaiting.
+> Avoid: `turn: () => generateReply({…})` for a helper that only awaits it.
+> Keep the thunk when the helper must act before the work starts (start a timer, enter an
+> AsyncLocalStorage context), may call it zero or several times (retry, cache, lazy), or must
+> catch a synchronous throw from a non-`async` callee.
 
 **Prefer Established npm Packages Over Hand-Rolled Implementations** — libraries are edge-case
 aware

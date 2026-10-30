@@ -108,10 +108,17 @@ limits each colored green below 50%, yellow below 75%, red from 75% up. The READ
 > Avoid: `return (name) => labelIncludes(…) === true;` from a factory such as `storeFilter`. Arrows passed straight into `map`/`filter`/`sort` stay arrows: they are read where they are written.
 > Example: A review flagged `storeFilter` returning two anonymous arrows; they were renamed `indexesEveryFile` and `indexesLabelledFile`.
 
-**Name a JSX Event Handler Once It Has Logic** — `open => !open && onDecide('edit')` makes the reader decode a condition inside the markup, where the eye is reading layout
-> Pattern: A handler with a condition, a branch or more than one statement becomes a named function declared in the component body (`function closeAsEdit(open: boolean) { if (!open) { onDecide('edit'); } }` → `onOpenChange={closeAsEdit}`), or at module level when it closes over nothing (`preventDialogDismissal` in `language-switch-dialog.tsx`).
-> Avoid: Conditional or multi-statement arrows in a JSX prop. A single forwarding call (`onClick={() => onDecide('edit')}`) stays inline: it reads as well as its name would.
+**Name a Callback Once It Has Logic** — `open => !open && onDecide('edit')` in a JSX prop, or `onFinish: () => { a(); b(); }` in an options object, makes the reader decode behaviour inside a call's arguments, where the eye is reading layout or configuration; and an inline body is easy to paste at a second exit point that should share it
+> Pattern: A callback with a condition, a branch or more than one statement becomes a named function declared beside the state it closes over (`function closeAsEdit(open: boolean) { if (!open) { onDecide('edit'); } }` → `onOpenChange={closeAsEdit}`), or at module level when it closes over nothing (`preventDialogDismissal` in `language-switch-dialog.tsx`). When another exit point runs the same steps, it calls the same function.
+> Avoid: Conditional or multi-statement arrows in a JSX prop or an options object (`onFinish`, `onError`, `onChunk`). A single forwarding call (`onClick={() => onDecide('edit')}`) stays inline: it reads as well as its name would.
 > Example: A review flagged `onOpenChange={open => !open && onDecide('edit')}` in `pii-warning-dialog.tsx`.
+> Example: Ron flagged `onFinish: () => { reportMetadata(); turnDeadline.settle(chatTurn); }` in bazak-mastra's chat route (#628). The streaming path's `finally` ran the same two lines; both became `finishTurn()`.
+
+**Take the Promise, Not a Thunk, When the Helper Awaits It Immediately** — a `() => Promise<T>` parameter that the helper calls on its first line buys nothing, and costs an anonymous arrow at every call site
+> Pattern: Type the parameter `Promise<T>` and pass the call itself: `track({ route, turn: generateReply({…}) })`. This is safe when the callee is `async` — a synchronous throw inside it becomes a rejection — and the helper's `async` body attaches its `await` in the same tick, so no rejection goes unhandled.
+> Avoid: `turn: () => generateReply({…})` for a helper whose body is `try { return await turn(); } finally { … }`.
+> Keep the thunk when the helper must act before the work starts (start a timer, open a span, enter an AsyncLocalStorage context), may call it zero or several times (retry, cache, lazy evaluation), or must catch a synchronous throw from a callee that is not `async`.
+> Example: Ron flagged `startTurnDeadline().track` in bazak-mastra (#628): it took `turn: () => Promise<T>` and awaited it at once, so the Avon route and the title job each wrapped their call in an arrow. Both callees were `async`; `track` now takes the promise.
 
 **Self-Documenting Code Over Comments** — Code should explain itself; comments are a last resort
 > Pattern: Only add a comment when the code contains a genuine hack, a non-obvious invariant, a workaround for a specific external bug, or behaviour that would actively surprise an experienced reader. The bar is high: if a competent developer would understand the code without the comment in under 5 seconds, delete it.
