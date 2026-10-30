@@ -56,10 +56,9 @@ with_timeout() {
   perl -e 'alarm shift; exec @ARGV' "$@"
 }
 
-# Prints "<status> <detail>": the gate's verdict, or the skill's result file after a run.
 run_repo() {
   local repo="$1" name="$2" gate_flags="$3" gate_verdict result_file
-  # shellcheck disable=SC2086 # gate_flags is a word list from repos.txt
+  # Unquoted on purpose: each gate flag is its own word.
   if ! gate_verdict="$("$GATE" "$repo" $gate_flags 2>>"$LOG_DIR/$RUN_DATE-$name.log")"; then
     echo "${gate_verdict:-error gate failed, see $LOG_DIR/$RUN_DATE-$name.log}"
     return

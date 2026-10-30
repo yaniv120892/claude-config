@@ -83,8 +83,9 @@ evidence:
 Then read the high-churn modules against every category in the definition, including the
 ones no tool measures (architecture, performance, error handling, rule conformance). For a
 repo with more than ~150 source files in scope, fan this out: one `Explore` subagent per
-category group, each given the worktree path and the definition's path, each returning
-candidates with `file:line` evidence.
+category group, each given the worktree path and the definition's path, told to read the
+repo's `CLAUDE.md`/`AGENTS.md` and `.claude/rules/` first, and returning candidates with
+`file:line` evidence.
 
 A security finding is out of scope for a refactor; it goes in the backlog and in the report.
 
