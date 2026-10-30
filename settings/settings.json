@@ -34,7 +34,7 @@
   },
   "model": "opus",
   "env": {
-    "CLAUDE_CODE_SUBAGENT_MODEL": "opus"
+    "CLAUDE_CODE_SUBAGENT_MODEL": "sonnet"
   },
   "effortLevel": "high",
   "tui": "fullscreen",
