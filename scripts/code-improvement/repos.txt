@@ -1,0 +1,8 @@
+# One repo per line: its directory name under ~/Develop, then optional gate flags.
+# `--no-deploy` marks a repo with no deploy target (a library): merged is enough.
+# Runs top to bottom.
+my-investments
+my-expenses-website
+my-shopping
+park-pal
+my-ui --no-deploy

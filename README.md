@@ -74,7 +74,7 @@ enforce, but nothing on Codex enforces them.
 | Plugin | Skills | What it does |
 | --- | --- | --- |
 | `pr-workflows` | 15 | GitHub pull request workflow: create, review (house rules plus a Fowler smell baseline, batched across PRs with a Notion docs-drift check), inline comments, CI verification, thread resolution, conflict fixing, the `steward` drive-to-green posture, feedback harvesting, posting a PR to Slack. Ships `/pr-review` and `lib/github.py` |
-| `dev-workflows` | 14 | `/ship` (scoping rounds through blind-QA'd PR, with a reproduce phase for bugs), Docker-based service runs, drip-feed recurring maintenance, domain modeling (`CONTEXT.md` + ADRs), the `/flows` router, and the `wizard`/`research`/`retro`/`wait-what` helpers. Ships the pre-push quality-gate, post-merge cleanup and require-worktree hooks |
+| `dev-workflows` | 15 | `/ship` (scoping rounds through blind-QA'd PR, with a reproduce phase for bugs), Docker-based service runs, drip-feed recurring maintenance, daily one-PR-per-repo code improvement, domain modeling (`CONTEXT.md` + ADRs), the `/flows` router, and the `wizard`/`research`/`retro`/`wait-what` helpers. Ships the pre-push quality-gate, post-merge cleanup and require-worktree hooks |
 | `issue-tracker` | 3 | Jira ticket creation and status transitions, with a cached per-project transition map. Also files Linear issues against a fixed Why/Repro/Fix/Done-when/Signals template |
 | `infra-workflows` | 2 | Helm env vars across GitOps registries, and AWS SSM SecureString provisioning with an account guard. Ships `provision_ssm.sh` |
 | `mods` | 0 | Function-hook mods for the harness itself: the git write gate, the status band, `/pr`, the secret guard, the reply-style rule and `/skill-tally` — see *Mods* below |
@@ -182,6 +182,7 @@ settings/settings.json            → <profile>/settings.json (copied)
 keybindings.json
 install.sh                        installs the non-plugin half, or the Codex setup
 scripts/agents_md.py              builds the Codex AGENTS.md from the profile
+scripts/code-improvement/         daily code-improvement run (launchd → cmux → claude)
 ```
 
 ## Two profiles
