@@ -127,8 +127,9 @@ Then branch: `git -C <worktree> switch -c auto-improve/<yyyymmdd>-<slug>`.
 
 ## Step 8 — Open the PR
 
-- Title as a conventional commit — it becomes the squash message: `refactor(<area>): …`,
-  `perf(<area>): …`. Follow the repo's release convention; if the repo bumps its version on
+- Title as a conventional commit — it becomes the squash message: `refactor(<scope>): …`,
+  `perf(<scope>): …`. The scope is the ticket ID when the profile requires one — create the
+  ticket first if none exists — else the area. Follow the repo's release convention; if the repo bumps its version on
   every change (its `CLAUDE.md` says so), bump it.
 - Body via `pr-workflows:writing-pr-description`, carrying the definition's required evidence,
   plus **Needs your call** when unattended mode deferred anything.
