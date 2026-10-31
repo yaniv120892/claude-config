@@ -62,8 +62,9 @@ that disproves it. Code that changed without its reader is worth the user's
 attention beyond the pruning itself.
 
 When a comment you are deleting carries real architectural reasoning, move it to
-the README or `CLAUDE.md` rather than dropping it — docs are the maintained home
-for the context you are stripping out of code.
+the matching topic doc under `docs/`, or to a `DECISIONS.md` row when it records a
+decision, rather than dropping it — docs are the maintained home for the context you
+are stripping out of code. With no topic doc for it, use the README or `CLAUDE.md`.
 
 ## Applying
 
