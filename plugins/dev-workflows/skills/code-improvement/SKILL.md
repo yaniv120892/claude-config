@@ -95,7 +95,11 @@ Highest score at or above the definition's threshold. Re-verify it still holds o
 `origin/<default>` — backlog entries go stale. Nothing qualifies → result `none <reason>`;
 remove the worktree and go to Step 10.
 
-Then branch: `git -C <worktree> switch -c auto-improve/<yyyymmdd>-<slug>`.
+Then branch. When the loaded `CLAUDE.md` has a ticket rule (personal: **Every PR Names Its Linear
+Ticket**), find or create the ticket now and branch from its git branch name:
+`git -C <worktree> switch -c <ticket-branch>`. No ticket (the tracker is unreachable) → result
+`error <what failed>`, before any change is made. Otherwise:
+`git -C <worktree> switch -c auto-improve/<yyyymmdd>-<slug>`.
 
 ## Step 6 — Make the change
 
@@ -128,11 +132,12 @@ Then branch: `git -C <worktree> switch -c auto-improve/<yyyymmdd>-<slug>`.
 ## Step 8 — Open the PR
 
 - Title as a conventional commit — it becomes the squash message: `refactor(<scope>): …`,
-  `perf(<scope>): …`. The scope is the ticket ID when the profile requires one — create the
-  ticket first if none exists — else the area. Follow the repo's release convention; if the repo bumps its version on
-  every change (its `CLAUDE.md` says so), bump it.
+  `perf(<scope>): …`. The scope is the Step 5 ticket ID, else the area. Follow the repo's
+  release convention; if the repo bumps its version on every change (its `CLAUDE.md` says so),
+  bump it.
 - Body via `pr-workflows:writing-pr-description`, carrying the definition's required evidence,
-  plus **Needs your call** when unattended mode deferred anything.
+  plus **Needs your call** when unattended mode deferred anything, and ending `Fixes <ticket-id>`
+  when Step 5 made a ticket.
 - `gh pr create --draft --label auto-improve`.
 
 ## Step 9 — Polish
