@@ -49,3 +49,12 @@ variance bug: some runs reach it, some don't
 > should trigger reaching it, one trigger per case. Sharpen the pointer before inlining the
 > material.
 > Avoid: Synonym piles restating one trigger; identity the body already carries.
+
+**Repo Docs Are DECISIONS.md Plus Small Topic Docs** — agents load docs into context, so one big
+spec is paid for whole or skipped whole
+> Pattern: Root `DECISIONS.md`, one row per hard-to-reverse decision with its why and a link to the
+> topic doc. One short `.md` per feature, named for the topic (`docs/households.md`), opening with
+> when to load it. `AGENTS.md`/`CLAUDE.md` lists every doc with its load trigger; every link
+> between docs carries that sentence too.
+> Avoid: `docs/specs/`, design or plan files kept after the work ships; one long doc where several
+> small ones would each load alone.
