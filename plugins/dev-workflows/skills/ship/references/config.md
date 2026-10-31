@@ -49,9 +49,9 @@ Optional. Lives at `<repo>/.claude/ship.json` and is committed, so the pipeline 
     "qa":           "opus"
   },
 
-  // Commit scope convention. "none" for personal repos with no tickets;
-  // "ticket" to pull it from the branch name (AIP-123/foo -> AIP-123).
-  "scope": "none",
+  // Commit scope convention. "none" for repos with no tracker; "ticket" to pull
+  // it from the branch name, uppercased (AIP-123/foo -> AIP-123, user/yan-137-foo -> YAN-137).
+  "scope": "ticket",
 
   "pr": { "draft": false }
 }
@@ -69,7 +69,7 @@ Optional. Lives at `<repo>/.claude/ship.json` and is committed, so the pipeline 
 | verifyTests.exclude | empty — the phase's own never-mutate rule still applies |
 | dev / prod | none — `/ship verify` reports that it has nothing to verify against |
 | models | inherit the session model for every phase |
-| scope | `ticket` if the branch matches `[A-Z]+-\d+`, else `none` |
+| scope | `ticket` if a branch segment starts `[A-Za-z]+-\d+` (Linear's are lowercase), else `none` |
 
 ## Notes
 

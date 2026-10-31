@@ -48,12 +48,14 @@ have no tracker at all. **Follow the project's own convention — do not invent
 one, and do not block on a ticket in a project that does not use tickets.**
 
 - **Project uses a tracker** (a `CLAUDE.md` rule, or existing titles carry keys
-  like `ABC-123`): extract the key from the branch name
-  (`feature/ABC-123-desc` → `ABC-123`), verify it exists via whatever tracker
-  integration is configured, and gate on it. If the branch has no key, ask.
+  like `ABC-123`): extract the key from the branch name, case-insensitively and
+  uppercased (`feature/ABC-123-desc` → `ABC-123`; Linear's `user/yan-137-desc` →
+  `YAN-137`), verify it exists via whatever tracker
+  integration is configured, and gate on it. If the branch has no key, follow the
+  rule's own fallback (the personal Linear rule creates the ticket), else ask.
 - **Project uses GitHub issues**: reference them as `#123` in the description and
   let GitHub link them. Use `Closes #123` when the pull request should close it.
-- **Project has no tracker** (most personal projects): skip this step entirely
+- **Project has no tracker**: skip this step entirely
   and use the scopeless title form below.
 
 ## Title Format
