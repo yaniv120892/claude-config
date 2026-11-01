@@ -15,8 +15,8 @@ stands for the PRs in its parent message. `ts` is the digits after `p` with a `.
 inserted six from the end (`p1793262604241709` → `1793262604.241709`). Read the
 thread with `slack_read_thread`, then:
 
-1. Find the last reply that is exactly `commented` — your review ack from
-   `pr-review`. The replies after it are the author's answer.
+1. Find your last review ack — a reply that is exactly `commented` or
+   `commented + approved`. The replies after it are the author's answer.
 2. No reply after it → the author has not asked for a re-check. Say so and stop.
 3. Load `slack_add_reaction` through `ToolSearch` and react `eyes` on the latest
    reply after `commented`, so the author sees the re-check has started.
@@ -120,8 +120,7 @@ the comments in this table are already verified; raise only new findings", with
 each PR's Step 4 table.
 
 `pr-review` merges its report, asks once, and posts on yes. From a Slack target,
-once its comments have posted, reply in the thread (`slack_send_message` with
-`channel_id` and `thread_ts` = `ts`) with exactly `commented`.
+hold the thread reply until Step 7 settles approval — the round gets one reply.
 
 ## Step 7 — Approve
 
@@ -135,9 +134,17 @@ gh pr review <NUMBER> --approve --repo <slug>
 A PR with an unfixed comment or a new finding waits: report it and approve only
 when the user says so.
 
-From a Slack target, after approving, react `white_check_mark` on the parent
-message and reply in the thread with exactly `approved`. From a plain PR target,
-ask:
+From a Slack target, reply once in the thread (`slack_send_message` with
+`channel_id` and `thread_ts` = `ts`) with exactly one of:
+
+| Comments posted this round | Approved | Reply                  |
+| -------------------------- | -------- | ---------------------- |
+| yes                        | yes      | `commented + approved` |
+| yes                        | no       | `commented`            |
+| no                         | yes      | `approved`             |
+
+On approval, also react `white_check_mark` on the parent message. From a plain
+PR target, ask:
 
 > "Done — approved. Want me to reply in a Slack thread? If so, drop the thread URL."
 
