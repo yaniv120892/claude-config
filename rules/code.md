@@ -131,6 +131,11 @@ analytics call must not turn a successful DB write into a 500
 > Pattern: `const shouldSkipAcquire = !isCredits && !unlimitedPackage; if (shouldSkipAcquire)`.
 > Avoid: `if (!isCredits && !unlimitedPackage)`.
 
+**Name an Awaited Result Before Branching On It** — `if (!(await claim(...)))` hides what the
+boolean means and buries the side effect inside the condition
+> Pattern: `const isFirstDelivery = await claimInboundMessage({ ... }); if (!isFirstDelivery)`.
+> Avoid: `if (!(await claimInboundMessage({ ... })))`, `if (await isThreadClosed(response))`.
+
 **Extract Multi-Branch Inline Expressions to Private Methods** — ternaries in argument lists
 resist reading and testing
 > Pattern: `concurrencyCap: this.getConcurrencyCap(isCredits, unlimitedPackage)`. The call site
