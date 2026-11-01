@@ -28,7 +28,7 @@ the parent message, so the asker sees the review has started. Keep `channel_id`
 and `ts` — Steps 5 and 6 report back to that thread. A plain PR target touches
 no Slack.
 
-A thread that already holds your `commented` reply with another reply after it
+A thread that already holds your `commented` (or `commented + approved`) reply with another reply after it
 is a re-check, not a first review — check this before reacting. Invoke
 `pr-second-review` with the Slack link instead, and stop here.
 
@@ -243,12 +243,14 @@ anchoring that contract exists to produce.
 
 From a Slack target, once everything has posted, reply in the thread
 (`slack_send_message` with `channel_id` and `thread_ts` = `ts`) with exactly
-`commented`. `replied` is the author's ack in `address-pr-feedback`; a reviewer
-posting it reads as the author answering.
+`commented` — or, when the same answer also approves (Step 6), exactly
+`commented + approved` as the single reply. `replied` is the author's ack in
+`address-pr-feedback`; a reviewer posting it reads as the author answering.
 
 ## Step 6 — Approve, only when told
 
 Never approve on your own. If the user then tells you to approve a PR, run
 `gh pr review <n> --repo <slug> --approve`. From a Slack target, react
 `white_check_mark` on the parent message and reply in the thread with exactly
-`approved`.
+`approved` — unless this round also posted comments, in which case the one
+reply is `commented + approved` (Step 5).
