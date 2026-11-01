@@ -1,41 +1,48 @@
 ---
 name: pr-second-review
-description: Use when a developer says they fixed review comments and wants a second-pass check. Trigger on "check if fixed", "they fixed it", "second review", or any follow-up after review comments were posted. Shows ALL comments I posted (including already-resolved ones — developers sometimes self-resolve without fixing), verifies each against the latest diff, resolves confirmed fixes, approves, and optionally posts to Slack.
+description: Use when a developer says they fixed review comments and wants a second-pass check — "check if fixed", "they fixed it", "second review", a follow-up after review comments were posted, or a Slack review thread where the author replied after your `commented`. Shows ALL comments I posted (including already-resolved ones — developers sometimes self-resolve without fixing), verifies each against the latest diff, resolves confirmed fixes, runs a fresh pr-review round for anything new, then approves.
 ---
 
-# Second Review — verify fixes & approve
+# Second Review — verify fixes, review again, approve
 
-## Delegate to a Sonnet subagent
+## Step 0 — Parse the target
 
-**Do not run this verification inline.** Checking each comment against explicit fixed/not-fixed criteria is a well-specified task that doesn't need this session's model tier or its accumulated context.
+A **PR target** is a full PR URL, or a bare number plus `--repo`. From
+`https://github.com/owner/repo/pull/437`: repo = `owner/repo`, number = `437`.
 
-**Anti-recursion guard:** if your own task prompt already identifies you as the dispatched pr-second-review subagent, skip this section and go straight to **Step 0** below.
+**A Slack thread link** (`https://<workspace>.slack.com/archives/<channel_id>/p<digits>`)
+stands for the PRs in its parent message. `ts` is the digits after `p` with a `.`
+inserted six from the end (`p1793262604241709` → `1793262604.241709`). Read the
+thread with `slack_read_thread`, then:
 
-Otherwise, spawn a subagent to run the full flow:
+1. Find the last reply that is exactly `commented` — your review ack from
+   `pr-review`. The replies after it are the author's answer.
+2. No reply after it → the author has not asked for a re-check. Say so and stop.
+3. Load `slack_add_reaction` through `ToolSearch` and react `eyes` on the latest
+   reply after `commented`, so the author sees the re-check has started.
+4. Take every PR URL in the parent message as a target. Keep `channel_id` and
+   `ts` — Steps 6 and 7 report back to that thread.
+
+## Delegate the verification to a Sonnet subagent
+
+**Do not run Steps 1–5 inline.** Checking each comment against explicit fixed/not-fixed criteria is a well-specified task that doesn't need this session's model tier or its accumulated context.
+
+**Anti-recursion guard:** if your own task prompt already identifies you as the dispatched pr-second-review subagent, skip this section and Step 0, run Steps 1–5, and return.
+
+Otherwise, spawn one subagent per PR, all in a single message:
 
 ```
 Agent({
-  description: "Second-pass review",
+  description: "Second-pass review PR <n>",
   model: "sonnet",
-  run_in_background: false,
   prompt: "You are the pr-second-review subagent. Invoke the pr-second-review skill
-    yourself and follow it directly end-to-end — you are the dispatched subagent, so
-    do not delegate further. Pull request: <number/URL>. Repo: <slug>. Return the
-    Step 4 status table, what you resolved/approved, and whether the user should be
-    asked about a Slack reply."
+    yourself and run Steps 1–5 only — you are the dispatched subagent, so do not
+    delegate further. Pull request: <number/URL>. Repo: <slug>. Return the head
+    SHA, the Step 4 status table, and which threads you resolved."
 })
 ```
 
-Relay the subagent's status table and outcome to the user, and handle the Slack-reply ask (Step 7) yourself if the subagent reports it's needed.
-
-## Step 0 — Parse the pull request reference
-
-Accept a full PR URL, or a bare number plus `--repo`.
-
-From `https://github.com/owner/repo/pull/437`:
-
-- repo = `owner/repo`
-- number = `437`
+Relay each status table to the user, then continue with Step 6 yourself.
 
 ## Step 1 — Fetch metadata and all review threads in parallel
 
@@ -92,7 +99,7 @@ gh api "repos/<slug>/contents/<PATH>?ref=<HEAD_SHA>" --jq '.content' | base64 -d
 | 3   | Misleading name…     | 🔴 open         | ✅ Yes          |
 | 4   | Test missing assert… | ⚠️ by developer | ❌ No           |
 
-If any comment is **not actually fixed** — regardless of who resolved it — stop here and report clearly. Do not approve until all are addressed.
+If any comment is **not actually fixed** — regardless of who resolved it — say so clearly; the PR is not approvable this round.
 
 ## Step 5 — Resolve all unresolved-by-me discussions that are confirmed fixed
 
@@ -104,21 +111,34 @@ python3 ../verify-resolve-pr-comments/pr_review_comments.py resolve --pr <NUMBER
 
 Run in parallel. Skip threads already resolved by me.
 
-## Step 6 — Approve
+## Step 6 — Run a fresh pr-review round
+
+The fixes are new code, and the first round can have missed things. Invoke the
+`pr-review` skill through the `Skill` tool with the **PR URLs** as args — not
+the Slack link, which would send it back here — plus one line: "Second round:
+the comments in this table are already verified; raise only new findings", with
+each PR's Step 4 table.
+
+`pr-review` merges its report, asks once, and posts on yes. From a Slack target,
+once its comments have posted, reply in the thread (`slack_send_message` with
+`channel_id` and `thread_ts` = `ts`) with exactly `commented`.
+
+## Step 7 — Approve
+
+Approve a PR when every Step 4 comment is fixed and the Step 6 round raised
+nothing for it:
 
 ```bash
 gh pr review <NUMBER> --approve --repo <slug>
 ```
 
-## Step 7 — Offer to post to Slack
+A PR with an unfixed comment or a new finding waits: report it and approve only
+when the user says so.
 
-After approving, ask the user:
+From a Slack target, after approving, react `white_check_mark` on the parent
+message and reply in the thread with exactly `approved`. From a plain PR target,
+ask:
 
 > "Done — approved. Want me to reply in a Slack thread? If so, drop the thread URL."
 
-When the user provides a URL like `https://<workspace>.slack.com/archives/C04AY4FNUUB/p1782136493804559`:
-
-- `channel_id` = `C04AY4FNUUB`
-- `thread_ts` = insert `.` before the last 6 digits → `1782136493.804559`
-
-Use the Slack MCP `slack_send_message` tool with `channel_id`, `thread_ts`, and `message: "approved"`.
+and on a URL, reply `approved` in that thread.

@@ -28,6 +28,10 @@ the parent message, so the asker sees the review has started. Keep `channel_id`
 and `ts` — Steps 5 and 6 report back to that thread. A plain PR target touches
 no Slack.
 
+A thread that already holds your `commented` reply with another reply after it
+is a re-check, not a first review — check this before reacting. Invoke
+`pr-second-review` with the Slack link instead, and stop here.
+
 A branch, the current checkout, or local changes are not targets, even when the
 user names them outright ("review my current branch"). The current branch is
 routinely a different ticket, stale, or stacked under the change actually being
