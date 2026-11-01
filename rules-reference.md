@@ -408,6 +408,11 @@ within weeks, and every fix then has to land in each one
 > Avoid: Inline compound negations like `if (!isCredits && !unlimitedPackage)` or `if (!a && !b && c)` that force the reader to mentally evaluate each clause to understand what is being guarded.
 > Example: `const shouldSkipAcquire = !isCredits && !unlimitedPackage; if (shouldSkipAcquire) { ... }` — not `if (!isCredits && !unlimitedPackage) { ... }`
 
+**Name an Awaited Result Before Branching On It** — An `await` inside an `if` condition hides two things at once: that the line performs I/O (often a side effect, like a Redis `SET NX` claim), and what the returned boolean means. Negated, it adds the `!(await ...)` parenthesis dance on top.
+> Pattern: Assign the awaited result to a `const` named for what it means to this caller, then branch on that name. The name should state the decision (`isFirstDelivery`, `isStillCurrent`), not the call (`result`, `claimed`).
+> Avoid: `if (!(await claimInboundMessage({ tenant, messageId })))`, `if (await isThreadClosed(response))`, `while (await hasMore())`-style conditions whose meaning lives only in the callee.
+> Example: `const isFirstDelivery = await claimInboundMessage({ tenant, messageId: message.id }); if (!isFirstDelivery) { return; }` — not `if (!(await claimInboundMessage({ tenant, messageId: message.id }))) { return; }`
+
 **Call Through an Authenticated CLI, Never Extract Its Credential** — when a script already depends on an authenticated CLI, reading that CLI's stored token to hand-roll an HTTP request re-implements auth badly: the read silently returns the wrong thing on config layouts you didn't test, and a refreshable (OAuth2) token goes stale out-of-band. Both failures land on whoever *isn't* the author — the machine where a stray env var happens to paper over the bug is the one it was written on.
 > Pattern: POST/GET through the CLI's own API passthrough, which authenticates, refreshes, and resolves the host itself: `gh api <path> --method POST --input -`. Pipe the JSON body via stdin. Derive any host/repo from the CLI's own metadata output rather than hardcoding it.
 > Avoid: `gh auth token` feeding an `Authorization` header on a hand-built `urllib`/`requests`/`curl` call. A token-read like this can return an empty string with **exit code 0**, so `check=True` won't catch it.
