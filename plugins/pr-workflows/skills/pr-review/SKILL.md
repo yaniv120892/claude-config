@@ -2,7 +2,7 @@
 name: pr-review
 argument-hint: <PR numbers or URLs, or a Slack thread link> (one or more, required)
 allowed-tools: Bash(gh:*), Bash(git:*), Bash(python3:*), Read, Grep, Glob, Agent, Skill, ToolSearch, mcp__notion__notion-search, mcp__notion__notion-fetch, mcp__claude_ai_Slack__slack_read_thread, mcp__claude_ai_Slack__slack_add_reaction, mcp__claude_ai_Slack__slack_send_message
-description: Use when reviewing one or more pull requests named by number or URL — or by a Slack thread link that lists them — or when asked whether a PR is safe to merge. Fans out a code-review, a built-in /code-review and an observability subagent per PR in parallel, plus an instruction-file subagent when a PR touches CLAUDE.md, rules, skills, agents or commands, merges every finding into a single severity-sorted report with a documentation-drift check, and posts inline comments after one approval. Requires explicit PR targets — it never reviews the current branch. For re-checking comments an author says they already fixed, use pr-second-review instead.
+description: Use when reviewing one or more pull requests named by number or URL — or by a Slack thread link that lists them — or when asked whether a PR is safe to merge. Fans out a code-review, a built-in /code-review and an observability subagent per PR in parallel, plus an instruction-file subagent when a PR touches CLAUDE.md, rules, skills, agents or commands, merges every finding into a single severity-sorted report that opens with what each PR does and how it serves its ticket, with a documentation-drift check, and posts inline comments after one approval. Requires explicit PR targets — it never reviews the current branch. For re-checking comments an author says they already fixed, use pr-second-review instead.
 ---
 
 # Pull Request Review
@@ -163,8 +163,25 @@ The others' results still stand — never re-run the whole batch.
 
 ## Step 3 — Merge into one report
 
+Open with an **About** section per PR, written while the agents run, so the
+reader knows what the change is for before weighing any finding against it:
+
+- **What it does** — two or three sentences from the PR body and file list:
+  the change, why it exists, and any follow-up PR it says it unblocks.
+- **Ticket** — the issue key in the title or branch, read from the tracker:
+  its title and goal, its status and assignee, and where this PR sits among the
+  other PRs attached to it. Say so when the PR implements only a slice of the
+  ticket, or something adjacent to its headline. No key → say there is none.
+
+```bash
+gh pr view <n> --repo <slug> --json title,body,author,headRefName
+```
+
 ```markdown
 ## Review — <N> pull requests
+
+### About
+**<owner/repo>#<n>** — <what it does>. Ticket <KEY> "<title>": <how this PR serves it>.
 
 | PR  | Severity | file:line | Issue | Fix |
 | --- | -------- | --------- | ----- | --- |
