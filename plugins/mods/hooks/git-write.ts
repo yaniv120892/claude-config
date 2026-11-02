@@ -1,12 +1,7 @@
 // Commands are split into words the way a shell would, and every `git` or `gh`
 // word is read as a program start wherever it stands, so a keyword (`do git
 // push`), a wrapper (`timeout 60 git push`) or a global option (`git -C "$R"
-// push`) cannot hide a write. Text that merely mentions a write is asked about
-// too: a false ask costs a click, a false pass an unapproved push.
-
-/** What the git write gate asks about, for `/git-gate`. */
-export const GATE_SCOPE =
-  'a git commit or git push that may land on the default branch, or that it cannot rule out, and every gh pr merge'
+// push`) cannot hide a write.
 
 const SEPARATORS = new Set([';', '&', '|', '(', ')', '{', '}', '\n', '`'])
 const GIT_VALUE_OPTIONS = new Set(['-C', '-c', '--git-dir', '--work-tree', '--namespace', '--super-prefix', '--config-env'])
@@ -120,52 +115,6 @@ export function isGitWrite(command: string): boolean {
       ? GIT_WRITES.has(call.subcommand ?? '')
       : call.group === 'pr' && GH_PR_WRITES.has(call.action ?? ''),
   )
-}
-
-/**
- * Whether Claude Code's `Bash(...)` allow rules already cover every write in
- * the command: `Bash(git push:*)` a prefix, `*` any text, otherwise exact.
- * Only a segment that starts with `git` or `gh` can be covered, so a wrapper
- * (`timeout 60 git push`) or a substitution (`echo "$(git push)"`) still asks.
- */
-export function isAllowedBy(rules: readonly string[], command: string): boolean {
-  const patterns = rules.flatMap(rule => {
-    const pattern = /^Bash\((.+)\)$/s.exec(rule)?.[1]
-    return pattern === undefined ? [] : [bashRulePattern(pattern)]
-  })
-  const writes = splitCommands(command)
-    .map(words => words.map(word => word.text))
-    .filter(texts => isGitWrite(texts.join(' ')))
-  return (
-    writes.length > 0 &&
-    writes.every(texts => {
-      const program = texts[0]?.split('/').pop()
-      const segment = texts.join(' ')
-      return (program === 'git' || program === 'gh') && patterns.some(pattern => pattern.test(segment))
-    })
-  )
-}
-
-/** The `Bash(...)` entries of a settings file's `permissions.allow`. */
-export function allowRules(settings: unknown): string[] {
-  const allow = (settings as { permissions?: { allow?: unknown } } | null)?.permissions?.allow
-  return Array.isArray(allow) ? allow.filter((rule): rule is string => typeof rule === 'string') : []
-}
-
-function bashRulePattern(rule: string): RegExp {
-  const glob = (text: string) => text.split('*').map(part => part.replace(/[.+?^${}()|[\]\\]/g, '\\$&')).join('.*')
-  if (rule.endsWith(':*')) return new RegExp(`^${glob(rule.slice(0, -2))}(?:\\s.*)?$`, 's')
-  if (rule.endsWith(' *')) return new RegExp(`^${glob(rule.slice(0, -2))}(?: .*)?$`, 's')
-  return new RegExp(`^${glob(rule)}$`, 's')
-}
-
-/** Each git commit and git push the command runs, however it is reached. */
-export function gitWriteCount(command: string): number {
-  return calls(command).filter(call => call.program === 'git' && GIT_WRITES.has(call.subcommand ?? '')).length
-}
-
-export function mergesPr(command: string): boolean {
-  return calls(command).some(call => call.program === 'gh' && call.group === 'pr' && call.action === 'merge')
 }
 
 export function changesPr(command: string): boolean {

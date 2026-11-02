@@ -4,7 +4,7 @@ import { splitCommands } from './git-write'
 // command in order: each `cd`, a `-C` on that git call, and the variables the
 // command itself assigns. A directory that cannot be read off the text (a `$VAR`
 // the command never set, `cd $(...)`) is null, never a guess: the guard stays
-// out of those, and the git write gate still asks about the write.
+// out of those.
 
 export const OPT_OUT = 'ALLOW_DEFAULT_BRANCH_WRITE=1'
 

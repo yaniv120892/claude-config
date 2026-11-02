@@ -4,7 +4,7 @@
 and the marketplace/plugin wiring. It contains **no secrets** and no
 employer-specific servers.
 
-The git write gate and the status line are **not** here either: both are mods in
+The default-branch guard and the status line are **not** here either: both are mods in
 the `mods` plugin, which `enabledPlugins` turns on and
 `tests/test_settings_hooks.py` keeps on.
 
