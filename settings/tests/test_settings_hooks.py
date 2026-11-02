@@ -21,7 +21,7 @@ SETTINGS = os.path.join(
 
 # Hook events that must survive any merge. Add to this when a new one ships.
 REQUIRED_HOOK_EVENTS = ("SessionStart",)
-# Plugins whose guards are not optional: `mods` carries the git write gate.
+# Plugins whose guards are not optional: `mods` carries the default-branch guard.
 REQUIRED_PLUGINS = ("mods@yaniv-claude-config",)
 
 

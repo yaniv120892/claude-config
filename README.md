@@ -65,7 +65,7 @@ A skill marked `disable-model-invocation: true` also carries an
 instead; `tests/test_codex_policy.py` keeps the two in step.
 
 What does not carry over: the hooks (the pre-push quality gate, the worktree
-guard), the mods (the git write gate, the default-branch guard, the secret
+guard), the mods (the default-branch guard, the secret
 guard, the status band), `settings.json`, and keybindings. The generated `AGENTS.md` asks the agent to keep the rules the hooks
 enforce, but nothing on Codex enforces them.
 
@@ -77,7 +77,7 @@ enforce, but nothing on Codex enforces them.
 | `dev-workflows` | 15 | `/ship` (scoping rounds through blind-QA'd PR, with a reproduce phase for bugs), Docker-based service runs, drip-feed recurring maintenance, daily one-PR-per-repo code improvement, domain modeling (`CONTEXT.md` + ADRs), the `/flows` router, and the `wizard`/`research`/`retro`/`wait-what` helpers. Ships the pre-push quality-gate, post-merge cleanup and require-worktree hooks |
 | `issue-tracker` | 3 | Jira ticket creation and status transitions, with a cached per-project transition map. Also files Linear issues against a fixed Why/Repro/Fix/Done-when/Signals template |
 | `infra-workflows` | 2 | Helm env vars across GitOps registries, and AWS SSM SecureString provisioning with an account guard. Ships `provision_ssm.sh` |
-| `mods` | 0 | Function-hook mods for the harness itself: the git write gate, the status band, `/pr`, the secret guard, the reply-style rule and `/skill-tally` — see *Mods* below |
+| `mods` | 0 | Function-hook mods for the harness itself: the default-branch guard, the status band, `/pr`, the secret guard, the reply-style rule and `/skill-tally` — see *Mods* below |
 | `cmux` | 5 | cmux terminal multiplexer control: topology, workspaces, browser surface, notifications |
 
 Plugins that touch an employer's systems read their site-specific values — accounts,
@@ -113,8 +113,7 @@ calls on its own events. Each mod has a switch in `/config`, and all start on.
 
 | Mod | What it does | What it replaced |
 | --- | --- | --- |
-| Git write gate | Asks the person in a dialog — allow once, allow for the session, or deny — before a write that may land on the default branch: a `git commit` or `git push` it cannot prove runs on, and sends to, a branch other than the default (`origin/HEAD`, else `main` or `master`), and every `gh pr merge`. A commit or push on a feature branch runs without asking when its directory resolves, its branch is known, and for a push every refspec is readable and none names the default branch (`HEAD:main`, `x:refs/heads/main`, `:main`); `--all`, `--mirror`, an unknown flag, a pattern, a variable the command never set, a bare push whose upstream is the default branch or whose `push.default` is `matching`, a detached HEAD, an unreadable directory and a failed lookup all ask. `gh pr create` never asks. A `Bash(...)` allow rule in the person's own `settings.json` that covers each write (a segment starting with `git`/`gh`) answers it ahead of time; a repo's committed `.claude/settings.json` is not read. The model cannot answer it, and a headless run is refused. `/git-gate reset` takes back a session approval | `settings/hooks/require-git-approval.sh`, which the model passed by adding `CLAUDE_GIT_OK=1` to the command |
-| Default-branch guard | Refuses `git commit` and `git push` whose target checkout is on the default branch (`origin/HEAD`, else `main` or `master`). The target is followed through the command: each `cd`, a `-C`, and the variables the command assigns; a path it cannot read off the text is left to the git write gate rather than guessed. A push that only deletes other branches (`--delete`, `-d` or `:branch`) goes through. `ALLOW_DEFAULT_BRANCH_WRITE=1` before the git command opts out | dev-workflows' `protect-default-branch.sh`, which resolved only the last `cd` and no variables, so it blocked writes in worktrees |
+| Default-branch guard | Refuses `git commit` and `git push` whose target checkout is on the default branch (`origin/HEAD`, else `main` or `master`). The target is followed through the command: each `cd`, a `-C`, and the variables the command assigns; a path it cannot read off the text is let through rather than guessed. A push that only deletes other branches (`--delete`, `-d` or `:branch`) goes through. `ALLOW_DEFAULT_BRANCH_WRITE=1` before the git command opts out | dev-workflows' `protect-default-branch.sh`, which resolved only the last `cd` and no variables, so it blocked writes in worktrees |
 | Status band | Above the prompt, in the terminal and the desktop app: `➜  repo/dir git:(branch) ✗ [model] ctx:42% 5h:81% ↻1h12m wk:41%` — the 5-hour and weekly usage limits, shown on a subscription, with the time to reset from 75%; off a subscription, the session's cost (`$1.24`) in their place — then a row for the branch's PR and one for each PR opened this session (up to three; found from what `gh pr create` prints and from `gh pr list --author @me` since the session began, so a PR a subagent or another worktree opened shows too): who is on it (assignees, requested reviewers and reviewers, each by the emoji the `peopleMarks` option gives their login, else `@login`), where GitHub stands (`draft`, `awaiting review`, `approved`, `changes requested`, `merged`, `closed`), failing, pending and passing checks, review threads as `open` (waiting on you), `replied` (your reply was last) and `resolved`, conflicts or `behind base`, and `ready to merge` once GitHub's merge state is clean. The PRs are read through `gh` every 90 seconds, and again after a push, a `gh pr` write or a branch switch; a merged or closed one is not read again | `statusline-command.sh` and the `statusLine` setting |
 | Plan progress | One band row under the location line while the main agent has a plan: `building · 2/5 tasks · Add retry tests`, from its `TodoWrite`, `TaskCreate` and `TaskUpdate` calls. The counts are the statuses the model declared, never a test result or an ETA; a deleted task leaves the count, a refused or failed call changes nothing, and a subagent's tasks never count. The title is cut to the band's width and dropped when it is narrow. Each session's plan is stored under its own id, so `claude --resume` brings it back, and is dropped a day after its last change | — |
 | Alerts | A toast when the 5-hour or weekly limit passes 90%, once per window across sessions | — |
@@ -129,8 +128,8 @@ The function-hook API is early access, so CI checks the mods on a pinned Claude
 Code version (`.github/workflows/ci.yml`): `claude plugin validate`,
 `claude plugin test` and `tsc`. Develop one with
 `claude --plugin-dir plugins/mods`, which reloads the module on each save. A
-build of Claude Code older than function hooks loads none of this, the git
-write gate included.
+build of Claude Code older than function hooks loads none of this, the
+default-branch guard included.
 
 **Upgrading a machine that has the old pieces:** re-run `install.sh`. It removes
 the links to the deleted scripts and names each entry of your kept

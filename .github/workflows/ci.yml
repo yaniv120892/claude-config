@@ -47,5 +47,5 @@ jobs:
       # tsconfig.json that points at them; no model call, no credentials.
       - name: Type-check
         run: |
-          claude -p --plugin-dir "$PWD/plugins/mods" /git-gate
+          claude -p --plugin-dir "$PWD/plugins/mods" /skill-tally
           tsc -p plugins/mods

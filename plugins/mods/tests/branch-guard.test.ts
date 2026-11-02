@@ -151,24 +151,24 @@ function fakeCheckouts(on: On) {
   return { ran }
 }
 
-const NO_GATE = { options: { gitGate: false, statusBand: false } }
+const GUARD_ONLY = { options: { statusBand: false } }
 
 describe('the default-branch guard', () => {
-  test('refuses a commit on the default branch, naming the opt-out', NO_GATE, async ($, on) => {
+  test('refuses a commit on the default branch, naming the opt-out', GUARD_ONLY, async ($, on) => {
     fakeCheckouts(on)
     const called = await $.tool.call({ tool: 'Bash', command: 'git commit -m x' })
     expect(called.deny).toContain("you are on 'main', the default branch")
     expect(called.deny).toContain('ALLOW_DEFAULT_BRANCH_WRITE=1')
   })
 
-  test('lets a write through on a feature branch, however the command reaches it', NO_GATE, async ($, on) => {
+  test('lets a write through on a feature branch, however the command reaches it', GUARD_ONLY, async ($, on) => {
     fakeCheckouts(on)
     for (const command of ['cd wt && git commit -m x', 'W=/w/repo/wt; git -C $W push', 'cd /w/repo/wt/a/b && cd ../.. && git push']) {
       expect((await $.tool.call({ tool: 'Bash', command })).deny).toBeUndefined()
     }
   })
 
-  test('lets a push from the default branch through when it only deletes other branches', NO_GATE, async ($, on) => {
+  test('lets a push from the default branch through when it only deletes other branches', GUARD_ONLY, async ($, on) => {
     fakeCheckouts(on)
     for (const command of ['git push origin --delete fix/a', 'git push origin :fix/a']) {
       expect((await $.tool.call({ tool: 'Bash', command })).deny).toBeUndefined()
@@ -178,20 +178,20 @@ describe('the default-branch guard', () => {
     }
   })
 
-  test('stays out of an opt-out, a path it cannot read, and a repo with no default branch', NO_GATE, async ($, on) => {
+  test('stays out of an opt-out, a path it cannot read, and a repo with no default branch', GUARD_ONLY, async ($, on) => {
     fakeCheckouts(on)
     for (const command of ['ALLOW_DEFAULT_BRANCH_WRITE=1 git commit -m x', 'git -C $ELSEWHERE commit', 'git -C /w/plain push']) {
       expect((await $.tool.call({ tool: 'Bash', command })).deny).toBeUndefined()
     }
   })
 
-  test('runs no git for a command that writes nothing', NO_GATE, async ($, on) => {
+  test('runs no git for a command that writes nothing', GUARD_ONLY, async ($, on) => {
     const { ran } = fakeCheckouts(on)
     await $.tool.call({ tool: 'Bash', command: 'ls -la && git status' })
     expect(ran).toEqual([])
   })
 
-  test('is off when switched off', { options: { gitGate: false, statusBand: false, branchGuard: false } }, async ($, on) => {
+  test('is off when switched off', { options: { statusBand: false, branchGuard: false } }, async ($, on) => {
     fakeCheckouts(on)
     expect((await $.tool.call({ tool: 'Bash', command: 'git commit -m x' })).deny).toBeUndefined()
   })

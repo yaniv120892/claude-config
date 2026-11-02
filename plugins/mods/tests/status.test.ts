@@ -224,7 +224,6 @@ describe('the alerts', () => {
 })
 
 describe('the session PRs', () => {
-  const NO_GATE = { options: { gitGate: false } }
   const URL_57 = 'https://github.com/owner/claude-config/pull/57'
   const URL_58 = 'https://github.com/owner/claude-config/pull/58'
   const view = (number: number, url: string, fields: object) => ({
@@ -237,7 +236,7 @@ describe('the session PRs', () => {
     ...fields,
   })
 
-  test('shows who is on each PR by their mark', { options: { gitGate: false, peopleMarks: 'alice=🦊,bob=🐢' } }, async ($, on) => {
+  test('shows who is on each PR by their mark', { options: { peopleMarks: 'alice=🦊,bob=🐢' } }, async ($, on) => {
     const { clock, pr, bash } = fakeRepo(on, { hasPr: false })
     pr.byUrl[URL_57] = view(57, URL_57, { assignees: [{ login: 'alice' }], reviewRequests: [{ login: 'bob' }, { login: 'carol' }] })
     bash.stdout = `${URL_57}\n`
@@ -246,7 +245,7 @@ describe('the session PRs', () => {
     expect((await prRows($)).find(row => row.startsWith('PR #57'))).toMatch(/^PR #57 🦊 🐢 @carol changes requested/)
   })
 
-  test('adds the PR a gh pr create printed, even on a branch with no PR', NO_GATE, async ($, on) => {
+  test('adds the PR a gh pr create printed, even on a branch with no PR', async ($, on) => {
     const { clock, pr, bash } = fakeRepo(on, { hasPr: false })
     pr.byUrl[URL_57] = view(57, URL_57, { reviewDecision: 'REVIEW_REQUIRED', mergeStateStatus: 'BLOCKED' })
     bash.stdout = `${URL_57}\n`
@@ -262,7 +261,7 @@ describe('the session PRs', () => {
     await band.unmount()
   })
 
-  test('finds PRs opened elsewhere this session, and says which is ready to merge', NO_GATE, async ($, on) => {
+  test('finds PRs opened elsewhere this session, and says which is ready to merge', async ($, on) => {
     const { clock, pr } = fakeRepo(on, { hasPr: true })
     pr.list = [URL_58, URL_57]
     pr.byUrl[URL_57] = view(57, URL_57, { reviewDecision: 'APPROVED', mergeStateStatus: 'CLEAN' })
@@ -277,7 +276,7 @@ describe('the session PRs', () => {
     expect(rows[1]).not.toContain('ready to merge')
   })
 
-  test('stops rereading a session PR once it is merged', NO_GATE, async ($, on) => {
+  test('stops rereading a session PR once it is merged', async ($, on) => {
     const { clock, pr, ghCalls } = fakeRepo(on, { hasPr: false })
     pr.list = [URL_57]
     pr.byUrl[URL_57] = view(57, URL_57, { state: 'MERGED' })
@@ -291,7 +290,7 @@ describe('the session PRs', () => {
     expect(ghCalls).toEqual(['gh pr view', 'gh pr list'])
   })
 
-  test('reads the branch PR once when it was also opened this session', NO_GATE, async ($, on) => {
+  test('reads the branch PR once when it was also opened this session', async ($, on) => {
     const { clock, pr, ghCalls } = fakeRepo(on, { hasPr: true })
     pr.list = [PR_VIEW.url]
     pr.byUrl[PR_VIEW.url] = PR_VIEW
@@ -344,7 +343,7 @@ describe('the PR skill checklist', () => {
     expect(await row51($)).toContain('○simplify ○code-review ✓pr-review ○prune')
   })
 
-  test('counts a bare number for the session PR in another repository that has it', { options: { gitGate: false } }, async ($, on) => {
+  test('counts a bare number for the session PR in another repository that has it', async ($, on) => {
     const { clock, pr, bash } = await setup($, on)
     const url546 = 'https://github.com/owner/mastra/pull/546'
     pr.byUrl[url546] = { ...PR_VIEW, number: 546, url: url546, headRefName: 'feat/pii', title: 'PII' }
