@@ -78,5 +78,9 @@
       }
     ]
   },
-  "autoContinueAtUsageLimit": true
+  "autoContinueAtUsageLimit": true,
+  "attribution": {
+    "commit": "",
+    "pr": ""
+  }
 }
