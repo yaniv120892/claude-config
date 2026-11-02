@@ -2,15 +2,15 @@
 name: pr-review
 argument-hint: <PR numbers or URLs, or a Slack thread link> (one or more, required)
 allowed-tools: Bash(gh:*), Bash(git:*), Bash(python3:*), Read, Grep, Glob, Agent, Skill, ToolSearch, mcp__notion__notion-search, mcp__notion__notion-fetch, mcp__claude_ai_Slack__slack_read_thread, mcp__claude_ai_Slack__slack_add_reaction, mcp__claude_ai_Slack__slack_send_message
-description: Use when reviewing one or more pull requests named by number or URL — or by a Slack thread link that lists them — or when asked whether a PR is safe to merge. Fans out a code-review, a built-in /code-review and an observability subagent per PR in parallel, plus an instruction-file subagent when a PR touches CLAUDE.md, rules, skills, agents or commands, merges every finding into a single severity-sorted report that opens with what each PR does and how it serves its ticket, with a documentation-drift check, and posts inline comments after one approval. Requires explicit PR targets — it never reviews the current branch. For re-checking comments an author says they already fixed, use pr-second-review instead.
+description: Use when reviewing one or more pull requests named by number or URL — or by a Slack thread link that lists them — or when asked whether a PR is safe to merge. Fans out a code-review, a built-in /code-review, an observability and a reuse-and-alignment subagent per PR in parallel, plus an instruction-file subagent when a PR touches CLAUDE.md, rules, skills, agents or commands, merges every finding into a single severity-sorted report that opens with what each PR does and how it serves its ticket, with a documentation-drift check, and posts inline comments after one approval. Requires explicit PR targets — it never reviews the current branch. For re-checking comments an author says they already fixed, use pr-second-review instead.
 ---
 
 # Pull Request Review
 
-Reviews a batch of pull requests. Three subagents per PR, all in parallel, and a
-fourth when the PR touches agent-facing markdown. Every PR gets a code review, a
+Reviews a batch of pull requests. Four subagents per PR, all in parallel, and a
+fifth when the PR touches agent-facing markdown. Every PR gets a code review, a
 second pass from the built-in `/code-review` skill, a documentation-drift check,
-and an observability check. Findings merge into one
+an observability check, and a reuse-and-alignment check. Findings merge into one
 report, you approve once, everything posts.
 
 ## Step 1 — Require explicit targets
@@ -100,6 +100,27 @@ Agent({
     Read <PLUGIN_ROOT>/skills/pr-review/references/observability.md and follow
     it exactly. Fetch the diff ONCE. Do not delegate further. Do not post
     anything. Return only the section its Output specifies."
+})
+```
+
+And a reuse-and-alignment agent per PR. It searches the rest of the codebase
+for what the diff duplicates and for the sibling flows it should match — work
+the rubric agent, reading the diff outward, does not do:
+
+```
+Agent({
+  description: "Reuse & alignment PR <n>",
+  model: "sonnet",
+  subagent_type: "general-purpose",
+  prompt: "Check reuse and alignment for pull request <owner/repo>#<n>.
+
+    Head SHA: <sha>  — already resolved, do not re-fetch it.
+    Changed files: <paths>
+    Local clone: <absolute path of the repo's local clone, if present>
+
+    Read <PLUGIN_ROOT>/skills/pr-review/references/reuse-alignment.md and
+    follow it exactly. Fetch the diff ONCE. Do not delegate further. Do not
+    post anything. Return only the section its Output specifies."
 })
 ```
 
@@ -204,6 +225,9 @@ agent's comment text. Then:
   descriptions.
 - **Docs alignment** — per PR: Notion page, what the diff contradicts, one line
   on what to update.
+- **Reuse & alignment** — a separate table: what the diff duplicates (with
+  the existing `path:line` to use instead), logic to generalize, and where it
+  diverges from its sibling flows. Then each PR's line naming the flows compared.
 - **Observability** — a separate table: missing logs, events to add, and
   existing events or log lines whose consumers (alerts, insights) the diff
   breaks. Then each PR's line naming which consumers were checked.
@@ -222,7 +246,7 @@ Wait. Nothing posts before an explicit yes.
 
 ## Step 5 — Post
 
-On yes, post every finding pinned to its file and line — observability and
+On yes, post every finding pinned to its file and line — observability, reuse and
 instruction-file findings included — by calling the script directly. The `post-pr-inline-comments` skill
 is `disable-model-invocation`, so the `Skill` tool refuses it.
 
