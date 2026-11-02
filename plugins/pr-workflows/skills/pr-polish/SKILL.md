@@ -16,6 +16,19 @@ with the user.
 A PR number or URL. With none, run `gh pr view --json number,url,headRefName`, name the PR it finds,
 and ask one question to confirm. Resolve `owner/repo`, the worktree path, and the head SHA.
 
+## Step 1a — Preflight
+
+Before any review agent starts, check what would stall the run later and report each result in one line:
+
+- **Draft:** Qodo skips draft PRs, so Step 6 would wait forever. Say so and offer `gh pr ready <n>`.
+- **Unpublished internal packages:** for each `@bazak/*` version the PR's `package.json` changes,
+  `pnpm view <name>@<version> version` must print it. When one is missing, the pre-push build fails:
+  name the release that unblocks it and hold the push until it lands, instead of retrying.
+- **Workflow scope:** when the diff touches `.github/workflows/`, `gh auth status` must list the
+  `workflow` scope; otherwise hand the user `gh auth refresh -s workflow`.
+
+A blocker here gates the push, not the review: continue to Step 1b.
+
 ## Step 1b — Sync with base
 
 Run `git fetch origin <base>`. When the head is behind `origin/<base>`, bring the base in before reviewing,
