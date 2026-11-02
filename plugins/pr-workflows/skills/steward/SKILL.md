@@ -44,6 +44,9 @@ one thread never excuses skipping the nits in the same review:
    "Code Review by Qodo" comment in place on every push. Read that comment's
    findings for the head commit and work each one not struck through or
    marked Dismissed — a refutation goes as a reply on its inline comment.
+   Qodo reviews the PR when it opens, not each later push: after every push,
+   comment `/agentic_review` on the PR, and treat the review as pending until
+   that comment names the new head SHA.
 
 ## Red CI
 

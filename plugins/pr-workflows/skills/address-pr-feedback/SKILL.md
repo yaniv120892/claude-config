@@ -121,7 +121,8 @@ push — not batched into the Step 7 report, where it's easy to skip past.
 
 Conventional commit with the PR's ticket scope (`fix(AIP-XXXX): …`); `fix`/`feat` ship, `chore` does
 not — see global commit rules. Push to the **source branch** (never force-push, never a new branch).
-Capture the pushed SHA — you reference it in the fix replies.
+Capture the pushed SHA — you reference it in the fix replies. Then comment `/agentic_review` on the PR so
+Qodo reviews the new head, as `steward` describes, and check its findings before reporting the PR clean.
 
 ## Step 5a — Align the PR description with the fixes
 
