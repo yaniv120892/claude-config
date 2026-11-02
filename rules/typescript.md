@@ -98,8 +98,12 @@ call's arguments, and the same body tends to get pasted at a second exit point
 > Pattern: A callback with a condition, a branch or more than one call becomes a named function
 > beside the state it uses (`function closeAsEdit(open) {…}`, `function finishTurn() {…}`), and
 > every exit point that runs the same steps calls it.
-> Avoid: Conditional or multi-statement arrows in a JSX prop or an options object. A single
-> forwarding call, `onClick={() => onDecide('edit')}`, can stay inline.
+> The same holds for an IIFE that computes a value (`const x = (() => {…})()` becomes
+> `function computeX() {…}`, called once), a `useCallback`/`useMemo` body with logic (pass a named
+> function declared in the component), and a schema `preprocess`/`transform`/`refine` callback.
+> Avoid: Conditional or multi-statement arrows in a JSX prop, an options object, an IIFE, a hook
+> body or a schema callback. A single forwarding call, `onClick={() => onDecide('edit')}`, can stay
+> inline.
 
 **Take the Promise, Not a Thunk, When the Helper Awaits It Immediately** — a `() => Promise<T>`
 parameter the helper calls on its first line adds nothing but an anonymous arrow at every call site

@@ -38,7 +38,9 @@ and confirm the user still wants replies/fixes before pushing anything.
 Run `git fetch origin <base>`. When the head is behind `origin/<base>`, merge `origin/<base>` into the
 source branch before fixing anything, so every fix lands on the code that will merge — a merge commit, as
 `steward` resolves conflicts, never a rebase and force-push. Resolve conflicts, regenerate lockfiles and
-generated files with the repo's own tooling, run its build and tests, and push.
+generated files with the repo's own tooling, run its build and tests, and push. Then grep the merged
+tree for every secret name, env var, config key, URL and number the PR description names, since a
+base-branch change can rename them, and fix the description before pushing.
 
 ## Step 2 — List the incoming comments
 
@@ -153,6 +155,10 @@ python3 pr_feedback.py reply --pr <NUMBER> --thread <THREAD_ID> --body-file /tmp
 - **Fixed:** state the fix and the SHA — `Fixed in <sha> — <what changed>.` No gratitude, no "great catch."
 - **Pushed back:** give the technical reason and the evidence you checked. `<concern> doesn't hold here:
 <evidence>. No change.`
+- **Deferred:** a reply that defers work ("in a follow-up", "after this merges") links the follow-up
+  ticket in the same reply. When none exists, ask the user whether to open one before replying.
+- **Kept on purpose:** state it as a decision with the reason — `Keeping <x>: <reason>.` — so it is on
+  record. Reviewers ask for this explicitly.
 - Write the body to a file and use `--body-file` — multi-line markdown and backticks break shell `-f`/`--field` escaping.
 
 ### Keep each reply short — 2–4 sentences
