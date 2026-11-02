@@ -82,8 +82,8 @@ Run `gh pr checks <n> --watch`. On red, follow the `steward` skill: root-cause, 
 
 ## Step 6 — Bot comments
 
-Qodo reviews each push a few minutes after it lands. Wait until it has commented on, or reported a check
-for, the new head SHA before deciding there is nothing new. Then:
+After the last push, trigger Qodo and wait for it as `steward` describes (`/agentic_review`, then its
+review comment naming the new head SHA) before deciding there is nothing new. Then:
 
 - Unanswered threads: run `/pr-workflows:address-pr-feedback`, which fixes, pushes, and replies in each
   thread. Then run `/prune-comments` on the diff again, since those fixes can add comments; commit and
