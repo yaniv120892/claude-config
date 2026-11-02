@@ -46,6 +46,8 @@ This is the check most likely to break production silently. Flag when the diff:
 - renames an event, or removes or renames a property on one;
 - changes a property's type or value set (`"success"` → `true`);
 - moves an event so it fires at a different point, more or fewer times;
+- records an event or state change before a step that can still fail — on failure it
+  records something that never happened; record outcomes after the step succeeds;
 - edits or removes a log message or field that an alert filter matches on.
 
 For each one, find the consumers:
