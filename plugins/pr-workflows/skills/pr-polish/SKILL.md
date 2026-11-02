@@ -24,6 +24,9 @@ PR whose commits are reviewed one by one, a rebase onto `origin/<base>` with `gi
 since Step 4's autosquash rebase would flatten a merge commit anyway. Resolve conflicts, regenerate
 lockfiles and generated files with the repo's own tooling, run its build and tests, and push.
 
+After the merge, grep the merged tree for every secret name, env var, config key, URL and number the PR
+description names: a base-branch change can rename them. Fix the description before pushing.
+
 ## Step 2 — Review
 
 Launch `/pr-workflows:pr-review` for the PR and `/simplify` for the diff, in one message.
@@ -64,6 +67,13 @@ Fix every violation it reports, applying the same skip criteria as Step 3.
 Only after every fix in Steps 3 and 3a is in, run `/prune-comments` on the diff. Running it last means it sees
 the comments the fixes added or made stale, and it never edits a file another tool is still changing.
 
+## Step 3c — Review your own fixes
+
+Step 2's review ran before the fixes, so they would otherwise ship unreviewed. When a fix changes
+behaviour (not a rename, format or comment) — say, moving a static import behind a lazy boundary to meet
+a size budget — run one correctness pass (`/code-review`) over just the fix commits' diff before pushing,
+and fix what it finds.
+
 ## Step 4 — Commit and push
 
 - PR with several commits that are reviewed one by one: `git commit --fixup=<owning commit>`, then
@@ -80,6 +90,11 @@ wrong. When a fix touches what the Proof of Work demonstrates, rerun that proof 
 
 Run `gh pr checks <n> --watch`. On red, follow the `steward` skill: root-cause, fix, push, watch again.
 
+When the repo has a size or performance budget check, report the measured value and the headroom.
+Local and CI builds can measure differently; use the gap the repo documents, if any. When the headroom is
+under that gap, flag it and say the CI build may measure more — never report "under the limit" from a
+local build alone.
+
 ## Step 6 — Bot comments
 
 After the last push, trigger Qodo and wait for it as `steward` describes (`/agentic_review`, then its
@@ -92,5 +107,5 @@ review comment naming the new head SHA) before deciding there is nothing new. Th
 
 ## Report
 
-Per tool, the rules audit included, what was fixed and what was skipped and why; the CI result on the head SHA; the state of
+Per tool, the rules audit and the fix review included, what was fixed and what was skipped and why; the CI result on the head SHA; the state of
 each bot thread.
