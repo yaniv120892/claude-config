@@ -6,12 +6,13 @@ Use this for Next.js, React, app router, pages router, client/server component, 
 
 - Rendering stability: hydration mismatches, flicker, layout shift, unstable keys, browser-only logic during server render.
 - Component boundaries: unnecessary `"use client"`, server/client prop serialization, duplicated fetching, avoid shipping server-only code to the client.
-- Performance: bundle growth, expensive render paths, unnecessary re-renders, memoization only when justified, image/font loading, route-level caching.
+- Performance: bundle growth, expensive render paths, unnecessary re-renders, memoization only when justified, image/font loading, route-level caching. A lazy chunk fetched on mount for every visitor belongs on first interaction instead.
+- Browser support: syntax the browserslist targets cannot parse (regex lookbehind before Safari 16.4) breaks the whole chunk there — feature-detect and skip.
 - Data fetching: cache mode, revalidation, request deduplication, loading/error/empty states, stale data behavior.
 - Accessibility: semantic elements, labels, keyboard access, focus management, color contrast, live regions when state changes.
 - State management: avoid derived-state drift, global state for local concerns, race conditions in effects, cleanup for subscriptions/timers.
 - User experience: no visible flicker between auth/loading/data states; avoid layout jumps and controls moving under interaction.
-- Tests: component behavior, data-state transitions, accessibility-sensitive flows, regression tests for flicker-prone logic where practical.
+- Tests: component behavior, data-state transitions, accessibility-sensitive flows, regression tests for flicker-prone logic where practical. A test that re-implements the component's flow instead of rendering the real component stays green after the real flow changes — flag it.
 
 ## Review Prompts
 

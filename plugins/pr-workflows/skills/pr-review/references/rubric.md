@@ -84,6 +84,8 @@ stack you actually found; skip the rest rather than padding the report.
 - **Assertion helpers over inline throw-guards.** `assertExists(x)` over a raw `if (!x) { throw }` — it encapsulates the check and narrows the type.
 - **Error handling**: user-facing errors surfaced with actionable messages, not swallowed.
 - **Security**: no secrets in code or client bundles, input validated at the boundary, no injection via string-built queries or commands.
+- **Sibling branches fail alike.** When one failure mode out of several is handled differently, ask why. A new path that stands in for an existing equivalent keeps that path's side effects — an accepted edit keeps the history a plain update writes.
+- **Resolved threads count.** Read resolved review threads too; if the diff now does what the author argued against there and no commit message says why, ask.
 
 ### Stack specifics
 
@@ -92,10 +94,11 @@ The per-stack checklists live in the reference files the dispatch prompt named �
 `express-backend-review.md`. Apply the one matching the diff; this rubric does
 not restate them.
 
-Two that those files do not carry, and that this review owns:
+Three that those files do not carry, and that this review owns:
 
 - **Shared resolver / mapper / formatter edits.** A PR scoped to one provider can silently re-map every other caller through a function they share. Establish the full caller set before accepting the change, and name that set in the finding.
 - **Renamed identifiers crossing a process boundary** — event names and enum strings, alongside the metric-label case the backend file covers. Nothing fails to compile; the downstream consumer just stops matching after deploy.
+- **Code ported from another module or repo.** Diff its constants, timeouts and parsing against the original and flag drift (10s vs 30s, numbers vs digit strings); ask whether the copy should be one shared helper.
 
 ### New request or endpoint (do this explicitly)
 
@@ -108,11 +111,20 @@ answer both before reviewing how it is built:
 A feature split across client, proxy and server PRs hides both: read the other
 sides of the call, not just this PR's.
 
+### Description claims and deploy preconditions
+
+- **"No behaviour change"** holds only if a test feeds an input the moved config actually decides; a refactor proven on inputs where old and new agree proves nothing.
+- **Code that starts reading data not yet saved** — config moved from code into a DB or store — needs the deploy order (write the data, then ship the reader) stated in the description. Missing, it is **HIGH**.
+
 ### Test gap (do this explicitly)
 
 Does a test exercise the behaviour this diff *changes*, or only assert what was
 already true? A change that could be reverted with every test still green is a
 **HIGH** finding.
+
+When the PR adds another instance of an existing pattern — a settings section,
+a route, a tenant — diff its tests against the sibling's and flag each case the
+new one lacks, read-side and access cases first.
 
 ### CI & container hygiene
 
