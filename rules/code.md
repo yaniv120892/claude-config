@@ -111,6 +111,16 @@ typo'd protocol token; a pasted copy compiles clean and fails at runtime
 **Public-First Method Ordering** — top-down readability
 > Pattern: Public/exported members at the top, private helpers at the bottom.
 
+**Lift Helpers to Module Level; Pass What They Need** — a function nested in another reads the
+outer scope silently, so its signature hides its inputs, it can't be tested alone, and it pads the
+body it sits in
+> Pattern: A helper is a top-level private function that takes its inputs as arguments
+> (`actionOf({ finding, policy, customRules })`), placed below the public function that calls it.
+> Avoid: `function actionOf(finding) { … policy … customRules … }` declared inside `applyPiiPolicy`.
+> Keep it nested when the closure is the point: a factory returning a function (named, per the
+> TypeScript rule), a React handler or hook callback that reads component state and props, or a
+> helper that writes the outer function's local state.
+
 **Prefer async/await Over Promise Chains** — linear control flow
 > Pattern: `async`/`await` with `try`/`catch`, including fire-and-forget background work — still
 > an `async` function with internal `try`/`catch`, invoked as `void doWork();`.
