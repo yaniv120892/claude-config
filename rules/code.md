@@ -110,6 +110,9 @@ typo'd protocol token; a pasted copy compiles clean and fails at runtime
 
 **Public-First Method Ordering** — top-down readability
 > Pattern: Public/exported members at the top, private helpers at the bottom.
+> A private method already sitting above the public API is not an established style that
+> overrides this: when a diff adds or edits a private method in that class, move the private
+> methods below the public ones.
 
 **Lift Helpers to Module Level; Pass What They Need** — a function nested in another reads the
 outer scope silently, so its signature hides its inputs, it can't be tested alone, and it pads the
@@ -156,7 +159,16 @@ service bodies
 > Pattern: Once an operation needs 2+ independent pre-flight checks (existence, lifecycle,
 > uniqueness, ownership), extract them into a validator with one public method per guarded
 > operation, throwing typed domain errors. It depends on the data-access layer, never the raw
-> ORM. A single guard can stay inline.
+> ORM. A single guard becomes a private `assert*` method instead (next rule).
+
+**Extract a Throwing Guard Into a Private `assert*` Method** — an inline `if (!x) { throw … }`
+makes the reader parse a precondition in the middle of the flow it guards
+> Pattern: Move the guard into a private method on the same class named for what it checks, typed
+> as an assertion so the caller's value still narrows:
+> `private assertRefreshSecretNameSet(name: string | undefined): asserts name is string`, called as
+> `this.assertRefreshSecretNameSet(secretName);`. It sits with the other private methods, at the bottom.
+> Avoid: An inline throw block in a method that does something else; a bare `requireX()` that
+> returns the value, which hides that the call can throw.
 
 **A Shared Helper Asserts Its Precondition Instead of Quietly Honouring It** — when a constraint
 is encoded both as a loud boundary guard and a defensive compare inside a reusable helper, the
