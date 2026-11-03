@@ -126,6 +126,21 @@ When the PR adds another instance of an existing pattern — a settings section,
 a route, a tenant — diff its tests against the sibling's and flag each case the
 new one lacks, read-side and access cases first.
 
+### Stored data that never expires (do this explicitly)
+
+For every Redis write the diff adds or changes (`set`, `hset`, `sadd`, `zadd`, `lpush`/`rpush`, `xadd`, `incr`, or the repo's wrapper around them), answer both:
+
+- **Does the key expire?** Look for `EX`/`PX`/`EXAT`, `setex`, or an `expire`/`pexpire` on the same key in the same code path. A write with neither is **MEDIUM**; **HIGH** when the key is per user, per conversation, per request or per run, because it grows with traffic and nobody cleans it up.
+- **If it is a set, sorted set, list or stream, is it bounded?** Expiry covers only the whole key. A collection that gains a member on every call needs a trim (`LTRIM`, `ZREMRANGEBYRANK`, `ZREMRANGEBYSCORE`, `XTRIM`) or a cap, or it grows for as long as it is written to.
+
+Three ways a TTL is lost, each a finding on its own:
+
+- A plain `SET` on an existing key clears its TTL unless it passes `KEEPTTL` or a new `EX`.
+- `HSET`, `ZADD` and `SADD` on a key that already exists, written before the TTL logic shipped, never get one. Say so when the diff only sets the TTL on creation, and ask how the old keys get cleaned up.
+- `INCR` followed by a separate `EXPIRE` leaves a key without a TTL when the process dies between the two.
+
+Static config the product edits by hand (per-tenant settings) is not a finding. A key meant to live forever, such as an idempotency or claim record, is acceptable only when the diff comments why it must not expire and the PR description names how it is cleaned up. Without both, ask for them. When the diff changes the key's name or prefix, the old keys keep living: ask whether they are deleted.
+
 ### CI & container hygiene
 
 Review the pipeline config and `Dockerfile`, not just app code — a green
