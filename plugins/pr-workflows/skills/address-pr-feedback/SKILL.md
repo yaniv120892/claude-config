@@ -24,7 +24,7 @@ instead of a PR number/URL, read the thread first: `channel_id` is the path segm
 `message_ts` is the digits after `p` with a decimal point inserted 6 digits from the end (`p1234567890123456`
 → `1234567890.123456`). Call `slack_read_thread` with those two values, then find the PR link in the
 parent message or replies. Resolve the number from that link as in Step 1. Remember the request came
-from Slack — it gates the extra question in Step 8.
+from Slack — Step 8 then acks in that thread.
 
 ## Step 1 — Get the PR number
 
@@ -194,23 +194,27 @@ and a note on what it implies for other cases.
 | empty list → trailing colon      | `formatting.ts:22`     | valid     | guard + spec, fixed in `b822af3`                  |
 | `inputSchema: {}` underspecified | `referenceTools.ts:22` | push back | it's a Zod raw shape, not JSON Schema — no change |
 
-## Step 8 — Offer to acknowledge in the Slack thread
+## Step 8 — Tell the reviewer it is handled
 
-Only relevant if Step 0 resolved the PR from a Slack link — skip entirely when the PR was given
-directly. Ask the user whether to reply to that Slack thread with the literal text `replied`, as a
-lightweight ack that the feedback was handled. Only post if they confirm; use `slack_send_message`
-with `thread_ts` set to the parent message's timestamp. Do not post unprompted.
+Once the round is done, tell the reviewer on Slack without asking the user first. "Done" means all
+of these hold on a fresh fetch of the PR:
 
-**Verify before the ack, even when the user pre-approved it.** `replied` tells the reviewer every
-item is answered on GitHub, so it is false if one is not. Re-fetch the PR just before sending, and
-send only when all of these hold:
-
+- each item a reply calls fixed is in a pushed commit (the PR head contains its SHA)
 - every inline thread, every review body, and every general reviewer comment has a reply of yours
   posted after it, on GitHub, where the reviewer looks for it
-- each item a reply calls fixed is in a pushed commit (the PR head contains its SHA)
+- Qodo (or the repo's review bot) has reviewed the final head, and each of its findings is fixed or
+  answered
+- CI on the final head is green
 - the PR description still matches the change, since a reviewer reads it as part of the review
 
-If any check fails, fix that first, then send.
+The message is the literal text `replied` plus the PR link. `replied` tells the reviewer every item
+is answered, so it is false if one is not: when a check fails, fix that first, then send.
+
+- **Request came from a Slack thread (Step 0):** post `replied` in that thread with
+  `slack_send_message`, `thread_ts` set to the parent message's timestamp.
+- **Otherwise:** use the `ask-pr-review-slack` skill when it is installed — it finds the existing
+  review-request thread with that reviewer and re-requests their review on GitHub. Without it, say
+  in the report that the reviewer was not notified.
 
 ## Gate outward-facing actions
 
@@ -219,7 +223,7 @@ If any check fails, fix that first, then send.
 - **Confirm the target branch is the PR's source branch before pushing**; never force-push.
 - Posting replies publishes to the reviewer — honor the Step 6 method choice; don't post when the
   user asked for draft-only.
-- Posting to Slack (Step 8) is also outward-facing — always ask before sending, never assume.
+- The Step 8 Slack ack is pre-approved, but only once every Step 8 check holds on a fresh fetch.
 
 ## Common Mistakes
 
@@ -235,8 +239,8 @@ If any check fails, fix that first, then send.
 | Treating a release-bot note as feedback                                     | Ignore non-actionable general notes; act on reviewer comments                           |
 | Silently fixing a generic/recurring pattern with no follow-up               | Ask the codify-rule question (Step 4a) before push — don't bury it in the Step 7 report |
 | Asking to codify something already in `CLAUDE.md`/`.claude/rules/`          | Grep first (Step 4a) — only ask about genuinely new preferences                         |
-| Forgetting to offer the Slack ack when the request came in via a Slack link | Track Slack origin from Step 0 and ask in Step 8 before wrapping up                     |
+| Asking the user whether to tell the reviewer                                | Step 8 is pre-approved: send once its checks hold                                       |
 | Missing a question asked in a review body                                   | Read `reviews` as well as threads and comments (Step 2); answer with an @-mention       |
-| Sending `replied` on Slack before every item is answered on GitHub          | Re-fetch the PR and run the Step 8 checks first, even when the user pre-approved it     |
+| Sending `replied` on Slack before every item is answered on GitHub          | Re-fetch the PR and run the Step 8 checks first, Qodo and CI included                   |
 | Leaving the PR description describing the pre-fix change                    | Re-read it against the pushed diff and update it before replying (Step 5a)              |
 | Fixing comments on a branch that is behind its base                         | Merge `origin/<base>` in first and push (Step 1b) — never rebase and force-push         |
