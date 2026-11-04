@@ -2,13 +2,14 @@
 name: pr-review
 argument-hint: <PR numbers or URLs, or a Slack thread link> (one or more, required)
 allowed-tools: Bash(gh:*), Bash(git:*), Bash(python3:*), Read, Grep, Glob, Agent, Skill, ToolSearch, mcp__notion__notion-search, mcp__notion__notion-fetch, mcp__claude_ai_Slack__slack_read_thread, mcp__claude_ai_Slack__slack_add_reaction, mcp__claude_ai_Slack__slack_send_message
-description: Use when reviewing one or more pull requests named by number or URL — or by a Slack thread link that lists them — or when asked whether a PR is safe to merge. Fans out a code-review, a built-in /code-review, an observability and a reuse-and-alignment subagent per PR in parallel, plus an instruction-file subagent when a PR touches CLAUDE.md, rules, skills, agents or commands, merges every finding into a single severity-sorted report that opens with what each PR does and how it serves its ticket, with a documentation-drift check, and posts inline comments after one approval. Requires explicit PR targets — it never reviews the current branch. For re-checking comments an author says they already fixed, use pr-second-review instead.
+description: Use when reviewing one or more pull requests named by number or URL — or by a Slack thread link that lists them — or when asked whether a PR is safe to merge. Fans out a code-review, a built-in /code-review, an observability and a reuse-and-alignment subagent per PR in parallel, plus an instruction-file subagent when a PR touches CLAUDE.md, rules, skills, agents or commands and a UI-render subagent when it touches rendered UI, merges every finding into a single severity-sorted report that opens with what each PR does and how it serves its ticket, with a documentation-drift check, and posts inline comments after one approval. Requires explicit PR targets — it never reviews the current branch. For re-checking comments an author says they already fixed, use pr-second-review instead.
 ---
 
 # Pull Request Review
 
 Reviews a batch of pull requests. Four subagents per PR, all in parallel, and a
-fifth when the PR touches agent-facing markdown. Every PR gets a code review, a
+fifth when the PR touches agent-facing markdown, and one more when it touches
+rendered UI. Every PR gets a code review, a
 second pass from the built-in `/code-review` skill, a documentation-drift check,
 an observability check, and a reuse-and-alignment check. Findings merge into one
 report, you approve once, everything posts.
@@ -171,6 +172,28 @@ Agent({
 })
 ```
 
+When a changed path ends in `.tsx`, `.jsx`, `.vue`, `.svelte`, `.css`, or
+`.scss`, dispatch a UI-render agent for that PR in the same message. jsdom tests
+have no layout engine, so a clipped or overflowing screen passes every test and
+review that only reads the diff.
+
+```
+Agent({
+  description: "UI render PR <n>",
+  model: "sonnet",
+  subagent_type: "general-purpose",
+  prompt: "Check the rendered UI of pull request <owner/repo>#<n>.
+
+    Head SHA: <sha>  — already resolved, do not re-fetch it.
+    Changed files: <paths>
+    Local clone: <absolute path of the repo's local clone, if present>
+
+    Read <PLUGIN_ROOT>/skills/pr-review/references/ui-render.md and follow it
+    exactly. Fetch the diff ONCE. Do not delegate further. Do not post
+    anything. Return only the section its Output specifies."
+})
+```
+
 Resolve the head SHA and changed-file list yourself before dispatching and fill
 them into the prompt's two slots — it saves each agent a call and makes a stall
 easier to retry:
@@ -228,6 +251,9 @@ agent's comment text. Then:
 - **Reuse & alignment** — a separate table: what the diff duplicates (with
   the existing `path:line` to use instead), logic to generalize, and where it
   diverges from its sibling flows. Then each PR's line naming the flows compared.
+- **UI render** — a separate table, only for PRs that got the UI-render
+  agent: clipped or overflowing elements with their measured sizes, then each
+  PR's line naming the widths and locales rendered — or what blocked rendering.
 - **Observability** — a separate table: missing logs, events to add, and
   existing events or log lines whose consumers (alerts, insights) the diff
   breaks. Then each PR's line naming which consumers were checked.
@@ -246,8 +272,8 @@ Wait. Nothing posts before an explicit yes.
 
 ## Step 5 — Post
 
-On yes, post every finding pinned to its file and line — observability, reuse and
-instruction-file findings included — by calling the script directly. The `post-pr-inline-comments` skill
+On yes, post every finding pinned to its file and line — observability, reuse,
+UI-render and instruction-file findings included — by calling the script directly. The `post-pr-inline-comments` skill
 is `disable-model-invocation`, so the `Skill` tool refuses it.
 
 ```bash
