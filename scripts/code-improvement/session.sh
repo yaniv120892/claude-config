@@ -39,10 +39,6 @@ notify() {
 }
 
 # macOS ships no `timeout`; an alarm set before exec survives into the child and kills it.
-with_timeout() {
-  perl -e 'alarm shift; exec @ARGV' "$@"
-}
-
 run_repo() {
   local repo="$1" name="$2" gate_flags="$3" gate_verdict result_file
   # Unquoted on purpose: each gate flag is its own word.

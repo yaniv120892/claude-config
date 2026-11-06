@@ -9,6 +9,8 @@ set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/lib.sh"
 SESSION="${CODE_IMPROVEMENT_SESSION:-$SCRIPT_DIR/session.sh}"
+REFRESH="${CODE_IMPROVEMENT_REFRESH:-$SCRIPT_DIR/refresh-config.sh}"
+REFRESH_TIMEOUT_SECONDS=900
 POLL_SECONDS="${CODE_IMPROVEMENT_POLL_SECONDS:-60}"
 MAX_POLLS="${CODE_IMPROVEMENT_MAX_POLLS:-0}"
 
@@ -32,6 +34,11 @@ while polls_remain; do
   polls=$((polls + 1))
   if run_is_due; then
     today > "$CODE_IMPROVEMENT_LAST_RUN_FILE"
+    with_timeout "$REFRESH_TIMEOUT_SECONDS" bash "$REFRESH" >> "$CODE_IMPROVEMENT_LOG_DIR/refresh.log" 2>&1
+    refresh_status=$?
+    if [ "$refresh_status" -ne 0 ]; then
+      notify_macos "Code improvement" "Config refresh exited $refresh_status; see $CODE_IMPROVEMENT_LOG_DIR/refresh.log"
+    fi
     bash "$SESSION"
     session_status=$?
     echo "$(date '+%F %T') session.sh exited $session_status" >> "$CODE_IMPROVEMENT_LOG_DIR/loop.log"

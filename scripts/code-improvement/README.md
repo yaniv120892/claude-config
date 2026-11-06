@@ -15,6 +15,9 @@ started. After a cmux restart or a reboot the watchdog alerts; start the loop ag
 `bash start.sh` from a cmux terminal. A day missed while the loop was down runs as soon as
 it is back.
 
+- Before each run the loop pulls this checkout and updates every installed plugin
+  (`refresh-config.sh`), because `claude -p` runs skip marketplace auto-update. A failed refresh
+  alerts and the run goes ahead; `refresh.log` holds the reason.
 - Set up a machine, or pick up a change to the watchdog: `./install.sh` from the main checkout
   (the plist points at the path you run it from), then `bash start.sh` from a cmux terminal.
 - Change the run time: `CODE_IMPROVEMENT_RUN_AT` in `lib.sh` — the loop's tab does not inherit

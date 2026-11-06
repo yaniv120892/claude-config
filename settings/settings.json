@@ -56,7 +56,8 @@
       "source": {
         "source": "github",
         "repo": "yaniv120892/claude-config"
-      }
+      },
+      "autoUpdate": true
     }
   },
   "enabledPlugins": {

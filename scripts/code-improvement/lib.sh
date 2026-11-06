@@ -11,6 +11,10 @@ CODE_IMPROVEMENT_CMUX="$(command -v cmux || echo /Applications/cmux.app/Contents
 
 mkdir -p "$CODE_IMPROVEMENT_LOG_DIR"
 
+with_timeout() {
+  perl -e 'alarm shift; exec @ARGV' "$@"
+}
+
 # CODE_IMPROVEMENT_NOW (HH:MM) and CODE_IMPROVEMENT_TODAY (YYYY-MM-DD) pin the clock in tests.
 today() {
   echo "${CODE_IMPROVEMENT_TODAY:-$(date +%F)}"
