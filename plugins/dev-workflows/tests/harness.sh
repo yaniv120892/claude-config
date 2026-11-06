@@ -6,7 +6,7 @@
 # location rather than assuming a checkout path.
 
 TESTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-HOOK="$TESTS_DIR/../hooks/${HOOK_NAME:-pre-push-quality-gate.sh}"
+HOOK="$TESTS_DIR/../hooks/${HOOK_NAME:-require-worktree.sh}"
 
 if [ ! -x "$HOOK" ]; then
   echo "hook not found or not executable: $HOOK" >&2
