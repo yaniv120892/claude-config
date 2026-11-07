@@ -10,9 +10,7 @@ You don't remember every skill, so ask. A **flow** is a path through the skills;
 
 ## The main flow: idea → shipped
 
-**`/ship`** delivers a feature or bug end to end with human gates; its subcommands live in its own usage block. Prefer it whenever you want the work delivered with minimal steering.
-
-To steer step by step instead, chain the pieces yourself:
+Chain the pieces:
 
 1. **`brainstorming`** — before any code.
 2. **`writing-plans`** — turns the brainstormed design into a plan.
@@ -33,7 +31,7 @@ Across repos: **`pr-feedback-harvest`**, **`dependency-bump`**.
 
 ## Standalone
 
-**`using-git-worktrees`**, **`run-service-in-docker`**, **`http-file-generator`**, **`recurring-maintenance`**, **`code-improvement`**, **`syncing-claude-config`**, **`open-with-cursor`**, **`wizard`**, **`research`**, **`retro`**, **`wait-what`**, **`domain-modeling`**.
+**`using-git-worktrees`**, **`run-service-in-docker`**, **`http-file-generator`**, **`recurring-maintenance`**, **`syncing-claude-config`**, **`open-with-cursor`**, **`wizard`**, **`research`**, **`retro`**, **`wait-what`**, **`domain-modeling`**.
 
 ## Trackers and infra
 
