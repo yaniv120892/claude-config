@@ -79,10 +79,21 @@ every committed test still passes
 > Avoid: Inventing an issue key for a project with no tracker, or blocking a commit
 > on a ticket that does not exist.
 
+**PR Title Is `<KEY> - <repo> - <description>`** — the squash commit takes the PR title, and the
+team's merged PRs read this way
+> Pattern: `RDBAZ-1526 - dal - back office shows business contacts and images that a tool
+> returned`. The key is the project's issue key, the repo is the short name of the repo the PR
+> lands in (`dal`, `mastra`, `gw-api`, `frontend`), and the description says what changed. A
+> project with no tracker drops the key: `<repo> - <description>`. Commits on the branch stay
+> Conventional Commits.
+> Avoid: `fix(RDBAZ-1526): …` as a PR title.
+> Exception: a repo whose release pipeline reads the type from the squash title keeps the
+> conventional title; check the repo's workflows before assuming.
+
 **Always Squash on Merge** — one PR is one commit on the base branch, so history reads
 as a list of shipped changes rather than a transcript of how each one was arrived at
 > Pattern: Squash-merge every PR you own, deleting the branch. The squash message
-> defaults to the PR title, so write that title as a conventional commit — it, not any
+> defaults to the PR title, so write that title in the PR title format above — it, not any
 > commit on the branch, becomes the permanent history.
 > Avoid: Merge commits or rebase-merges, which replay a branch's working history onto
 > the base branch. Clicking a repo's default merge button without checking which
