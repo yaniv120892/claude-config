@@ -93,7 +93,7 @@ and fix what it finds.
   `GIT_SEQUENCE_EDITOR=true git rebase -i --autosquash origin/<base>`, then `git push --force-with-lease`.
 - Otherwise: a new commit.
 
-Messages are Conventional Commits and follow the repo's attribution rules.
+Commit messages are Conventional Commits and follow the repo's attribution rules. The PR title follows the title format in `creating-prs`.
 
 After the push, align the PR description with the fixes as `/pr-workflows:address-pr-feedback` Step 5a
 describes: re-read it against the full diff at the pushed head and change every line the fixes made

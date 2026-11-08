@@ -1,16 +1,16 @@
 ---
 name: creating-prs
 disable-model-invocation: true
-description: Use when creating a pull request for a feature, bugfix, or docs change — enforces the quality gate, conventional-commit title format, description structure, and separation of environment-specific changes.
+description: Use when creating a pull request for a feature, bugfix, or docs change — enforces the quality gate, the `<KEY> - <repo> - <description>` title format, description structure, and separation of environment-specific changes.
 ---
 
 # Creating Pull Requests
 
 ## Overview
 
-A pull request's title and description are not cosmetic — conventional-commit
-titles drive release automation and changelog generation, and the description is
-the only context reviewers and future readers get.
+A pull request's title and description are not cosmetic — the title becomes the
+squash commit on the base branch, and the description is the only context
+reviewers and future readers get.
 
 **Core principle:** get the gate right before opening anything. A pull request
 opened on a dirty tree, a stale branch, or a failing build costs more to unwind
@@ -60,26 +60,22 @@ one, and do not block on a ticket in a project that does not use tickets.**
 
 ## Title Format
 
-Follow the Conventional Commits rule in your global `CLAUDE.md`. The scope is the
-issue key where the project uses one, and is omitted where it does not.
+`<KEY> - <repo> - <description>`: the issue key where the project uses one, the short
+name of the repo the PR lands in (`dal`, `mastra`, `gw-api`, `frontend`), and what
+changed. Without a tracker, drop the key: `<repo> - <description>`.
 
-**With a tracker:** `^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)\([A-Z]+-[0-9]+\)!?: .+$`
-
-**Without a tracker:** `^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\([a-z0-9-]+\))?!?: .+$`
+**Pattern:** `^[A-Z]+-[0-9]+ - [a-z0-9-]+ - .+$` (without a tracker: `^[a-z0-9-]+ - .+$`)
 
 **Examples:**
 
-- ✅ `feat(ABC-20): Add retry policy to the ingest worker`
-- ✅ `fix(ABC-456): Resolve race condition in the model cache`
-- ✅ `feat(ABC-315)!: Breaking API change for agent routing`
-- ✅ `feat(subscriptions): Let users edit a detected subscription` (no tracker)
-- ✅ `fix: Stop the importer retrying a permanently failed row` (no tracker)
-- ❌ `ABC-20: Add feature` (missing type)
-- ❌ `feat(abc-20): Add feature` (lowercase key)
-- ❌ `feat(ABC-20) Add feature` (missing colon)
+- ✅ `RDBAZ-1526 - dal - back office shows business contacts and images that a tool returned`
+- ✅ `RDBAZ-1523 - dal - faster conversation opening: detect personal data once per distinct text`
+- ✅ `subscriptions - let users edit a detected subscription` (no tracker)
+- ❌ `fix(RDBAZ-1526): …` (conventional-commit style; commits on the branch keep it, the title does not)
+- ❌ `RDBAZ-1526: …` (missing repo)
 
-Where `feat`/`fix` trigger a release pipeline and `chore`/`refactor`/`docs` do
-not, prefer `fix` for a shippable change that would otherwise read as `chore`.
+A repo whose release pipeline reads the type from the squash title keeps the
+conventional title: check its workflows first.
 
 ## Description Structure
 
@@ -157,7 +153,7 @@ confirmation.
 
 | Mistake | Fix |
 |---------|-----|
-| Title missing the conventional-commit type | Follow the pattern exactly — the title drives automation |
+| Title in conventional-commit style, or missing the repo | Follow the `<KEY> - <repo> - <description>` pattern; the title is the squash commit |
 | Combining dev+prod in one pull request | Separate branches, separate requests |
 | Generic description ("Added changes") | Be specific about what changed and why |
 | Lowercase issue key `(abc-20)` | Uppercase: `(ABC-20)` |
