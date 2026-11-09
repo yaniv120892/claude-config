@@ -11,7 +11,7 @@ employer, forge, or issue tracker — and **no secrets are tracked**.
 
 | Half | Ships as | Why |
 | --- | --- | --- |
-| Skills, commands, hooks, mods | **Plugins** (6) | Plugins are the supported mechanism: versioned, per-profile toggles, `/plugin update`, namespaced, and installing one never touches your existing skills |
+| Skills, commands, hooks, mods | **Plugins** (7) | Plugins are the supported mechanism: versioned, per-profile toggles, `/plugin update`, namespaced, and installing one never touches your existing skills |
 | Global rules, settings, keybindings | **Symlinks** via `install.sh` | Plugins cannot provide always-loaded `CLAUDE.md` instructions, `paths:`-scoped `rules/*.md`, or `settings.json` |
 
 ## Install on a new machine
@@ -32,6 +32,7 @@ claude
 /plugin install issue-tracker@yaniv-claude-config
 /plugin install infra-workflows@yaniv-claude-config
 /plugin install mods@yaniv-claude-config
+/plugin install cockpit@yaniv-claude-config
 /plugin install cmux@yaniv-claude-config
 ```
 
@@ -78,6 +79,7 @@ enforce, but nothing on Codex enforces them.
 | `issue-tracker` | 3 | Jira ticket creation and status transitions, with a cached per-project transition map. Also files Linear issues against a fixed Why/Repro/Fix/Done-when/Signals template |
 | `infra-workflows` | 2 | Helm env vars across GitOps registries, and AWS SSM SecureString provisioning with an account guard. Ships `provision_ssm.sh` |
 | `mods` | 0 | Function-hook mods for the harness itself: the default-branch guard, the status band, `/pr`, the secret guard, the reply-style rule and `/skill-tally` — see *Mods* below |
+| `cockpit` | 0 | A `/cockpit` pane for the work around the code: the Slack PR inbox, your PRs and Linear tickets, deploy alerts, skill buttons and usage — see *Cockpit* below |
 | `cmux` | 5 | cmux terminal multiplexer control: topology, workspaces, browser surface, notifications |
 
 Plugins that touch an employer's systems read their site-specific values — accounts,
@@ -124,10 +126,46 @@ calls on its own events. Each mod has a switch in `/config`, and all start on.
 | `/skill-tally` | Counts each skill that loads, across sessions, and lists the plugin skills that never did: the live half of what the trigger evals predict | — |
 | Time awareness | Context the model reads and the person never sees: each prompt carries the local time (`Wed 2026-10-21 14:03 UTC+3`), and, when the session sat idle 30 minutes or more, how long, with a nudge to re-check state that may have moved (PRs, branches, deploys). Last activity is stored per session id, so a `claude --resume` days later counts. A tool call that ran 10 seconds or more is followed by `Bash took 47s to run.`, from the tool's own run time, permission prompts excluded | — |
 
+### Cockpit
+
+`cockpit` is a second plugin of function hooks. `/cockpit` opens one pane with
+five tabs, each on a digit key:
+
+| Tab | What it shows |
+| --- | --- |
+| Inbox | Every Slack message someone else sent you that links a GitHub PR: who, where, and **Claude**, **Codex** and **Dismiss** buttons. Claude runs `/pr-workflows:pr-review <url>`, Codex runs `/pr-workflows:codex-pr-review <url>`. A new one raises a toast and a native notification once, and opens the pane (`openOnMessage`) |
+| PRs | Your in-progress Linear tickets, then every open PR you authored in any repository and the ones merged in the last week: failing, pending and passing checks, review threads waiting on you and ones you answered, conflicts, the ticket its title or branch names, and `in prod 12m` once the merge commit's GitHub deployment to production succeeded. `▸` expands a PR to its failing checks and threads, each a link, with **Address feedback**, **Fix CI** and **Polish**; `✕` dismisses it on every session |
+| Alerts | Each message of the monitoring channels (`alertChannels`). One that arrives within `alertWindowMinutes` of a PR of yours reaching production is compared to that PR's title and files by a small model call and marked likely related, unclear or unlikely, with the reason; the first two notify you and offer **Investigate** |
+| Skills | A button for each prompt in `pinnedSkills`, then the skills that load most |
+| Usage | The 5-hour and weekly limits with their reset, the context window, the session's cost, and seven days of cost and limit peaks |
+
+GitHub is read through `gh` and Linear through the claude.ai Linear connector,
+so neither needs a token here. Slack does.
+
+**Connecting Slack.** The mod listens through a Slack app in Socket Mode, on a
+user token, so it sees what you see. A mod cannot hold a WebSocket, so
+`plugins/cockpit/sidecar/slack-socket.mjs` (Node 22, no dependencies) holds it
+and prints what matters to the mod. Each session starts one; a lock file
+(`~/.claude/cockpit-slack.lock`) lets exactly one connect, since Slack hands
+each event to a single connection, and another takes over when it exits. All
+sessions share the inbox, the alerts and the dismissals.
+
+1. <https://api.slack.com/apps> → *Create New App* → *From a manifest* → paste
+   `plugins/cockpit/slack-app-manifest.yaml`.
+2. *Basic Information* → *App-Level Tokens* → generate one with
+   `connections:write`. That is the `xapp-` token.
+3. *Install App* → install to the workspace. The *User OAuth Token* is the
+   `xoxp-` token.
+4. `/config` → cockpit → paste both, and name the alert channels.
+
+The Inbox tab's last line says where the connection stands.
+
 The function-hook API is early access, so CI checks the mods on a pinned Claude
 Code version (`.github/workflows/ci.yml`): `claude plugin validate`,
 `claude plugin test` and `tsc`. Develop one with
-`claude --plugin-dir plugins/mods`, which reloads the module on each save. A
+`claude --plugin-dir plugins/mods`, which reloads the module on each save.
+`cockpit` is checked the same way on the version it was written against, and
+its sidecar with `node --test`. A
 build of Claude Code older than function hooks loads none of this, the
 default-branch guard included.
 

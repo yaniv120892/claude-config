@@ -35,6 +35,12 @@
       "source": "./plugins/mods"
     },
     {
+      "name": "cockpit",
+      "description": "A /cockpit pane: the GitHub PRs people send on Slack with a Claude or Codex review one press away, your open PRs with CI, review threads and production deploys beside your Linear tickets, monitoring alerts compared to the PR that just shipped, skill buttons, and usage with a daily history.",
+      "category": "productivity",
+      "source": "./plugins/cockpit"
+    },
+    {
       "name": "cmux",
       "description": "Control the cmux terminal multiplexer — topology, workspaces, browser surface, notifications.",
       "category": "productivity",
