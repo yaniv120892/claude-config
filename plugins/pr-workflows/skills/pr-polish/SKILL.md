@@ -16,6 +16,12 @@ with the user.
 A PR number or URL. With none, run `gh pr view --json number,url,headRefName`, name the PR it finds,
 and ask one question to confirm. Resolve `owner/repo`, the worktree path, and the head SHA.
 
+A change that spans several repos has one PR per repo: run every step per PR, each from its own
+worktree, and give one report.
+
+**Unattended runs:** as a subagent or scheduled run, there is no user to ask. Take the recommended
+answer wherever a step says to ask, and list each such decision under "Open questions" in the report.
+
 ## Step 1a — Preflight
 
 Before any review agent starts, check what would stall the run later and report each result in one line:
@@ -26,6 +32,16 @@ Before any review agent starts, check what would stall the run later and report 
   name the release that unblocks it and hold the push until it lands, instead of retrying.
 - **Workflow scope:** when the diff touches `.github/workflows/`, `gh auth status` must list the
   `workflow` scope; otherwise hand the user `gh auth refresh -s workflow`.
+
+- **Bot reviewer:** read the comments on the repo's five most recent PRs. When no review bot (Qodo)
+  has commented on any of them, the repo has none: record that, and Step 6 skips the trigger and wait.
+- **Gate:** run the repo's quality gate exactly as its CI workflow does, flags included (a shared gate
+  may lint with `--max-warnings 0` where the local script does not). Fix a red gate before Step 2: a
+  review of code that fails its own gate misses the real failure.
+- **Diff size:** classify the diff, since Step 2 scales to it.
+  - *Dependency-only:* manifests and lockfiles, plus call sites a bump forced.
+  - *Small:* under about 50 changed lines outside generated files.
+  - *Full:* everything else.
 
 A blocker here gates the push, not the review: continue to Step 1b.
 
@@ -42,9 +58,21 @@ description names: a base-branch change can rename them. Fix the description bef
 
 ## Step 2 — Review
 
-Launch `/pr-workflows:pr-review` for the PR and `/simplify` for the diff, in one message.
+Scale the review to the Step 1a diff size:
+
+- **Dependency-only:** no review agents. Check the advisory or outdated report before and after, read
+  the changelog of every major bump against the call sites, and rely on the Step 1a gate. Skip Steps
+  3a and 3b.
+- **Small:** `/pr-workflows:pr-review` alone; apply the `/simplify` angles yourself while fixing.
+- **Full:** `/pr-workflows:pr-review` for the PR, then `/simplify` for the diff. A skill loads one per
+  turn, so they run in that order.
+
 `/pr-workflows:pr-review` only reads; `/simplify` edits. Do not also run `/code-review`:
 `/pr-workflows:pr-review` already runs it as one of its subagents.
+
+Run every tool from the PR's worktree and pass the worktree path and `origin/<base>...HEAD` range
+explicitly. Tell review agents to take test results from the Step 1a gate and to leave local state as
+they found it: databases, containers, generated files.
 
 `/pr-workflows:pr-review` ends by offering to post its findings as PR comments. Skip that step: these are
 your own changes, so fix the findings instead of commenting on them.
@@ -55,10 +83,17 @@ Wait for both tools to finish. Dedupe their findings, then fix each real one. Sk
 when it is a false positive or sits outside the diff, and say which in the report. A skipped finding gets
 one line of reasoning, not an argument.
 
+Reviewers overlap and sometimes disagree. A duplicate takes the highest severity given. A factual
+claim two reviewers contradict is settled by reading the source — the package's files, the code —
+before acting on either. When two findings pull in opposite directions, correctness beats
+simplification and the repo's own `CLAUDE.md` beats a global rule. After applying a suggested fix,
+rerun the check the finding was about: a fix that leaves it red is replaced, not shipped.
+
 A finding whose fix would change intended behaviour is the user's call, not a skip: whether the
 behaviour is intended is exactly what the finding questions. Collect every such finding and ask once,
 in one `AskUserQuestion` batch — per finding, the behaviour today, the behaviour after the fix, and your
 recommendation first. Apply the answers, and report each one as fixed or kept by the user's choice.
+Unattended, keep today's behaviour and report the finding as an open question.
 
 ## Step 3a — Rules audit
 
@@ -79,13 +114,19 @@ Fix every violation it reports, applying the same skip criteria as Step 3.
 
 Only after every fix in Steps 3 and 3a is in, run `/prune-comments` on the diff. Running it last means it sees
 the comments the fixes added or made stale, and it never edits a file another tool is still changing.
+With fewer than about ten added comment lines, prune by hand. The repo's documented comment style
+wins over the skill's defaults.
 
 ## Step 3c — Review your own fixes
 
-Step 2's review ran before the fixes, so they would otherwise ship unreviewed. When a fix changes
-behaviour (not a rename, format or comment) — say, moving a static import behind a lazy boundary to meet
-a size budget — run one correctness pass (`/code-review`) over just the fix commits' diff before pushing,
-and fix what it finds.
+Step 2's review ran before the fixes, so they would otherwise ship unreviewed. Whenever a fix
+changes code (not a rename, format or comment), run one correctness pass (`/code-review`) over just
+the fix commits' diff before pushing, and fix what it finds. This pass is not optional: fixes made
+under review pressure carry more defects than the original diff. Give it one extra question: what did
+the replaced mechanism cover that the new one does not?
+
+A revert-and-fail proof removes the guard's logic. A spec that reads the same constant as the code
+still passes when only the constant changes.
 
 ## Step 4 — Commit and push
 
@@ -101,7 +142,9 @@ wrong. When a fix touches what the Proof of Work demonstrates, rerun that proof 
 
 ## Step 5 — CI
 
-Run `gh pr checks <n> --watch`. On red, follow the `steward` skill: root-cause, fix, push, watch again.
+Run `gh pr checks <n> --watch` in the background. On red, follow the `steward` skill: root-cause, fix,
+push, watch again. Green counts only on the pushed head: compare `gh pr view <n> --json headRefOid`
+with the local `HEAD` before reporting it.
 
 When the repo has a size or performance budget check, report the measured value and the headroom.
 Local and CI builds can measure differently; use the gap the repo documents, if any. When the headroom is
@@ -110,8 +153,9 @@ local build alone.
 
 ## Step 6 — Bot comments
 
-After the last push, trigger Qodo and wait for it as `steward` describes (`/agentic_review`, then its
-review comment naming the new head SHA) before deciding there is nothing new. Then:
+After the last push, when Step 1a found a bot reviewer, trigger Qodo and wait for it as `steward`
+describes (`/agentic_review`, then its review comment naming the new head SHA) before deciding there
+is nothing new. Without one, go straight to the threads. Then:
 
 - Unanswered threads: run `/pr-workflows:address-pr-feedback`, which fixes, pushes, and replies in each
   thread. Then run `/prune-comments` on the diff again, since those fixes can add comments; commit and
@@ -121,4 +165,4 @@ review comment naming the new head SHA) before deciding there is nothing new. Th
 ## Report
 
 Per tool, the rules audit and the fix review included, what was fixed and what was skipped and why; the CI result on the head SHA; the state of
-each bot thread.
+each bot thread; open questions from an unattended run.
