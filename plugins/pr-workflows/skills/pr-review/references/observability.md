@@ -9,11 +9,11 @@ logger, which event helper, naming) override anything generic here.
 
 ## Where telemetry lives
 
-| Signal | Emitted by | Consumed by |
-|---|---|---|
-| Logs | the repo's logger → the log backend | log-based alert policies, in the infra repo `~/.claude/work-context.local.md` names |
-| Product / analytics events | PostHog `capture` calls, or the repo's wrapper around them | PostHog insights, dashboards, funnels, cohorts, feature-flag targeting |
-| LLM traces | the agent framework's trace exporter → PostHog `$ai_*` events | PostHog LLM analytics, conversation scoring |
+| Signal                     | Emitted by                                                    | Consumed by                                                                         |
+| -------------------------- | ------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| Logs                       | the repo's logger → the log backend                           | log-based alert policies, in the infra repo `~/.claude/work-context.local.md` names |
+| Product / analytics events | PostHog `capture` calls, or the repo's wrapper around them    | PostHog insights, dashboards, funnels, cohorts, feature-flag targeting              |
+| LLM traces                 | the agent framework's trace exporter → PostHog `$ai_*` events | PostHog LLM analytics, conversation scoring                                         |
 
 ## The three questions
 
@@ -28,6 +28,24 @@ exhaustion, fallback branch, rejected input at a trust boundary):
   id, upstream status — as structured fields, not interpolated into the message?
 - Does it leak a secret, token, or guest PII into the log?
 - Does it bypass the repo's logger (`console.*` in runtime code)?
+
+Then go the other way, from the calls to the catch blocks. A failure path with no
+catch block has no log to review, so the list above never reaches it. For every
+awaited call in new code that can reject (database read or write, HTTP call, queue
+publish), answer: when it rejects, who catches it, what does the caller receive,
+and what telemetry says which input failed? Flag:
+
+- a handler whose only trace of an unexpected failure is the framework's anonymous
+  500, with no thread, tenant or request id to search for;
+- a best-effort or fire-and-forget write whose loss is silent downstream (a missing
+  row, a missing "not saved" marker) and logs nothing about the dropped item;
+- a catch that logs expected client errors (4xx, not-found) at `error`, or one that
+  catches everything and swallows the unexpected.
+
+Read how the repo's neighbouring handlers do it before asking for a change: a
+targeted catch, one catch around the method that rethrows, or a global filter are
+each correct where the repo already uses them. Do not ask for a try/catch the repo's
+convention does not use.
 
 ### 2. New event — does the change need one?
 
@@ -69,11 +87,12 @@ For each one, find the consumers:
 
 Return this section, nothing else:
 
-````markdown
+```markdown
 ### G. Observability — <owner/repo>#<n>
+
 | tag | severity | file:line | comment |
 | G1 | HIGH | src/x.ts:42 | Renames log `upstream timeout` → `gw timeout`; `gateway-monitoring.tf:31` filters on the old text, so the timeout alert goes silent. |
-````
+```
 
 Severity: HIGH breaks an existing alert/dashboard or leaks PII/secrets; MEDIUM
 leaves a new failure path invisible; LOW is missing context on an existing log
