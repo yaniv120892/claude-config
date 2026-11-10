@@ -1,9 +1,9 @@
 // The sidecar's pure parts, kept apart from the socket so `node --test` covers them.
 
 const CHANNEL_ID = /^[CGD][A-Z0-9]{8,}$/
-const IGNORED_SUBTYPES = new Set(['message_changed', 'message_deleted', 'channel_join', 'channel_leave'])
+// A plain message has no subtype; every other subtype is an edit, a deletion or channel housekeeping.
+const MESSAGE_SUBTYPES = new Set([undefined, 'bot_message', 'file_share', 'thread_broadcast'])
 
-/** Splits the alert-channel option into channel ids and names still to resolve. */
 export function parseChannels(option) {
   const entries = String(option ?? '')
     .split(',')
@@ -25,9 +25,11 @@ function blockText(block) {
 
 /**
  * All the text a message shows: a monitoring bot puts the alert in attachments
- * or blocks and leaves `text` empty, and an unfurled link sits in neither.
+ * or blocks, often beside a one-line `text`. A `rich_text` block is the
+ * composer's copy of `text`, so it is read only when there is no text.
  */
 export function flattenMessage(event) {
+  const hasText = typeof event.text === 'string' && event.text.trim() !== ''
   const parts = [
     event.text,
     ...(event.attachments ?? []).flatMap(attachment => [
@@ -39,7 +41,7 @@ export function flattenMessage(event) {
       ...(attachment.fields ?? []).map(field => `${field.title}: ${field.value}`),
       ...(attachment.blocks ?? []).flatMap(blockText),
     ]),
-    ...(event.blocks ?? []).flatMap(blockText),
+    ...(event.blocks ?? []).filter(block => !hasText || block?.type !== 'rich_text').flatMap(blockText),
   ]
   const seen = new Set()
   return parts
@@ -59,17 +61,28 @@ export function permalinkOf(workspaceUrl, channel, ts) {
 }
 
 /**
- * What the mod is told of an event, or null for one it has no use for:
- * every message of an alert channel, and elsewhere a PR link someone else posted.
+ * What the mod is told of an event, or null for one it has no use for. In an
+ * alert channel that is each top-level message someone else posted: a reply in
+ * an alert's thread is discussion, not a new alert. Elsewhere it is a PR link
+ * a person posted: a bot's "PR opened" notice is not a request to review.
  */
 export function relevantMessage({ event, selfUserId, alertChannelIds }) {
-  if (event?.type !== 'message' || IGNORED_SUBTYPES.has(event.subtype)) return null
+  if (event?.type !== 'message' || !MESSAGE_SUBTYPES.has(event.subtype)) return null
   if (typeof event.channel !== 'string' || typeof event.ts !== 'string') return null
+  if (event.user === selfUserId) return null
   const text = flattenMessage(event)
   const isAlertChannel = alertChannelIds.has(event.channel)
-  const isOthersPullRequest = event.user !== selfUserId && mentionsPullRequest(text)
-  if (!isAlertChannel && !isOthersPullRequest) return null
+  const isTopLevel = event.thread_ts === undefined || event.thread_ts === event.ts
+  const isFromPerson = typeof event.user === 'string' && event.bot_id === undefined && event.subtype !== 'bot_message'
+  const isRelevant = isAlertChannel ? isTopLevel : isFromPerson && mentionsPullRequest(text)
+  if (!isRelevant) return null
   return { channel: event.channel, user: event.user ?? null, botName: event.username ?? null, ts: event.ts, text, isAlertChannel }
+}
+
+/** Whether the lock's holder is gone: its file names no process, or one that is not a sidecar (a reused pid). */
+export function isLockStale({ holder, commandOf }) {
+  if (!Number.isInteger(holder) || holder <= 0) return true
+  return !String(commandOf(holder) ?? '').includes('slack-socket')
 }
 
 /** Reconnect waits: 1 s, doubling to 30 s. */

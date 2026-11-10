@@ -9,9 +9,9 @@ type RateLimit = { kind: string; percentUsed: number; resetsAt?: string }
 /** One day's readings: each session's running cost, and the highest each limit stood at. */
 type LedgerDay = { sessions: Record<string, number>; fiveHourPeak: number; weekPeak: number }
 
-export type UsageLedger = Record<string, LedgerDay>
+type UsageLedger = Record<string, LedgerDay>
 
-export type UsageReading = { day: string; sessionId: string; costUsd: number | null; limits: readonly UsageLimit[] }
+type UsageReading = { day: string; sessionId: string; costUsd: number | null; limits: readonly UsageLimit[] }
 
 export function usageLimits(rateLimits: readonly RateLimit[]): UsageLimit[] {
   return rateLimits.map(limit => ({
@@ -21,8 +21,12 @@ export function usageLimits(rateLimits: readonly RateLimit[]): UsageLimit[] {
   }))
 }
 
-export function asLedger(stored: unknown): UsageLedger {
+function asRecord<T>(stored: unknown): Record<string, T> {
   return typeof stored === 'object' && stored !== null && !Array.isArray(stored) ? { ...stored } : {}
+}
+
+export function asLedger(stored: unknown): UsageLedger {
+  return asRecord(stored)
 }
 
 function peak(limits: readonly UsageLimit[], label: string, last: number): number {
@@ -37,13 +41,10 @@ export function recordUsage(ledger: UsageLedger, reading: UsageReading): UsageLe
     fiveHourPeak: peak(reading.limits, LIMIT_LABELS.five_hour ?? '', last.fiveHourPeak),
     weekPeak: peak(reading.limits, LIMIT_LABELS.seven_day ?? '', last.weekPeak),
   }
-  const kept = Object.keys({ ...ledger, [reading.day]: day }).sort().slice(-KEPT_DAYS)
-  const next: UsageLedger = {}
-  for (const key of kept) {
-    const readings = key === reading.day ? day : ledger[key]
-    if (readings !== undefined) next[key] = readings
-  }
-  return next
+  const kept = Object.entries({ ...ledger, [reading.day]: day })
+    .sort(([a], [b]) => a.localeCompare(b))
+    .slice(-KEPT_DAYS)
+  return Object.fromEntries(kept)
 }
 
 /**
@@ -52,10 +53,9 @@ export function recordUsage(ledger: UsageLedger, reading: UsageReading): UsageLe
  */
 export function usageDays(ledger: UsageLedger): UsageDay[] {
   const spentBefore: Record<string, number> = {}
-  return Object.keys(ledger)
-    .sort()
-    .map(day => {
-      const { sessions, fiveHourPeak, weekPeak } = ledger[day] ?? { sessions: {}, fiveHourPeak: 0, weekPeak: 0 }
+  return Object.entries(ledger)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([day, { sessions, fiveHourPeak, weekPeak }]) => {
       let costUsd = 0
       for (const [sessionId, total] of Object.entries(sessions)) {
         costUsd += Math.max(0, total - (spentBefore[sessionId] ?? 0))
@@ -71,12 +71,12 @@ export function bar(percent: number, width: number): string {
 }
 
 export function usageColor(percent: number): 'green' | 'yellow' | 'red' {
-  if (percent >= 90) return 'red'
-  return percent >= 75 ? 'yellow' : 'green'
+  if (percent >= 75) return 'red'
+  return percent >= 50 ? 'yellow' : 'green'
 }
 
 export function asCounts(stored: unknown): Record<string, number> {
-  return typeof stored === 'object' && stored !== null && !Array.isArray(stored) ? { ...stored } : {}
+  return asRecord(stored)
 }
 
 export function parsePinned(option: unknown): string[] {

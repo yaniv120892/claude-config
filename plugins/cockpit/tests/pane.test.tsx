@@ -25,6 +25,7 @@ function fakeWorld(on: On, lines: object[] = []) {
   mock.env(on, { HOME: '/home/me' })
   const prompts: string[] = []
   const toasts: string[] = []
+  const verdicts: string[] = []
   const spawned: { argv: readonly string[]; env?: Record<string, string> }[] = []
   on('session.start', ($, e) => ({ cwd: e.cwd }))
   on('command.register', () => ({ value: { command: 'cockpit' } }))
@@ -64,13 +65,15 @@ function fakeWorld(on: On, lines: object[] = []) {
       ),
     ),
   )
-  on('model.complete', () => ({
+  on('model.complete', ($, e) => {
+    verdicts.push(String(e.prompt))
+    return {
     value: {
       isAnswered: true as const,
       text: '{"prUrl": "https://github.com/acme/app/pull/3", "verdict": "likely", "reason": "It changed charge.ts."}',
       usage: { input_tokens: 1, output_tokens: 1, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 },
     },
-  }))
+  }})
   on('process.spawn', async function* ($, e) {
     spawned.push({ argv: e.argv, env: e.env })
     // Cut mid-line, as a pipe may deliver it.
@@ -79,7 +82,7 @@ function fakeWorld(on: On, lines: object[] = []) {
     yield { stream: 'stdout' as const, text: output.slice(25) }
     return { value: { code: 0, signal: null } }
   })
-  return { clock, prompts, toasts, spawned }
+  return { clock, prompts, toasts, spawned, verdicts }
 }
 
 const PR_MESSAGE = {
@@ -131,6 +134,13 @@ describe('the inbox', () => {
     expect(await pane.find({ key: 'claude-https://github.com/acme/web/pull/77' })).toBeUndefined()
     await pane.unmount()
 
+    // The poll rebuilds the inbox from the store, as another session's does: the mark must be there.
+    await clock.advance(15_000)
+    const later = await $.ui.mount({ ...PANE, surface: 'terminal' })
+    expect(await later.find({ key: 'claude-https://github.com/acme/web/pull/77' })).toBeUndefined()
+    expect(await later.find({ type: 'Text', text: /sent to codex/ })).toBeDefined()
+    await later.unmount()
+
     await clock.advance(30_000)
     expect(spawned.length).toBe(2)
   })
@@ -142,6 +152,21 @@ describe('the inbox', () => {
     const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
     expect(await pane.find({ type: 'Text', text: /Slack is off/ })).toBeDefined()
     await pane.unmount()
+  })
+})
+
+describe('what the inbox leaves out', () => {
+  test('a PR of my own that someone links is not offered for review', SLACK, async ($, on) => {
+    const mine = { ...PR_MESSAGE, text: 'thoughts on https://github.com/acme/app/pull/4 ?' }
+    const { clock, toasts } = fakeWorld(on, [mine])
+    await start($, clock)
+    expect(toasts.filter(text => text.includes('sent'))).toEqual([])
+  })
+
+  test('an alert Slack delivers twice is judged once', SLACK, async ($, on) => {
+    const { clock, verdicts } = fakeWorld(on, [ALERT_MESSAGE, ALERT_MESSAGE])
+    await start($, clock)
+    expect(verdicts.length).toBe(1)
   })
 })
 

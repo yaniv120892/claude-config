@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { addToInbox, markHandled, parseSidecarLine, pullRequestsIn, takeLines, waiting } from '../hooks/slack'
+import { addToInbox, applyMarks, markHandled, parseSidecarLine, pullRequestsIn, takeLines, waiting } from '../hooks/slack'
 import type { SlackMessage } from '../hooks/slack'
 
 function message(overrides: Partial<SlackMessage>): SlackMessage {
@@ -46,18 +46,32 @@ describe('reading Slack messages', () => {
 })
 
 describe('the inbox', () => {
-  test('adds a PR once, and brings a handled one back only when posted again later', async () => {
-    const first = addToInbox([], message({}))
-    expect(first.added.length).toBe(1)
-    expect(waiting(first.inbox).map(item => item.prUrl)).toEqual(['https://github.com/acme/app/pull/12'])
+  const PR = 'https://github.com/acme/app/pull/12'
+  const NONE: ReadonlySet<string> = new Set()
 
-    const repeated = addToInbox(first.inbox, message({ id: 'C2:2.0', at: 2000 }))
+  test('adds a PR once, and leaves out a PR of my own', async () => {
+    const first = addToInbox({ inbox: [], message: message({}), marks: {}, ownPrUrls: NONE })
+    expect(first.added.length).toBe(1)
+    expect(waiting(first.inbox).map(item => item.prUrl)).toEqual([PR])
+
+    const repeated = addToInbox({ inbox: first.inbox, message: message({ id: 'C2:2.0', at: 2000 }), marks: {}, ownPrUrls: NONE })
     expect(repeated.added).toEqual([])
     expect(repeated.inbox.length).toBe(1)
 
-    const handled = markHandled(repeated.inbox, 'https://github.com/acme/app/pull/12', 'dismissed')
-    expect(waiting(handled)).toEqual([])
-    expect(addToInbox(handled, message({ at: 1500 })).added).toEqual([])
-    expect(addToInbox(handled, message({ at: 3000 })).added.length).toBe(1)
+    expect(addToInbox({ inbox: [], message: message({}), marks: {}, ownPrUrls: new Set([PR]) })).toEqual({ inbox: [], added: [] })
+  })
+
+  test('a dismissal stands against the stored inbox, until the PR is posted again after it', async () => {
+    const { inbox } = addToInbox({ inbox: [], message: message({ at: 1000 }), marks: {}, ownPrUrls: NONE })
+    const marks = markHandled({}, { prUrl: PR, by: 'dismissed', at: 1500 })
+    // The stored list still says "waiting": another session wrote it before the mark.
+    expect(waiting(applyMarks(inbox, marks))).toEqual([])
+    const before = addToInbox({ inbox, message: message({ at: 1200 }), marks, ownPrUrls: NONE })
+    expect(before.added).toEqual([])
+    expect(waiting(before.inbox)).toEqual([])
+
+    const reposted = addToInbox({ inbox, message: message({ at: 3000 }), marks, ownPrUrls: NONE })
+    expect(reposted.added.length).toBe(1)
+    expect(waiting(reposted.inbox).length).toBe(1)
   })
 })

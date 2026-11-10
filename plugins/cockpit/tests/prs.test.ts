@@ -8,6 +8,7 @@ const CHECKS = [
   { __typename: 'CheckRun', name: 'lint', status: 'COMPLETED', conclusion: 'FAILURE', detailsUrl: 'https://ci/2' },
   { __typename: 'CheckRun', name: 'deploy', status: 'IN_PROGRESS', conclusion: null },
   { __typename: 'StatusContext', context: 'ci/legacy', state: 'PENDING', targetUrl: '' },
+  { __typename: 'CheckRun', name: 'old', status: 'COMPLETED', conclusion: 'STALE', detailsUrl: '' },
 ]
 
 describe('the PR board', () => {
@@ -20,7 +21,7 @@ describe('the PR board', () => {
       }),
     ])
     const [pr] = parseBoard(answer, 'production')
-    expect(countChecks(pr?.checks ?? [])).toEqual({ pass: 1, fail: 1, pending: 2 })
+    expect(countChecks(pr?.checks ?? [])).toEqual({ pass: 2, fail: 1, pending: 2 })
     expect(pr?.threads.map(one => one.isReplied)).toEqual([false, true])
     expect(pr?.threads[0]?.excerpt).toBe('Rename this.')
     expect(pr?.files).toEqual(['src/billing/charge.ts'])
@@ -67,5 +68,7 @@ describe('the PR board', () => {
     const [first, eleventh] = parseBoard(boardAnswer([row({ number: 1 }), row({ number: 11 })]), 'production')
     expect(first === undefined ? null : ticketOf(first, tickets)?.id).toBe('YAN-1')
     expect(eleventh === undefined ? null : ticketOf(eleventh, tickets)).toBe(null)
+    const nameless = [{ id: '', title: 'No id', url: '', status: '' }]
+    expect(first === undefined ? null : ticketOf(first, nameless)).toBe(null)
   })
 })

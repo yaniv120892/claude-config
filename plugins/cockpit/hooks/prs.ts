@@ -2,11 +2,13 @@ import type { BoardCheck, BoardPr, BoardThread, CheckState, Ticket } from '../ty
 
 const MERGED_DAYS = 7
 const DAY_MS = 86_400_000
+// Also what makes an id safe to build a pattern from.
+const TICKET_ID = /^[A-Za-z][A-Za-z0-9]*-\d+$/
 
 export const BOARD_QUERY = `
 query($open: String!, $merged: String!) {
   open: search(query: $open, type: ISSUE, first: 30) { nodes { ...Row } }
-  merged: search(query: $merged, type: ISSUE, first: 15) { nodes { ...Row } }
+  merged: search(query: $merged, type: ISSUE, first: 15) { nodes { ...Row ... on PullRequest { files(first: 60) { nodes { path } } } } }
 }
 fragment Row on PullRequest {
   number title url isDraft state mergedAt reviewDecision mergeable headRefName
@@ -23,7 +25,6 @@ fragment Row on PullRequest {
     comments(first: 1) { nodes { author { login } body url } }
     latest: comments(last: 1) { nodes { author { login } } }
   } }
-  files(first: 60) { nodes { path } }
 }`
 
 /** The two searches the board runs: my open PRs, and mine merged in the last week. */
@@ -55,7 +56,7 @@ function time(value: unknown): number | null {
   return Number.isNaN(at) ? null : at
 }
 
-const PASSED = new Set(['SUCCESS', 'NEUTRAL', 'SKIPPED'])
+const PASSED = new Set(['SUCCESS', 'NEUTRAL', 'SKIPPED', 'STALE'])
 const FAILED = new Set(['FAILURE', 'ERROR', 'TIMED_OUT', 'CANCELLED', 'ACTION_REQUIRED', 'STARTUP_FAILURE'])
 
 function checkState(outcome: string): CheckState {
@@ -163,7 +164,7 @@ export function countChecks(checks: readonly BoardCheck[]): Record<CheckState, n
 /** The ticket a PR works on: the one whose id its title or branch names. */
 export function ticketOf(pr: BoardPr, tickets: readonly Ticket[]): Ticket | null {
   const named = `${pr.title} ${pr.branch}`.toLowerCase()
-  return tickets.find(ticket => new RegExp(`\\b${ticket.id.toLowerCase()}\\b`).test(named)) ?? null
+  return tickets.find(ticket => TICKET_ID.test(ticket.id) && new RegExp(`\\b${ticket.id.toLowerCase()}\\b`).test(named)) ?? null
 }
 
 export function age(since: number, now: number): string {
@@ -178,4 +179,8 @@ export function newlyDeployed(last: readonly BoardPr[] | null, next: readonly Bo
   if (last === null) return []
   const deployedBefore = new Set(last.filter(pr => pr.deployedAt !== null).map(pr => pr.url))
   return next.filter(pr => pr.deployedAt !== null && !deployedBefore.has(pr.url))
+}
+
+export function asDismissed(stored: unknown): string[] {
+  return Array.isArray(stored) ? stored.filter(url => typeof url === 'string') : []
 }

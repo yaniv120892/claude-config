@@ -1,6 +1,6 @@
 import type { InboxItem, Reviewer, SlackLink } from '../types'
 
-export type PullRequestAddress = { url: string; repo: string; number: number }
+type PullRequestAddress = { url: string; repo: string; number: number }
 
 export type SlackMessage = {
   id: string
@@ -12,7 +12,7 @@ export type SlackMessage = {
   isAlertChannel: boolean
 }
 
-export type SidecarLine =
+type SidecarLine =
   | { kind: 'status'; link: SlackLink }
   | { kind: 'message'; message: SlackMessage }
 
@@ -26,7 +26,6 @@ export const REVIEW_SKILL = {
   codex: '/pr-workflows:codex-pr-review',
 } as const satisfies Record<Reviewer, string>
 
-/** Every distinct GitHub PR the text links to, in order. */
 export function pullRequestsIn(text: string): PullRequestAddress[] {
   const found = new Map<string, PullRequestAddress>()
   for (const [, repo, number] of text.matchAll(PULL_REQUEST)) {
@@ -91,14 +90,32 @@ export function asInbox(stored: unknown): InboxItem[] {
   return Array.isArray(stored) ? stored.filter(item => typeof item?.prUrl === 'string') : []
 }
 
+/** Who handled each PR, and the Slack time of the message they handled; kept apart from the inbox so a new message never undoes a dismissal. */
+export type HandledMarks = Record<string, { by: Reviewer | 'dismissed'; at: number }>
+
+type InboxAddition = {
+  inbox: readonly InboxItem[]
+  message: SlackMessage
+  marks: HandledMarks
+  ownPrUrls: ReadonlySet<string>
+}
+
+const MAX_MARKS = 200
+
+function isHandled(marks: HandledMarks, prUrl: string, postedAt: number): boolean {
+  const mark = marks[prUrl]
+  return mark !== undefined && mark.at >= postedAt
+}
+
 /**
- * The inbox with the message's PRs on top. A PR already waiting keeps its row, moved up;
- * one already reviewed or dismissed comes back only when it is posted again later.
+ * The inbox with the message's PRs on top, my own PRs left out. A PR already waiting keeps
+ * its row, moved up; one already reviewed or dismissed comes back only when it is posted again after that.
  */
-export function addToInbox(inbox: readonly InboxItem[], message: SlackMessage): { inbox: InboxItem[]; added: InboxItem[] } {
+export function addToInbox({ inbox, message, marks, ownPrUrls }: InboxAddition): { inbox: InboxItem[]; added: InboxItem[] } {
   const added: InboxItem[] = []
   let next = [...inbox]
   for (const address of pullRequestsIn(message.text)) {
+    if (ownPrUrls.has(address.url)) continue
     const known = next.find(item => item.prUrl === address.url)
     if (known !== undefined && known.at >= message.at) continue
     const item: InboxItem = {
@@ -113,13 +130,26 @@ export function addToInbox(inbox: readonly InboxItem[], message: SlackMessage): 
       handledBy: null,
     }
     next = [item, ...next.filter(other => other.prUrl !== address.url)]
-    if (known === undefined || known.handledBy !== null) added.push(item)
+    const wasWaiting = known !== undefined && !isHandled(marks, known.prUrl, known.at)
+    if (!wasWaiting && !isHandled(marks, item.prUrl, item.at)) added.push(item)
   }
-  return { inbox: next.slice(0, MAX_INBOX), added }
+  return { inbox: applyMarks(next.slice(0, MAX_INBOX), marks), added }
 }
 
-export function markHandled(inbox: readonly InboxItem[], prUrl: string, handledBy: InboxItem['handledBy']): InboxItem[] {
-  return inbox.map(item => (item.prUrl === prUrl ? { ...item, handledBy } : item))
+export function asMarks(stored: unknown): HandledMarks {
+  return typeof stored === 'object' && stored !== null && !Array.isArray(stored) ? { ...stored } : {}
+}
+
+export function markHandled(marks: HandledMarks, mark: { prUrl: string; by: Reviewer | 'dismissed'; at: number }): HandledMarks {
+  const newest = Object.entries({ ...marks, [mark.prUrl]: { by: mark.by, at: mark.at } })
+    .sort((a, b) => b[1].at - a[1].at)
+    .slice(0, MAX_MARKS)
+  return Object.fromEntries(newest)
+}
+
+/** Each item as handled or waiting: a mark stands until the PR is posted again after it. */
+export function applyMarks(inbox: readonly InboxItem[], marks: HandledMarks): InboxItem[] {
+  return inbox.map(item => ({ ...item, handledBy: isHandled(marks, item.prUrl, item.at) ? (marks[item.prUrl]?.by ?? null) : null }))
 }
 
 export function waiting(inbox: readonly InboxItem[]): InboxItem[] {

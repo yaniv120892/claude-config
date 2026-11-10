@@ -6,15 +6,22 @@
 // an app, so only the sidecar that holds the lock file connects; the others
 // stand by and take over when it exits.
 
-import { readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
+import { readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 
-import { backoffMs, parseChannels, permalinkOf, relevantMessage } from './lib.mjs'
+import { backoffMs, isLockStale, parseChannels, permalinkOf, relevantMessage } from './lib.mjs'
 
 const APP_TOKEN = process.env.SLACK_APP_TOKEN ?? ''
 const USER_TOKEN = process.env.SLACK_USER_TOKEN ?? ''
 const LOCK_FILE = process.env.COCKPIT_LOCK ?? ''
 const STANDBY_RETRY_MS = 5000
 const PARENT_CHECK_MS = 10_000
+const REQUEST_TIMEOUT_MS = 20_000
+const TICK_MS = 10_000
+// A tick this late means the machine slept; the socket it left may be dead without a close event.
+const SLEPT_GAP_MS = 60_000
+// A lock is created empty and gets its pid a moment later; only an empty one this old was abandoned.
+const EMPTY_LOCK_GRACE_MS = 10_000
 
 const channelNames = new Map()
 const userNames = new Map()
@@ -38,12 +45,22 @@ function exit(code) {
   process.exit(code)
 }
 
-function isAlive(pid) {
+function commandOf(pid) {
   try {
-    process.kill(pid, 0)
-    return true
+    return execFileSync('ps', ['-p', String(pid), '-o', 'command='], { encoding: 'utf8' })
   } catch {
-    return false
+    return null
+  }
+}
+
+/** The pid in the lock; null while the lock is gone or its holder is still writing it. */
+function lockHolder() {
+  try {
+    const written = readFileSync(LOCK_FILE, 'utf8').trim()
+    const isBeingWritten = written === '' && Date.now() - statSync(LOCK_FILE).mtimeMs < EMPTY_LOCK_GRACE_MS
+    return isBeingWritten ? null : Number(written || Number.NaN)
+  } catch {
+    return null
   }
 }
 
@@ -52,9 +69,8 @@ function tryLock() {
     writeFileSync(LOCK_FILE, String(process.pid), { flag: 'wx' })
     return true
   } catch {
-    const holder = Number(readFileSync(LOCK_FILE, 'utf8'))
-    if (Number.isInteger(holder) && isAlive(holder)) return false
-    rmSync(LOCK_FILE, { force: true })
+    const holder = lockHolder()
+    if (holder !== null && isLockStale({ holder, commandOf })) rmSync(LOCK_FILE, { force: true })
     return false
   }
 }
@@ -68,6 +84,7 @@ async function slack({ method, token, params = {} }) {
     method: 'POST',
     headers: { authorization: `Bearer ${token}`, 'content-type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams(params),
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   })
   const answer = await response.json()
   if (!answer.ok) throw new Error(`Slack ${method} failed: ${answer.error ?? response.status}`)
@@ -85,7 +102,7 @@ async function resolveAlertChannels() {
       params: { types: 'public_channel,private_channel', exclude_archived: 'true', limit: '1000', cursor },
     })
     for (const channel of page.channels) {
-      channelNames.set(channel.id, channel.name)
+      channelNames.set(channel.id, `#${channel.name}`)
       if (names.includes(channel.name.toLowerCase())) found.add(channel.id)
     }
     cursor = page.response_metadata?.next_cursor || null
@@ -99,11 +116,10 @@ async function channelName(id) {
       const { channel } = await slack({ method: 'conversations.info', token: USER_TOKEN, params: { channel: id } })
       channelNames.set(id, channel.is_im ? 'DM' : `#${channel.name ?? id}`)
     } catch {
-      channelNames.set(id, id)
+      channelNames.set(id, `#${id}`)
     }
   }
-  const name = channelNames.get(id)
-  return name.startsWith('#') || name === 'DM' ? name : `#${name}`
+  return channelNames.get(id)
 }
 
 async function userName(id) {
@@ -132,24 +148,50 @@ async function forward({ message, workspaceUrl }) {
   })
 }
 
+function parseEnvelope(data) {
+  try {
+    const parsed = JSON.parse(String(data))
+    return typeof parsed === 'object' && parsed !== null ? parsed : {}
+  } catch {
+    return {}
+  }
+}
+
 /** One connection's life: resolves when it closes, however it closed. */
-function listen({ url, onEvent }) {
+function listen({ url, onEvent, onHello }) {
   return new Promise(resolve => {
     const socket = new WebSocket(url)
-    socket.addEventListener('close', () => resolve())
-    socket.addEventListener('error', () => resolve())
+    let lastTick = Date.now()
+    const sleepWatch = setInterval(() => {
+      const hasSlept = Date.now() - lastTick > SLEPT_GAP_MS
+      lastTick = Date.now()
+      if (hasSlept) end()
+    }, TICK_MS)
+
+    function end() {
+      clearInterval(sleepWatch)
+      socket.close()
+      resolve()
+    }
+
+    socket.addEventListener('close', end)
+    socket.addEventListener('error', end)
     socket.addEventListener('message', ({ data }) => {
-      const envelope = JSON.parse(String(data))
+      const envelope = parseEnvelope(data)
       if (envelope.envelope_id !== undefined) socket.send(JSON.stringify({ envelope_id: envelope.envelope_id }))
       switch (envelope.type) {
         case 'hello':
-          status('connected')
+          onHello()
           break
         case 'disconnect':
-          socket.close()
+          end()
           break
         case 'events_api':
-          onEvent(envelope.payload?.event)
+          try {
+            onEvent(envelope.payload?.event)
+          } catch (error) {
+            status('error', `A Slack event was not read: ${String(error.message)}`)
+          }
           break
         default:
           break
@@ -159,8 +201,9 @@ function listen({ url, onEvent }) {
 }
 
 async function lead() {
-  const identity = await slack({ method: 'auth.test', token: USER_TOKEN })
-  const alertChannelIds = await resolveAlertChannels()
+  let identity = null
+  let alertChannelIds = null
+  let attempt = 0
 
   function onEvent(event) {
     const message = relevantMessage({ event, selfUserId: identity.user_id, alertChannelIds })
@@ -168,16 +211,24 @@ async function lead() {
     forward({ message, workspaceUrl: identity.url }).catch(error => status('error', String(error.message)))
   }
 
-  for (let attempt = 0; ; attempt += 1) {
+  // Only a connection Slack greeted counts as one: a socket closed straight after opening keeps the wait growing.
+  function onHello() {
+    attempt = 0
+    status('connected')
+  }
+
+  for (;;) {
     try {
+      identity ??= await slack({ method: 'auth.test', token: USER_TOKEN })
+      alertChannelIds ??= await resolveAlertChannels()
       const { url } = await slack({ method: 'apps.connections.open', token: APP_TOKEN })
-      await listen({ url, onEvent })
-      attempt = 0
+      await listen({ url, onEvent, onHello })
       status('starting', 'Reconnecting to Slack.')
     } catch (error) {
       status('error', String(error.message))
     }
     await sleep(backoffMs(attempt))
+    attempt += 1
   }
 }
 

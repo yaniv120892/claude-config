@@ -133,7 +133,7 @@ five tabs, each on a digit key:
 
 | Tab | What it shows |
 | --- | --- |
-| Inbox | Every Slack message someone else sent you that links a GitHub PR: who, where, and **Claude**, **Codex** and **Dismiss** buttons. Claude runs `/pr-workflows:pr-review <url>`, Codex runs `/pr-workflows:codex-pr-review <url>`. A new one raises a toast and a native notification once, and opens the pane (`openOnMessage`) |
+| Inbox | Every Slack message a person other than you posted that links a GitHub PR which is not your own (a bot's "PR opened" notice is left out): who, where, and **Claude**, **Codex** and **Dismiss** buttons. Claude runs `/pr-workflows:pr-review <url>`, Codex runs `/pr-workflows:codex-pr-review <url>`. A new one raises a toast and a native notification once, and opens the pane (`openOnMessage`) |
 | PRs | Your in-progress Linear tickets, then every open PR you authored in any repository and the ones merged in the last week: failing, pending and passing checks, review threads waiting on you and ones you answered, conflicts, the ticket its title or branch names, and `in prod 12m` once the merge commit's GitHub deployment to production succeeded. `▸` expands a PR to its failing checks and threads, each a link, with **Address feedback**, **Fix CI** and **Polish**; `✕` dismisses it on every session |
 | Alerts | Each message of the monitoring channels (`alertChannels`). One that arrives within `alertWindowMinutes` of a PR of yours reaching production is compared to that PR's title and files by a small model call and marked likely related, unclear or unlikely, with the reason; the first two notify you and offer **Investigate** |
 | Skills | A button for each prompt in `pinnedSkills`, then the skills that load most |
@@ -159,6 +159,14 @@ sessions share the inbox, the alerts and the dismissals.
 4. `/config` → cockpit → paste both, and name the alert channels.
 
 The Inbox tab's last line says where the connection stands.
+
+Three limits to know. "In prod" is read from the GitHub deployments of the PR's
+own merge commit, so a pipeline that deploys only the newest commit of a batch
+leaves the earlier PRs at "merged, not in prod", and no alert is compared to
+them. The toast and the native notification come from the one session that
+holds the Slack connection; the others show the new row within 15 seconds,
+silently. And in an alert channel only a top-level message someone else posted
+counts as an alert: a reply in its thread is discussion.
 
 The function-hook API is early access, so CI checks the mods on a pinned Claude
 Code version (`.github/workflows/ci.yml`): `claude plugin validate`,
