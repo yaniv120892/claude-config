@@ -21,6 +21,11 @@ worktree, and give one report.
 
 **Unattended runs:** as a subagent or scheduled run, there is no user to ask. Take the recommended
 answer wherever a step says to ask, and list each such decision under "Open questions" in the report.
+Run every review agent in the foreground, or block on each one's result, and hand back only after
+all of them have reported: a result that arrives after the hand-back is lost.
+
+**Branch held by another worktree:** work in the worktree that has the branch checked out. When that
+worktree belongs to a live session, stop and report it.
 
 ## Step 1a — Preflight
 
@@ -30,18 +35,25 @@ Before any review agent starts, check what would stall the run later and report 
 - **Unpublished internal packages:** for each `@bazak/*` version the PR's `package.json` changes,
   `pnpm view <name>@<version> version` must print it. When one is missing, the pre-push build fails:
   name the release that unblocks it and hold the push until it lands, instead of retrying.
+- **Git-tag dependencies:** for each dependency the PR pins as `github:<owner>/<repo>#<tag>`, the tag
+  must exist (`git ls-remote --tags`) and the lockfile's `resolved` commit must be the tag's commit.
 - **Workflow scope:** when the diff touches `.github/workflows/`, `gh auth status` must list the
   `workflow` scope; otherwise hand the user `gh auth refresh -s workflow`.
-
 - **Bot reviewer:** read the comments on the repo's five most recent PRs. When no review bot (Qodo)
   has commented on any of them, the repo has none: record that, and Step 6 skips the trigger and wait.
+  A repo with no earlier PRs has none.
 - **Gate:** run the repo's quality gate exactly as its CI workflow does, flags included (a shared gate
   may lint with `--max-warnings 0` where the local script does not). Fix a red gate before Step 2: a
-  review of code that fails its own gate misses the real failure.
+  review of code that fails its own gate misses the real failure. A test that fails here and passes
+  alone on rerun is a flake: report it by name and continue.
 - **Diff size:** classify the diff, since Step 2 scales to it.
   - *Dependency-only:* manifests and lockfiles, plus call sites a bump forced.
   - *Small:* under about 50 changed lines outside generated files.
   - *Full:* everything else.
+  - *Delta:* the PR already had a full pass and has new commits since. Classify the new commits'
+    diff alone, and review that range in Step 2.
+- **Lockfile churn:** a lockfile diff with no manifest change behind it is regenerated noise or a
+  silent upgrade. Restore it from the base, or name the manifest line that explains it.
 
 A blocker here gates the push, not the review: continue to Step 1b.
 
@@ -52,6 +64,11 @@ so every review sees the code that will merge: a merge commit, as `steward` reso
 PR whose commits are reviewed one by one, a rebase onto `origin/<base>` with `git push --force-with-lease`,
 since Step 4's autosquash rebase would flatten a merge commit anyway. Resolve conflicts, regenerate
 lockfiles and generated files with the repo's own tooling, run its build and tests, and push.
+Where the repo's rules allow no force push, merge.
+
+For each other open PR in the repo that touches a file this one touches
+(`gh pr list --json number,files`), run `git merge-tree --write-tree HEAD origin/<its branch>`.
+Report each conflict with the PR number and the merge order that avoids it.
 
 After the merge, grep the merged tree for every secret name, env var, config key, URL and number the PR
 description names: a base-branch change can rename them. Fix the description before pushing.
@@ -65,14 +82,20 @@ Scale the review to the Step 1a diff size:
   3a and 3b.
 - **Small:** `/pr-workflows:pr-review` alone; apply the `/simplify` angles yourself while fixing.
 - **Full:** `/pr-workflows:pr-review` for the PR, then `/simplify` for the diff. A skill loads one per
-  turn, so they run in that order.
+  turn, so they run in that order. Give `/simplify` the `origin/<base>...HEAD` range: its default,
+  the diff against upstream, is empty after a push.
+
+A repo that ships its own `pr-review` skill uses that one in place of the plugin's.
 
 `/pr-workflows:pr-review` only reads; `/simplify` edits. Do not also run `/code-review`:
 `/pr-workflows:pr-review` already runs it as one of its subagents.
 
 Run every tool from the PR's worktree and pass the worktree path and `origin/<base>...HEAD` range
-explicitly. Tell review agents to take test results from the Step 1a gate and to leave local state as
-they found it: databases, containers, generated files.
+explicitly. When the PR names a ticket, pass the ticket id too, so the review checks the diff against
+the ticket's "Done when" list. Keep the worktree still until every review agent has reported: a
+revert-and-fail proof run meanwhile shows them a broken guard. Tell review agents to take test
+results from the Step 1a gate and to leave local state as they found it: databases, containers,
+generated files.
 
 `/pr-workflows:pr-review` ends by offering to post its findings as PR comments. Skip that step: these are
 your own changes, so fix the findings instead of commenting on them.
@@ -105,7 +128,8 @@ fixes introduced. Pass it paths, never file contents:
 - the rule sources: section 3 of `<PLUGIN_ROOT>/skills/pr-review/references/rubric.md` lists them —
   the repo's `CLAUDE.md`/`AGENTS.md` chain and `.claude/rules/*`, plus `~/.claude/CLAUDE.md` with its
   `@` imports followed recursively and `~/.claude/rules/*`. It reads each file itself, not from memory;
-- only lines the diff adds or changes are in scope;
+- only lines this PR's own commits add or change are in scope, never lines a base merge brought in;
+- where two rules contradict, the repo's own rule wins, then the more specific one;
 - output: one row per violation — rule name, rule `file:line`, code `file:line`, the fix — or "none".
 
 Fix every violation it reports, applying the same skip criteria as Step 3.
@@ -134,16 +158,22 @@ still passes when only the constant changes.
   `GIT_SEQUENCE_EDITOR=true git rebase -i --autosquash origin/<base>`, then `git push --force-with-lease`.
 - Otherwise: a new commit.
 
+Before every push, `git fetch origin <base>`; when the base moved, return to Step 1b. Then run the
+full gate again and push only on green, as one `&&` chain: a fix made for one finding breaks a spec
+elsewhere.
+
 Commit messages are Conventional Commits and follow the repo's attribution rules. The PR title follows the title format in `creating-prs`.
 
 After the push, align the PR description with the fixes as `/pr-workflows:address-pr-feedback` Step 5a
 describes: re-read it against the full diff at the pushed head and change every line the fixes made
 wrong. When a fix touches what the Proof of Work demonstrates, rerun that proof and update it too.
+With no fix commit, the description stays as it is.
 
 ## Step 5 — CI
 
-Run `gh pr checks <n> --watch` in the background. On red, follow the `steward` skill: root-cause, fix,
-push, watch again. Green counts only on the pushed head: compare `gh pr view <n> --json headRefOid`
+Run `gh pr checks <n> --watch` in the background, for at most twice the repo's usual CI time (a shell
+loop with a deadline; macOS has no `timeout`). Past that, report the check that is still running.
+On red, follow the `steward` skill: root-cause, fix, push, watch again. Green counts only on the pushed head: compare `gh pr view <n> --json headRefOid`
 with the local `HEAD` before reporting it.
 
 When the repo has a size or performance budget check, report the measured value and the headroom.
