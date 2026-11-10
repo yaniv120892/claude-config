@@ -93,8 +93,9 @@ A repo that ships its own `pr-review` skill uses that one in place of the plugin
 Run every tool from the PR's worktree and pass the worktree path and `origin/<base>...HEAD` range
 explicitly. When the PR names a ticket, pass the ticket id too, so the review checks the diff against
 the ticket's "Done when" list. Keep the worktree still until every review agent has reported: a
-revert-and-fail proof run meanwhile shows them a broken guard. Tell review agents to take test results from the Step 1a gate and to leave local state as
-they found it: databases, containers, generated files.
+revert-and-fail proof run meanwhile shows them a broken guard. Tell review agents to take test
+results from the Step 1a gate and to leave local state as they found it: databases, containers,
+generated files.
 
 `/pr-workflows:pr-review` ends by offering to post its findings as PR comments. Skip that step: these are
 your own changes, so fix the findings instead of commenting on them.
@@ -157,9 +158,9 @@ still passes when only the constant changes.
   `GIT_SEQUENCE_EDITOR=true git rebase -i --autosquash origin/<base>`, then `git push --force-with-lease`.
 - Otherwise: a new commit.
 
-Before every push, run the full gate again and push only on green, as one `&&` chain: a fix made for
-one finding breaks a spec elsewhere. Then `git fetch origin <base>`; when the base moved, return to
-Step 1b.
+Before every push, `git fetch origin <base>`; when the base moved, return to Step 1b. Then run the
+full gate again and push only on green, as one `&&` chain: a fix made for one finding breaks a spec
+elsewhere.
 
 Commit messages are Conventional Commits and follow the repo's attribution rules. The PR title follows the title format in `creating-prs`.
 
@@ -171,8 +172,8 @@ With no fix commit, the description stays as it is.
 ## Step 5 — CI
 
 Run `gh pr checks <n> --watch` in the background, for at most twice the repo's usual CI time (a shell
-loop with a deadline; macOS has no `timeout`). Past that, report the check that is still running. On red, follow the `steward` skill: root-cause, fix,
-push, watch again. Green counts only on the pushed head: compare `gh pr view <n> --json headRefOid`
+loop with a deadline; macOS has no `timeout`). Past that, report the check that is still running.
+On red, follow the `steward` skill: root-cause, fix, push, watch again. Green counts only on the pushed head: compare `gh pr view <n> --json headRefOid`
 with the local `HEAD` before reporting it.
 
 When the repo has a size or performance budget check, report the measured value and the headroom.
