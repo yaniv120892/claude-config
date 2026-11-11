@@ -360,9 +360,27 @@ describe('acting on the board', () => {
     expect((await pane.find({ key: 'merge-https://github.com/acme/app/pull/4' }))?.props.label).toBe('⏎ Confirm merge')
 
     await pane.press({ key: 'merge-https://github.com/acme/app/pull/4' })
-    expect(ran).toContain('gh api -X PUT repos/acme/app/pulls/4/merge -f merge_method=squash')
+    expect(ran).toContain('gh api -X PUT repos/acme/app/pulls/4/merge -f merge_method=squash -f sha=sha4')
     expect(ran).toContain('gh api -X DELETE repos/acme/app/git/refs/heads/yan-4-change')
     expect(toasts).toContain('acme/app#4 merged.')
+    await pane.unmount()
+  })
+
+  test('a Merge pressed once and left alone disarms, and the branch of a fork PR is never deleted', async ($, on) => {
+    const { clock, ran, board } = fakeWorld(on)
+    board.open = [row({ number: 4, reviewDecision: null, isFromFork: true })]
+    await start($, clock)
+    await $.command.run(slash('cockpit', 'prs'))
+
+    const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
+    await pane.press({ key: 'merge-https://github.com/acme/app/pull/4' })
+    await clock.advance(11_000)
+    await pane.press({ key: 'merge-https://github.com/acme/app/pull/4' })
+    expect(ran.some(command => command.includes('/merge'))).toBe(false)
+
+    await pane.press({ key: 'merge-https://github.com/acme/app/pull/4' })
+    expect(ran.some(command => command.includes('/merge'))).toBe(true)
+    expect(ran.some(command => command.includes('DELETE'))).toBe(false)
     await pane.unmount()
   })
 

@@ -12,7 +12,7 @@ query($open: String!, $merged: String!) {
   merged: search(query: $merged, type: ISSUE, first: 30) { nodes { ...Row ... on PullRequest { files(first: 60) { nodes { path } } } } }
 }
 fragment Row on PullRequest {
-  number title url isDraft state mergedAt reviewDecision mergeable headRefName
+  number title url isDraft state mergedAt reviewDecision mergeable headRefName headRefOid isCrossRepository
   author { login }
   repository { nameWithOwner deployments { totalCount } }
   mergeCommit { deployments(first: 10) { nodes { environment createdAt statuses(first: 10) { nodes { state createdAt } } } } }
@@ -126,6 +126,8 @@ function parseRow(row: Json, prodEnvironment: string): BoardPr | null {
     number: row.number,
     title: text(row.title),
     branch: text(row.headRefName),
+    headSha: text(row.headRefOid),
+    isFromFork: row.isCrossRepository === true,
     state: row.state === 'MERGED' ? 'MERGED' : 'OPEN',
     isDraft: row.isDraft === true,
     reviewDecision: decision === 'APPROVED' || decision === 'CHANGES_REQUESTED' || decision === 'REVIEW_REQUIRED' ? decision : null,
@@ -230,7 +232,8 @@ export function asDismissed(stored: unknown): string[] {
 
 /** An open PR that can merge now: not a draft, no conflicts, every check passed, and approved or needing no review. */
 export function isReadyToMerge(pr: BoardPr): boolean {
-  if (pr.state !== 'OPEN' || pr.isDraft || pr.hasConflicts) return false
+  const isBlocked = pr.state !== 'OPEN' || pr.isDraft || pr.hasConflicts
+  if (isBlocked) return false
   const counts = countChecks(pr.checks)
   const isGreen = counts.fail === 0 && counts.pending === 0
   const isReviewed = pr.reviewDecision === 'APPROVED' || pr.reviewDecision === null
@@ -260,10 +263,15 @@ function changesOf({ previous, pr }: { previous: BoardPr; pr: BoardPr }): string
   const changes: string[] = []
   const failing = pr.checks.filter(check => check.state === 'fail')
   const wasFailing = countChecks(previous.checks).fail > 0
-  if (failing.length > 0 && !wasFailing) changes.push(`${label}: CI failed (${failing.map(check => check.name).join(', ')}).`)
-  const waiting = pr.threads.filter(thread => !thread.isReplied).length
-  const waitedBefore = previous.threads.filter(thread => !thread.isReplied).length
-  if (waiting > waitedBefore) changes.push(`${label}: ${waiting - waitedBefore} new review thread${waiting - waitedBefore === 1 ? '' : 's'}.`)
-  if (isReadyToMerge(pr) && !isReadyToMerge(previous)) changes.push(`${label} is green and ready to merge.`)
+  const isNewFailure = failing.length > 0 && !wasFailing
+  if (isNewFailure) changes.push(`${label}: CI failed (${failing.map(check => check.name).join(', ')}).`)
+  const newThreads = waitingThreads(pr) - waitingThreads(previous)
+  if (newThreads > 0) changes.push(`${label}: ${newThreads} new review thread${newThreads === 1 ? '' : 's'}.`)
+  const isNewlyReady = isReadyToMerge(pr) && !isReadyToMerge(previous)
+  if (isNewlyReady) changes.push(`${label} is green and ready to merge.`)
   return changes
+}
+
+function waitingThreads(pr: BoardPr): number {
+  return pr.threads.filter(thread => !thread.isReplied).length
 }

@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { CommandSpec, EngineInterface as Engine, PluginOptions, Register, ThemeKey } from 'claude-code'
 
-import type { Alert, AlertVerdict, Board, BoardPr, CheckState, ContextGauge, Focus, InboxItem, Reviewer, SlackLink, Tab, Ticket } from '../types'
+import type { Alert, AlertVerdict, Board, BoardPr, CheckState, ContextGauge, Focus, InboxItem, PendingMerge, Reviewer, SlackLink, Tab, Ticket } from '../types'
 import { addAlert, asAlerts, investigateArgs, isRelated, parseVerdict, verdictPrompt, watchedDeploys } from './alerts'
 import type { Verdict } from './alerts'
 import {
@@ -97,6 +97,7 @@ const SKILL_HOTKEYS = 'abcdefghijkl'
 const POLISH_SKILL = '/pr-workflows:pr-polish'
 const WORKSPACE_SKILL = '/cmux:ticket-workspace'
 const DONE_STATE = 'Done'
+const MERGE_CONFIRM_MS = 10_000
 const INVESTIGATE_SKILL = 'dev-workflows:investigate-alert'
 const MINUTE_MS = 60_000
 
@@ -434,30 +435,48 @@ async function readBranch($: Engine): Promise<string | null> {
   }
 }
 
-/** Squash-merges the PR through the API, so no local checkout is touched, then deletes its branch. */
+/**
+ * Squash-merges the PR through the API, so no local checkout is touched, then deletes its branch.
+ * It names the head the board showed: a push since then makes GitHub refuse the merge.
+ */
 async function mergePr($: Engine, { config, pr }: { config: Config; pr: BoardPr }): Promise<void> {
   await update($, confirmingMerge, () => null)
   const label = `${pr.repo}#${pr.number}`
   try {
-    const merged = await $.process.run(['gh', 'api', '-X', 'PUT', `repos/${pr.repo}/pulls/${pr.number}/merge`, '-f', 'merge_method=squash'])
+    const merged = await $.process.run([
+      'gh', 'api', '-X', 'PUT', `repos/${pr.repo}/pulls/${pr.number}/merge`, '-f', 'merge_method=squash', '-f', `sha=${pr.headSha}`,
+    ])
     if (merged.exitCode !== 0) {
       $.ui.toast(`${label} did not merge: ${merged.stderr.trim().split('\n')[0] || 'gh refused'}`, { timeoutMs: NOTICE_TOAST_MS })
       return
     }
-    $.ui.toast(`${label} merged.`, { timeoutMs: NOTICE_TOAST_MS })
-    const deleted = await $.process.run(['gh', 'api', '-X', 'DELETE', `repos/${pr.repo}/git/refs/heads/${pr.branch}`])
-    if (deleted.exitCode !== 0) $.ui.log(`cockpit: the branch of ${label} was not deleted: ${deleted.stderr.trim()}`, { to: 'debug' })
   } catch (error) {
     $.ui.toast(`${label} did not merge: ${String(error)}`, { timeoutMs: NOTICE_TOAST_MS })
     return
   }
+  $.ui.toast(`${label} merged.`, { timeoutMs: NOTICE_TOAST_MS })
+  if (!pr.isFromFork) await deleteBranch($, pr)
   await refreshBoard($, config)
 }
 
+async function deleteBranch($: Engine, pr: BoardPr): Promise<void> {
+  try {
+    const deleted = await $.process.run(['gh', 'api', '-X', 'DELETE', `repos/${pr.repo}/git/refs/heads/${pr.branch}`])
+    if (deleted.exitCode !== 0) $.ui.log(`cockpit: the branch of ${pr.repo}#${pr.number} was not deleted: ${deleted.stderr.trim()}`, { to: 'debug' })
+  } catch (error) {
+    $.ui.log(`cockpit: the branch of ${pr.repo}#${pr.number} was not deleted: ${String(error)}`, { to: 'debug' })
+  }
+}
+
+/** The first press arms Merge; a second press within the confirm window merges. */
 async function pressMerge($: Engine, { config, pr }: { config: Config; pr: BoardPr }): Promise<void> {
-  const confirming = await read($, confirmingMerge)
-  if (confirming === pr.url) return mergePr($, { config, pr })
-  await update($, confirmingMerge, () => pr.url)
+  const [confirming, now] = await Promise.all([read($, confirmingMerge), $.clock.now()])
+  if (isConfirming({ confirming, url: pr.url, now })) return mergePr($, { config, pr })
+  await update($, confirmingMerge, () => ({ url: pr.url, at: now }))
+}
+
+function isConfirming({ confirming, url, now }: { confirming: PendingMerge | null; url: string; now: number }): boolean {
+  return confirming !== null && confirming.url === url && now - confirming.at <= MERGE_CONFIRM_MS
 }
 
 async function moveToDone($: Engine, { config, ticket }: { config: Config; ticket: Ticket }): Promise<void> {
@@ -680,7 +699,7 @@ export const register: Register = (on, options) => {
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const { Box, Text, Button, Link, Input } = $.ui.resolve(e)
-    const [storedTab, items, shownBoard, shownAlerts, hidden, openReply, draft, confirmingUrl, now] = await Promise.all([
+    const [storedTab, items, shownBoard, shownAlerts, hidden, openReply, draft, confirming, now] = await Promise.all([
       read($, tab),
       read($, inbox),
       read($, board),
@@ -858,7 +877,7 @@ export const register: Register = (on, options) => {
               <Button
                 key={`merge-${pr.url}`}
                 plain
-                label={confirmingUrl === pr.url ? '⏎ Confirm merge' : '⇪ Merge'}
+                label={isConfirming({ confirming, url: pr.url, now }) ? '⏎ Confirm merge' : '⇪ Merge'}
                 onPress={() => pressMerge($, { config, pr })}
               />
             )}
