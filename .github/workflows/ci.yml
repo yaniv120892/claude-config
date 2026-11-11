@@ -49,3 +49,21 @@ jobs:
         run: |
           claude -p --plugin-dir "$PWD/plugins/mods" /skill-tally
           tsc -p plugins/mods
+
+  cockpit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      # Written against a newer build than the mods' pin: it runs slash
+      # commands through $.command.run, which that build's tests need.
+      - run: npm install -g @anthropic-ai/claude-code@2.1.321
+      - name: Validate the manifest and the hooks module
+        run: claude plugin validate plugins/cockpit
+      - name: Run the cockpit's tests
+        run: claude plugin test "$PWD/plugins/cockpit"
+      - name: Run the Slack sidecar's tests
+        run: node --test plugins/cockpit/sidecar/lib.test.mjs

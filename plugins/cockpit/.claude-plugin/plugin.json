@@ -1,0 +1,62 @@
+{
+  "name": "cockpit",
+  "description": "A /cockpit pane for the work around the code: an inbox of the GitHub PRs people send on Slack, each with a review by Claude or by Codex one press away; every open PR you authored, with its CI, open review threads and whether it merged and reached production, beside your in-progress Linear tickets; monitoring alerts that follow one of your deploys, each compared to the PR that shipped; a button for each skill you use most; and the usage limits with a daily history.",
+  "version": "0.1.0",
+  "author": { "name": "Yaniv Daye" },
+  "homepage": "https://github.com/yaniv120892/claude-config",
+  "repository": "https://github.com/yaniv120892/claude-config",
+  "keywords": ["mods", "hooks", "slack", "pull-request", "linear", "alerts", "usage"],
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "slackAppToken": {
+      "type": "string",
+      "title": "Slack app-level token",
+      "description": "The xapp- token of the Slack app, with the connections:write scope. It opens the Socket Mode connection",
+      "sensitive": true,
+      "default": ""
+    },
+    "slackUserToken": {
+      "type": "string",
+      "title": "Slack user token",
+      "description": "The xoxp- user token the Slack app got when you installed it. It names channels and people",
+      "sensitive": true,
+      "default": ""
+    },
+    "alertChannels": {
+      "type": "string",
+      "title": "Alert channels",
+      "description": "Comma-separated Slack channels that carry monitoring alerts, by name or id, such as prod-alerts, C0123ABCDEF",
+      "default": ""
+    },
+    "alertWindowMinutes": {
+      "type": "number",
+      "title": "Alert watch window",
+      "description": "Minutes after a PR reaches production during which an alert is compared to it",
+      "default": 60
+    },
+    "prodEnvironment": {
+      "type": "string",
+      "title": "Production environment",
+      "description": "The GitHub deployment environment that counts as production; any environment whose name contains it matches",
+      "default": "production"
+    },
+    "pinnedSkills": {
+      "type": "string",
+      "title": "Pinned skills",
+      "description": "Comma-separated prompts that lead the Skills tab, such as pr-workflows:pr-polish, simplify. The skills that load most follow them",
+      "default": ""
+    },
+    "openOnMessage": {
+      "type": "boolean",
+      "title": "Open on a new PR message",
+      "description": "Open the pane on its Inbox tab when a Slack message with a PR arrives",
+      "default": true
+    },
+    "nodePath": {
+      "type": "string",
+      "title": "Node executable",
+      "description": "The node (22 or newer) that runs the Slack sidecar; a full path where the session's PATH has none",
+      "default": "node"
+    }
+  }
+}

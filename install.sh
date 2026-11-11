@@ -189,6 +189,7 @@ install_claude() {
   say "  /plugin install issue-tracker@yaniv-claude-config"
   say "  /plugin install infra-workflows@yaniv-claude-config"
   say "  /plugin install mods@yaniv-claude-config"
+  say "  /plugin install cockpit@yaniv-claude-config"
   say "  /plugin install cmux@yaniv-claude-config"
   say ""
 }

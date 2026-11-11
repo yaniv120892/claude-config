@@ -1,0 +1,28 @@
+display_information:
+  name: Claude Cockpit
+  description: Delivers the messages you can see to the cockpit mod of Claude Code.
+features: {}
+oauth_config:
+  scopes:
+    user:
+      - channels:history
+      - groups:history
+      - im:history
+      - mpim:history
+      - channels:read
+      - groups:read
+      - im:read
+      - mpim:read
+      - users:read
+settings:
+  event_subscriptions:
+    user_events:
+      - message.channels
+      - message.groups
+      - message.im
+      - message.mpim
+  interactivity:
+    is_enabled: false
+  org_deploy_enabled: false
+  socket_mode_enabled: true
+  token_rotation_enabled: false
