@@ -79,7 +79,7 @@ enforce, but nothing on Codex enforces them.
 | `issue-tracker` | 3 | Jira ticket creation and status transitions, with a cached per-project transition map. Also files Linear issues against a fixed Why/Repro/Fix/Done-when/Signals template |
 | `infra-workflows` | 2 | Helm env vars across GitOps registries, and AWS SSM SecureString provisioning with an account guard. Ships `provision_ssm.sh` |
 | `mods` | 0 | Function-hook mods for the harness itself: the default-branch guard, the status band, `/pr`, the secret guard, the reply-style rule and `/skill-tally` — see *Mods* below |
-| `cockpit` | 0 | A `/cockpit` pane for the work around the code: the Slack PR inbox, your PRs and Linear tickets, deploy alerts, skill buttons and usage — see *Cockpit* below |
+| `cockpit` | 0 | A `/cockpit` pane for the work around the code: the Slack PR inbox, your PRs and Linear tickets, deploy alerts, skill buttons, a Compact button and a usage line — see *Cockpit* below |
 | `cmux` | 5 | cmux terminal multiplexer control: topology, workspaces, browser surface, notifications |
 
 Plugins that touch an employer's systems read their site-specific values — accounts,
@@ -129,15 +129,17 @@ calls on its own events. Each mod has a switch in `/config`, and all start on.
 ### Cockpit
 
 `cockpit` is a second plugin of function hooks. `/cockpit` opens one pane with
-five tabs, each on a digit key:
+four tabs, each on a digit key, and a **Compact** button on `5` that compacts
+the conversation. Under the tabs, on every tab, one line shows the 5-hour and
+weekly limits with the time to their reset, the context window and the
+session's cost:
 
 | Tab | What it shows |
 | --- | --- |
 | Inbox | Every Slack message a person other than you posted that links a GitHub PR which is not your own (a bot's "PR opened" notice is left out): who, where, and **Claude**, **Codex** and **Dismiss** buttons. Claude runs `/pr-workflows:pr-review <url>`, Codex runs `/pr-workflows:codex-pr-review <url>`. A new one raises a toast and a native notification once, and opens the pane (`openOnMessage`) |
-| PRs | Your in-progress Linear tickets, then every open PR you authored in any repository and the ones merged in the last week: failing, pending and passing checks, review threads waiting on you and ones you answered, conflicts, the ticket its title or branch names, and `in prod 12m` once the merge commit's GitHub deployment to production succeeded. `▸` expands a PR to its failing checks and threads, each a link, with **Address feedback**, **Fix CI** and **Polish**; `✕` dismisses it on every session |
+| PRs | Your in-progress Linear tickets and the ones done in the last day, then every open PR you authored in any repository and the ones merged in the last day (a day on, a merged PR is in production): failing, pending and passing checks, review threads waiting on you and ones you answered, conflicts, the ticket its title or branch names, and `in prod 12m` once the merge commit's GitHub deployment to production succeeded. `▸` expands a PR to its failing checks and threads, each a link, with **Address feedback**, **Fix CI** and **Polish**; `✕` dismisses it on every session |
 | Alerts | Each message of the monitoring channels (`alertChannels`). One that arrives within `alertWindowMinutes` of a PR of yours reaching production is compared to that PR's title and files by a small model call and marked likely related, unclear or unlikely, with the reason; the first two notify you and offer **Investigate** |
 | Skills | A button for each prompt in `pinnedSkills`, then the skills that load most |
-| Usage | The 5-hour and weekly limits with their reset, the context window, the session's cost, and seven days of cost and limit peaks |
 
 GitHub is read through `gh` and Linear through the claude.ai Linear connector,
 so neither needs a token here. Slack does.

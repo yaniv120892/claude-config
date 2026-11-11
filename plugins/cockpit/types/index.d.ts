@@ -1,4 +1,4 @@
-export type Tab = 'inbox' | 'prs' | 'alerts' | 'skills' | 'usage'
+export type Tab = 'inbox' | 'prs' | 'alerts' | 'skills'
 
 export type Reviewer = 'claude' | 'codex'
 
@@ -51,7 +51,14 @@ export type BoardPr = {
   deployedAt: number | null
 }
 
-export type Ticket = { id: string; title: string; url: string; status: string }
+export type Ticket = {
+  id: string
+  title: string
+  url: string
+  status: string
+  /** Done within the last day; a day on, it leaves the board. */
+  isDone: boolean
+}
 
 export type Board = {
   prs: BoardPr[]
@@ -83,13 +90,10 @@ export type SlackLink = {
 
 export type UsageLimit = { label: string; percent: number; resetsAt: number | null }
 
-export type UsageDay = { day: string; costUsd: number; fiveHourPeak: number; weekPeak: number }
-
 export type UsageView = {
   contextPercent: number | null
   limits: UsageLimit[]
   costUsd: number | null
-  days: UsageDay[]
 }
 
 export type SkillButton = { prompt: string; count: number; isPinned: boolean }

@@ -48,12 +48,13 @@ function fakeWorld(on: On, lines: object[] = []) {
       cost: { usd: 1.5 },
     },
   }))
-  on('mcp.call', () => ({
-    value: {
-      content: [{ type: 'text', text: JSON.stringify({ issues: [{ id: 'YAN-1', title: 'Charge twice', url: 'https://linear.app/x/issue/YAN-1', status: 'In Progress' }] }) }],
-      isError: false,
-    },
-  }))
+  on('mcp.call', ($, e) => {
+    const issues =
+      e.args.state === 'completed'
+        ? [{ id: 'YAN-2', title: 'Refund flow', url: 'https://linear.app/x/issue/YAN-2', status: 'Done' }]
+        : [{ id: 'YAN-1', title: 'Charge twice', url: 'https://linear.app/x/issue/YAN-1', status: 'In Progress' }]
+    return { value: { content: [{ type: 'text', text: JSON.stringify({ issues }) }], isError: false } }
+  })
   on('process.run', () =>
     ok(
       boardAnswer(
@@ -178,7 +179,7 @@ describe('the PR board', () => {
 
     const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
     const shown = (await pane.findAll({ type: 'Text' })).map(element => element.text).join('|')
-    for (const expected of ['YAN-1', 'Charge twice', '✗1', '1 open', 'in prod 10m']) expect(shown).toContain(expected)
+    for (const expected of ['YAN-1', 'Charge twice', 'YAN-2', 'Refund flow', '✗1', '1 open', 'in prod 10m']) expect(shown).toContain(expected)
 
     await pane.press({ key: 'expand-https://github.com/acme/app/pull/1' })
     expect(await pane.find({ type: 'Text', text: /reviewer:/ })).toBeDefined()
@@ -209,7 +210,7 @@ describe('alerts', () => {
   })
 })
 
-describe('skills and usage', () => {
+describe('skills, usage and compact', () => {
   test('a pinned skill is one press away', { options: { pinnedSkills: 'simplify' } }, async ($, on) => {
     const { clock, prompts } = fakeWorld(on)
     await start($, clock)
@@ -220,13 +221,30 @@ describe('skills and usage', () => {
     await pane.unmount()
   })
 
-  test('the usage tab shows the limits, the context and the day', async ($, on) => {
+  test('every tab shows the usage strip: the limits, the context and the cost', async ($, on) => {
     const { clock } = fakeWorld(on)
     await start($, clock)
-    await $.command.run(slash('cockpit', 'usage'))
+    for (const shownTab of ['inbox', 'prs', 'alerts', 'skills']) {
+      await $.command.run(slash('cockpit', shownTab))
+      const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
+      const shown = (await pane.findAll({ type: 'Text' })).map(element => element.text).join('|')
+      for (const expected of ['5h', '42%', '↻1h', 'Ctx', '31%', '$1.50']) expect(shown).toContain(expected)
+      await pane.unmount()
+    }
+  })
+
+  test('Compact compacts the conversation, and says why when a hook stops it', async ($, on) => {
+    const { clock, toasts } = fakeWorld(on)
+    let compactions = 0
+    on('session.compact', () => {
+      compactions += 1
+      return { skip: 'a hook kept the history' }
+    })
+    await start($, clock)
     const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
-    const shown = (await pane.findAll({ type: 'Text' })).map(element => element.text).join('|')
-    for (const expected of ['5-hour', '42%', 'resets in 1h', 'Context', '31%', '$1.50', '11-01']) expect(shown).toContain(expected)
+    await pane.press({ key: 'compact' })
+    expect(compactions).toBe(1)
+    expect(toasts).toContain('The compaction was stopped: a hook kept the history')
     await pane.unmount()
   })
 })

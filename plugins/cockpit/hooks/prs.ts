@@ -1,6 +1,5 @@
 import type { BoardCheck, BoardPr, BoardThread, CheckState, Ticket } from '../types'
 
-const MERGED_DAYS = 7
 const DAY_MS = 86_400_000
 // Also what makes an id safe to build a pattern from.
 const TICKET_ID = /^[A-Za-z][A-Za-z0-9]*-\d+$/
@@ -27,9 +26,9 @@ fragment Row on PullRequest {
   } }
 }`
 
-/** The two searches the board runs: my open PRs, and mine merged in the last week. */
+/** The two searches the board runs: my open PRs, and mine merged in the last day. A day on, a merged PR is in production. */
 export function boardSearches(now: number): { open: string; merged: string } {
-  const since = new Date(now - MERGED_DAYS * DAY_MS).toISOString().slice(0, 10)
+  const since = `${new Date(now - DAY_MS).toISOString().slice(0, 19)}Z`
   return {
     open: 'is:pr is:open author:@me archived:false sort:updated-desc',
     merged: `is:pr is:merged author:@me merged:>=${since} sort:updated-desc`,
@@ -144,7 +143,7 @@ export function parseBoard(stdout: string, prodEnvironment: string): BoardPr[] {
     .filter(pr => pr !== null)
 }
 
-export function parseTickets(answer: string): Ticket[] {
+export function parseTickets({ answer, isDone }: { answer: string; isDone: boolean }): Ticket[] {
   const issues = record(JSON.parse(answer)).issues
   if (!Array.isArray(issues)) return []
   return issues.map(record).map(issue => ({
@@ -152,6 +151,7 @@ export function parseTickets(answer: string): Ticket[] {
     title: text(issue.title),
     url: text(issue.url),
     status: text(issue.status),
+    isDone,
   }))
 }
 

@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
-import type { CommandSpec, EngineInterface as Engine, PluginOptions, Register } from 'claude-code'
+import type { Color, CommandSpec, EngineInterface as Engine, PluginOptions, Register } from 'claude-code'
 
-import type { Alert, AlertVerdict, Board, BoardPr, InboxItem, Reviewer, Tab } from '../types'
+import type { Alert, AlertVerdict, Board, BoardPr, InboxItem, Reviewer, SlackLink, Tab } from '../types'
 import { addAlert, asAlerts, fenceAlert, isRelated, parseVerdict, verdictPrompt, watchedDeploys } from './alerts'
 import type { Verdict } from './alerts'
 import {
@@ -17,17 +17,7 @@ import {
 } from './prs'
 import { addToInbox, applyMarks, asInbox, asMarks, excerptOf, markHandled, parseSidecarLine, REVIEW_SKILL, takeLines, waiting } from './slack'
 import type { SlackMessage } from './slack'
-import {
-  asCounts,
-  asLedger,
-  bar,
-  parsePinned,
-  recordUsage,
-  skillButtons,
-  usageColor,
-  usageDays,
-  usageLimits,
-} from './usage'
+import { asCounts, bar, parsePinned, skillButtons, stripBarWidth, usageColor, usageLimits } from './usage'
 
 // Every hook lives in this file: the engine follows `$` only into functions
 // declared beside the hook that passes it. The pure logic sits in the files
@@ -35,13 +25,13 @@ import {
 
 const tab = atom({ plugin: 'cockpit', key: 'tab' } as const, 'inbox')
 const inbox = atom({ plugin: 'cockpit', key: 'inbox' } as const, [], { shape: 'inbox-1' })
-const board = atom({ plugin: 'cockpit', key: 'board' } as const, null, { shape: 'board-1' })
+const board = atom({ plugin: 'cockpit', key: 'board' } as const, null, { shape: 'board-2' })
 const alerts = atom({ plugin: 'cockpit', key: 'alerts' } as const, [], { shape: 'alerts-1' })
 const dismissed = atom({ plugin: 'cockpit', key: 'dismissed' } as const, [])
 const expanded = atom({ plugin: 'cockpit', key: 'expanded' } as const, null)
 const isShowingDismissed = atom({ plugin: 'cockpit', key: 'isShowingDismissed' } as const, false)
 const slack = atom({ plugin: 'cockpit', key: 'slack' } as const, { state: 'off', detail: '' })
-const usage = atom({ plugin: 'cockpit', key: 'usage' } as const, null, { shape: 'usage-1' })
+const usage = atom({ plugin: 'cockpit', key: 'usage' } as const, null, { shape: 'usage-2' })
 const skills = atom({ plugin: 'cockpit', key: 'skills' } as const, [], { shape: 'skills-1' })
 
 const PANE = 'cockpit'
@@ -49,14 +39,13 @@ const PANE_TITLE = 'Cockpit'
 const COMMAND: CommandSpec = {
   name: 'cockpit',
   description: 'Open the cockpit: the Slack PR inbox, your PRs and tickets, deploy alerts, skill buttons and usage',
-  argumentHint: '[inbox|prs|alerts|skills|usage]',
+  argumentHint: '[inbox|prs|alerts|skills]',
 }
 const TABS = [
   { id: 'inbox', label: 'Inbox', hotkey: '1' },
   { id: 'prs', label: 'PRs', hotkey: '2' },
   { id: 'alerts', label: 'Alerts', hotkey: '3' },
   { id: 'skills', label: 'Skills', hotkey: '4' },
-  { id: 'usage', label: 'Usage', hotkey: '5' },
 ] as const satisfies readonly { id: Tab; label: string; hotkey: string }[]
 
 // Shared by every open session through $.store, so a dismissal in one shows in all.
@@ -65,29 +54,38 @@ const HANDLED_KEY = 'inboxHandled'
 const ALERTS_KEY = 'alerts'
 const DISMISSED_KEY = 'dismissedPrs'
 const SKILL_COUNTS_KEY = 'skillCounts'
-const USAGE_KEY = 'usageLedger'
 
 const SHARED_POLL_MS = 15_000
 const BOARD_POLL_MS = 120_000
 const SIDECAR_RESTART_MS = 30_000
 const NOTICE_TOAST_MS = 15_000
 const LINEAR_SERVER = 'claude.ai Linear'
+// An ISO 8601 duration, as Linear's completedAt filter reads it.
+const DONE_SHOWN_FOR = '-P1D'
 const VERDICT_MODEL = 'haiku'
 const ALERT_EXCERPT_LENGTH = 400
 const SKILL_HOTKEYS = 'abcdefghijkl'
 const MINUTE_MS = 60_000
 
 const VERDICT_LOOK = {
-  likely: { label: 'LIKELY RELATED', color: 'red' },
-  unclear: { label: 'UNCLEAR', color: 'yellow' },
-  unlikely: { label: 'unlikely related', color: 'green' },
+  likely: { label: 'LIKELY RELATED', color: 'error' },
+  unclear: { label: 'UNCLEAR', color: 'warning' },
+  unlikely: { label: 'unlikely related', color: 'success' },
 } as const satisfies Record<AlertVerdict, { label: string; color: string }>
 
 const CHECK_LOOK = {
-  fail: { mark: '✗', color: 'red' },
-  pending: { mark: '◌', color: 'yellow' },
-  pass: { mark: '✓', color: 'green' },
+  fail: { mark: '✗', color: 'error' },
+  pending: { mark: '◌', color: 'warning' },
+  pass: { mark: '✓', color: 'success' },
 } as const
+
+const SLACK_LOOK = {
+  off: 'subtle',
+  starting: 'warning',
+  standby: 'subtle',
+  connected: 'success',
+  error: 'error',
+} as const satisfies Record<SlackLink['state'], string>
 
 type Config = {
   appToken: string
@@ -287,12 +285,26 @@ async function readPrs($: Engine, config: Config, now: number): Promise<{ prs: B
   }
 }
 
+/** My tickets in progress, then the ones done in the last day: a day on, a done ticket leaves the board. */
 async function readTickets($: Engine): Promise<{ tickets: Board['tickets'] | null; error: string | null }> {
+  const [started, done] = await Promise.all([
+    readIssues($, { filter: { state: 'started' }, isDone: false }),
+    readIssues($, { filter: { state: 'completed', completedAt: DONE_SHOWN_FOR }, isDone: true }),
+  ])
+  if (started.tickets === null) return started
+  if (done.tickets === null) return done
+  return { tickets: [...started.tickets, ...done.tickets], error: null }
+}
+
+async function readIssues(
+  $: Engine,
+  { filter, isDone }: { filter: Record<string, string>; isDone: boolean },
+): Promise<{ tickets: Board['tickets'] | null; error: string | null }> {
   let text: string
   try {
     const answer = await $.mcp.call(LINEAR_SERVER, 'list_issues', {
       assignee: 'me',
-      state: 'started',
+      ...filter,
       limit: 20,
       fields: ['title', 'url', 'status'],
     })
@@ -302,7 +314,7 @@ async function readTickets($: Engine): Promise<{ tickets: Board['tickets'] | nul
     return { tickets: null, error: `Linear did not answer: ${String(error)}` }
   }
   try {
-    return { tickets: parseTickets(text), error: null }
+    return { tickets: parseTickets({ answer: text, isDone }), error: null }
   } catch (error) {
     return { tickets: null, error: `Linear's answer could not be read: ${String(error)}` }
   }
@@ -337,23 +349,12 @@ async function readBoard($: Engine, config: Config): Promise<void> {
 }
 
 async function refreshUsage($: Engine): Promise<void> {
-  const [measured, sessionId, now, stored] = await Promise.all([
-    $.session.usage(),
-    $.session.id(),
-    $.clock.now(),
-    $.store.get(USAGE_KEY),
-  ])
-  const limits = usageLimits(measured.rateLimits)
-  const costUsd = measured.cost?.usd ?? null
-  const last = asLedger(stored)
-  const ledger = recordUsage(last, { day: new Date(now).toISOString().slice(0, 10), sessionId, costUsd, limits })
-  if (!isSame(last, ledger)) await $.store.set(USAGE_KEY, ledger)
+  const measured = await $.session.usage()
   const percent = measured.context.percent
   await update($, usage, () => ({
     contextPercent: percent === undefined ? null : Math.round(percent),
-    limits,
-    costUsd,
-    days: usageDays(ledger),
+    limits: usageLimits(measured.rateLimits),
+    costUsd: measured.cost?.usd ?? null,
   }))
 }
 
@@ -379,6 +380,16 @@ async function countSkill($: Engine, config: Config, skill: string): Promise<voi
 function runSlash($: Engine, line: string): void {
   const [command = '', ...args] = line.replace(/^\//, '').split(' ')
   inBackground($, $.command.run({ command, args: args.join(' ') }))
+}
+
+async function compact($: Engine): Promise<void> {
+  try {
+    const result = await $.session.compact()
+    if ('skip' in result) $.ui.toast(`The compaction was stopped: ${result.skip}`)
+  } catch (error) {
+    $.ui.toast(`Compact runs between turns; wait for this one to end. (${String(error)})`)
+  }
+  await refreshUsage($)
 }
 
 async function handleInboxItem($: Engine, item: InboxItem, handledBy: Reviewer | 'dismissed'): Promise<void> {
@@ -476,12 +487,20 @@ export const register: Register = (on, options) => {
     const openPrs = (shownBoard?.prs ?? []).filter(pr => !hidden.includes(pr.url))
     const failing = openPrs.filter(pr => pr.state === 'OPEN' && pr.checks.some(check => check.state === 'fail')).length
     const related = shownAlerts.filter(alert => alert.verdict !== null && isRelated(alert.verdict)).length
-    const badges: Record<Tab, string> = {
-      inbox: unhandled.length > 0 ? ` ${unhandled.length}` : '',
-      prs: failing > 0 ? ` ${openPrs.length} ✗${failing}` : ` ${openPrs.length}`,
-      alerts: related > 0 ? ` ${related}` : '',
-      skills: '',
-      usage: '',
+    const badges: Record<Tab, { text: string; color: Color | null }> = {
+      inbox: { text: unhandled.length > 0 ? ` ${unhandled.length}` : '', color: 'claude' },
+      prs: failing > 0 ? { text: ` ${openPrs.length} ✗${failing}`, color: 'error' } : { text: ` ${openPrs.length}`, color: null },
+      alerts: { text: related > 0 ? ` ${related}` : '', color: 'error' },
+      skills: { text: '', color: null },
+    }
+
+    function heading(label: string) {
+      return (
+        <Text key={`heading-${label}`}>
+          <Text color="claude">▍</Text>
+          <Text bold>{label}</Text>
+        </Text>
+      )
     }
 
     async function drawInbox() {
@@ -533,7 +552,7 @@ export const register: Register = (on, options) => {
               <Text> </Text>
             </Box>
           ))}
-          {handled.length > 0 && <Text bold>Handled</Text>}
+          {handled.length > 0 && heading('Handled')}
           {handled.map(item => (
             <Text key={`handled-${item.prUrl}`} dimColor wrap="truncate-end">
               <Link href={item.prUrl} label={`${item.repo}#${item.number}`} />{' '}
@@ -541,9 +560,14 @@ export const register: Register = (on, options) => {
             </Text>
           ))}
           {hasSlack && (
-            <Text dimColor wrap="wrap">
-              {'\n'}Slack: {link.state}
-              {link.detail === '' ? '' : ` · ${link.detail}`}
+            <Text wrap="wrap">
+              {'\n'}
+              <Text color={SLACK_LOOK[link.state]}>●</Text>
+              <Text dimColor>
+                {' '}
+                Slack {link.state}
+                {link.detail === '' ? '' : ` · ${link.detail}`}
+              </Text>
             </Text>
           )}
         </Box>
@@ -578,18 +602,18 @@ export const register: Register = (on, options) => {
             <Text wrap="truncate-end">
               <Link href={pr.url} label={`${pr.repo.split('/')[1] ?? pr.repo}#${pr.number}`} />
               {pr.state === 'MERGED' && pr.deployedAt !== null && (
-                <Text color="green" bold>
+                <Text color="success" bold>
                   {' '}
                   in prod {age(pr.deployedAt, now)}
                 </Text>
               )}
               {pr.state === 'MERGED' && pr.deployedAt === null && (
-                <Text color="magenta"> merged{pr.mergedAt === null ? '' : ` ${age(pr.mergedAt, now)}`}, not in prod</Text>
+                <Text color="merged"> merged{pr.mergedAt === null ? '' : ` ${age(pr.mergedAt, now)}`}, not in prod</Text>
               )}
               {pr.state === 'OPEN' && pr.isDraft && <Text dimColor> draft</Text>}
-              {pr.state === 'OPEN' && pr.reviewDecision === 'APPROVED' && <Text color="green"> approved</Text>}
-              {pr.state === 'OPEN' && pr.reviewDecision === 'CHANGES_REQUESTED' && <Text color="red"> changes requested</Text>}
-              {pr.state === 'OPEN' && pr.hasConflicts && <Text color="red"> conflicts</Text>}
+              {pr.state === 'OPEN' && pr.reviewDecision === 'APPROVED' && <Text color="success"> approved</Text>}
+              {pr.state === 'OPEN' && pr.reviewDecision === 'CHANGES_REQUESTED' && <Text color="error"> changes requested</Text>}
+              {pr.state === 'OPEN' && pr.hasConflicts && <Text color="error"> conflicts</Text>}
               {pr.state === 'OPEN' &&
                 (['fail', 'pending', 'pass'] as const).map(
                   state =>
@@ -601,7 +625,7 @@ export const register: Register = (on, options) => {
                       </Text>
                     ),
                 )}
-              {waitingThreads > 0 && <Text color="yellow"> · {waitingThreads} open</Text>}
+              {waitingThreads > 0 && <Text color="warning"> · {waitingThreads} open</Text>}
               {repliedThreads > 0 && <Text dimColor> · {repliedThreads} replied</Text>}
               {ticket !== null && (
                 <Text>
@@ -627,7 +651,7 @@ export const register: Register = (on, options) => {
                 const where = `${thread.path}${thread.line === null ? '' : `:${thread.line}`}`
                 return (
                   <Text key={`thread-${index}`} wrap="wrap">
-                    {thread.url === null ? <Text color="cyan">{where}</Text> : <Link href={thread.url} label={where} />}{' '}
+                    {thread.url === null ? <Text color="suggestion">{where}</Text> : <Link href={thread.url} label={where} />}{' '}
                     <Text dimColor>{thread.author}:</Text> {thread.excerpt}
                     {thread.isReplied && <Text dimColor> (replied)</Text>}
                   </Text>
@@ -668,19 +692,22 @@ export const register: Register = (on, options) => {
       const hiddenPrs = shownBoard.prs.filter(pr => hidden.includes(pr.url))
       return (
         <Box flexDirection="column">
-          <Text bold>Tickets in progress</Text>
+          {heading('Tickets')}
           {shownBoard.ticketsError !== null && <Text dimColor>{shownBoard.ticketsError}</Text>}
           {shownBoard.ticketsError === null && shownBoard.tickets.length === 0 && <Text dimColor>None.</Text>}
           {shownBoard.tickets.map(ticket => (
             <Text key={ticket.id} wrap="truncate-end">
-              <Link href={ticket.url} label={ticket.id} /> <Text dimColor>{ticket.status}</Text> · {ticket.title}
+              {ticket.isDone ? <Text color="success">✓ </Text> : <Text color="warning">● </Text>}
+              <Link href={ticket.url} label={ticket.id} /> <Text dimColor>{ticket.status}</Text>{' '}
+              {ticket.isDone ? <Text dimColor>{ticket.title}</Text> : ticket.title}
             </Text>
           ))}
-          <Text bold>{'\n'}Pull requests</Text>
-          {shownBoard.error !== null && <Text color="red">{shownBoard.error}</Text>}
-          {shownBoard.error === null && openPrs.length === 0 && <Text dimColor>None open, none merged this week.</Text>}
+          <Text> </Text>
+          {heading('Pull requests')}
+          {shownBoard.error !== null && <Text color="error">{shownBoard.error}</Text>}
+          {shownBoard.error === null && openPrs.length === 0 && <Text dimColor>None open, none merged in the last day.</Text>}
           {openPrs.map(pr => drawPr(pr, pr.url === openUrl))}
-          {showsHidden && hiddenPrs.length > 0 && <Text bold>{'\n'}Dismissed</Text>}
+          {showsHidden && hiddenPrs.length > 0 && heading('Dismissed')}
           {showsHidden && hiddenPrs.map(pr => drawPr(pr, false))}
           <Text> </Text>
           <Box flexDirection="row" gap={1}>
@@ -710,7 +737,7 @@ export const register: Register = (on, options) => {
             </Text>
           )}
           {watched.map(pr => (
-            <Text key={`watch-${pr.url}`} color="yellow" wrap="truncate-end">
+            <Text key={`watch-${pr.url}`} color="warning" wrap="truncate-end">
               Watching {pr.repo}#{pr.number} for {age(now, (pr.deployedAt ?? now) + config.alertWindowMs)} more
             </Text>
           ))}
@@ -778,45 +805,49 @@ export const register: Register = (on, options) => {
       )
     }
 
-    async function drawUsage() {
+    /** One quiet line on every tab: each limit with its reset, the context window and the session's cost. */
+    async function drawUsageStrip() {
       const shown = await read($, usage)
       if (shown === null) return <Text dimColor>Reading the usage…</Text>
-      const width = Math.max(8, Math.min(24, e.props.bodyColumns - 32))
-      const days = shown.days.slice(-7)
-      const topCost = Math.max(...days.map(day => day.costUsd), 0)
+      const width = stripBarWidth(e.props.bodyColumns)
+      const gauges = [
+        ...shown.limits.map(limit => ({ label: limit.label, percent: limit.percent, reset: resetIn(limit.resetsAt, now) })),
+        ...(shown.contextPercent === null ? [] : [{ label: 'Ctx', percent: shown.contextPercent, reset: null }]),
+      ]
       return (
-        <Box flexDirection="column">
-          {shown.limits.length === 0 && <Text dimColor>No usage limit is reported for this account.</Text>}
-          {shown.limits.map(limit => {
-            const reset = resetIn(limit.resetsAt, now)
-            return (
-              <Text key={limit.label} wrap="truncate-end">
-                {limit.label.padEnd(8)} <Text color={usageColor(limit.percent)}>{bar(limit.percent, width)}</Text>{' '}
-                {String(limit.percent).padStart(3)}%{reset !== null && <Text dimColor> resets in {reset}</Text>}
-              </Text>
-            )
-          })}
-          {shown.contextPercent !== null && (
-            <Text wrap="truncate-end">
-              {'Context'.padEnd(8)}{' '}
-              <Text color={usageColor(shown.contextPercent)}>{bar(shown.contextPercent, width)}</Text>{' '}
-              {String(shown.contextPercent).padStart(3)}%
-            </Text>
-          )}
-          {shown.costUsd !== null && <Text>This session: ${shown.costUsd.toFixed(2)}</Text>}
-          <Text bold>{'\n'}Last 7 days</Text>
-          {days.map(day => (
-            <Text key={day.day} wrap="truncate-end">
-              {day.day.slice(5)}{' '}
-              <Text color="cyan">{bar(topCost === 0 ? day.fiveHourPeak : (day.costUsd / topCost) * 100, width)}</Text>{' '}
-              ${day.costUsd.toFixed(2)}
-              <Text dimColor>
-                {' '}
-                5h peak {day.fiveHourPeak}% · week {day.weekPeak}%
-              </Text>
+        <Box borderStyle="round" borderColor="subtle" paddingX={1}>
+          <Text wrap="truncate-end">
+          {gauges.map((gauge, index) => (
+            <Text key={gauge.label}>
+              {index > 0 && <Text dimColor> · </Text>}
+              <Text dimColor>{gauge.label} </Text>
+              {width > 0 && <Text color={usageColor(gauge.percent)}>{bar(gauge.percent, width)} </Text>}
+              <Text color={usageColor(gauge.percent)}>{gauge.percent}%</Text>
+              {gauge.reset !== null && <Text dimColor> ↻{gauge.reset}</Text>}
             </Text>
           ))}
+          {shown.costUsd !== null && <Text dimColor> · ${shown.costUsd.toFixed(2)}</Text>}
+        </Text>
         </Box>
+      )
+    }
+
+    function drawTabChip(entry: (typeof TABS)[number]) {
+      const badge = badges[entry.id]
+      const isShown = entry.id === shownTab
+      return (
+        <Button key={`tab-${entry.id}`} plain hotkey={entry.hotkey} label={`${entry.label}${badge.text}`} onPress={() => update($, tab, () => entry.id)}>
+          {isShown ? (
+            <Text inverse bold color="claude">
+              {` ${entry.label}${badge.text} `}
+            </Text>
+          ) : (
+            <Text>
+              <Text dimColor>{` ${entry.label}`}</Text>
+              {badge.color === null ? <Text dimColor>{badge.text}</Text> : <Text bold color={badge.color}>{badge.text}</Text>}{' '}
+            </Text>
+          )}
+        </Button>
       )
     }
 
@@ -831,24 +862,17 @@ export const register: Register = (on, options) => {
         case 'skills':
           return drawSkills()
         default:
-          return drawUsage()
+          return drawInbox()
       }
     }
 
     return (
       <Box flexDirection="column">
         <Box flexDirection="row" gap={2} flexWrap="wrap">
-          {TABS.map(entry => (
-            <Button
-              key={`tab-${entry.id}`}
-              plain
-              hotkey={entry.hotkey}
-              label={`${entry.id === shownTab ? '▸' : ''}${entry.label}${badges[entry.id]}`}
-              onPress={() => update($, tab, () => entry.id)}
-            />
-          ))}
+          {TABS.map(entry => drawTabChip(entry))}
+          <Button key="compact" plain dimColor hotkey="5" label="⇣ Compact" onPress={() => compact($)} />
         </Box>
-        <Text> </Text>
+        {await drawUsageStrip()}
         {await drawTab()}
       </Box>
     )

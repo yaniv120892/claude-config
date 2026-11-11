@@ -57,18 +57,19 @@ describe('the PR board', () => {
     expect(newlyDeployed(null, [deployed])).toEqual([])
   })
 
-  test('searches my open PRs and the ones merged in the last week', async () => {
+  test('searches my open PRs and the ones merged in the last day', async () => {
     const searches = boardSearches(Date.parse('2026-11-10T08:00:00Z'))
     expect(searches.open).toContain('is:open author:@me')
-    expect(searches.merged).toContain('merged:>=2026-11-03')
+    expect(searches.merged).toContain('merged:>=2026-11-09T08:00:00Z')
   })
 
   test('links a PR to the ticket its title or branch names', async () => {
-    const tickets = parseTickets(JSON.stringify({ issues: [{ id: 'YAN-1', title: 'One', url: 'https://linear.app/x/issue/YAN-1', status: 'In Progress' }] }))
+    const answer = JSON.stringify({ issues: [{ id: 'YAN-1', title: 'One', url: 'https://linear.app/x/issue/YAN-1', status: 'In Progress' }] })
+    const tickets = parseTickets({ answer, isDone: false })
     const [first, eleventh] = parseBoard(boardAnswer([row({ number: 1 }), row({ number: 11 })]), 'production')
     expect(first === undefined ? null : ticketOf(first, tickets)?.id).toBe('YAN-1')
     expect(eleventh === undefined ? null : ticketOf(eleventh, tickets)).toBe(null)
-    const nameless = [{ id: '', title: 'No id', url: '', status: '' }]
+    const nameless = [{ id: '', title: 'No id', url: '', status: '', isDone: false }]
     expect(first === undefined ? null : ticketOf(first, nameless)).toBe(null)
   })
 })
