@@ -1,7 +1,7 @@
 {
   "name": "cockpit",
   "description": "A /cockpit pane for the work around the code: an inbox of the GitHub PRs people send on Slack, each with a review by Claude or by Codex one press away, and a reaction, a threaded reply or the message in Slack one press away too; every open PR you authored and the ones merged in the last day, with CI, open review threads and whether each reached production, beside your Linear tickets in progress or done in the last day; monitoring alerts that follow one of your deploys, each compared to the PR that shipped; a button for each skill you use most; a Compact button; and a line on every tab with the usage limits, the context against the auto-compact threshold and the session's cost.",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "author": { "name": "Yaniv Daye" },
   "homepage": "https://github.com/yaniv120892/claude-config",
   "repository": "https://github.com/yaniv120892/claude-config",
