@@ -14,7 +14,7 @@ query($open: String!, $merged: String!) {
 fragment Row on PullRequest {
   number title url isDraft state mergedAt reviewDecision mergeable headRefName
   author { login }
-  repository { nameWithOwner }
+  repository { nameWithOwner deployments { totalCount } }
   mergeCommit { deployments(first: 10) { nodes { environment createdAt statuses(first: 10) { nodes { state createdAt } } } } }
   commits(last: 1) { nodes { commit { statusCheckRollup { contexts(first: 60) { nodes {
     __typename
@@ -137,6 +137,7 @@ function parseRow(row: Json, prodEnvironment: string): BoardPr | null {
     files: nodes(row.files).map(file => text(file.path)),
     mergedAt: time(row.mergedAt),
     deployedAt: deployedAt(row.mergeCommit, prodEnvironment),
+    hasDeploys: record(record(row.repository).deployments).totalCount !== 0,
   }
 }
 
@@ -225,4 +226,44 @@ export function newlyDeployed(last: readonly BoardPr[] | null, next: readonly Bo
 
 export function asDismissed(stored: unknown): string[] {
   return Array.isArray(stored) ? stored.filter(url => typeof url === 'string') : []
+}
+
+/** An open PR that can merge now: not a draft, no conflicts, every check passed, and approved or needing no review. */
+export function isReadyToMerge(pr: BoardPr): boolean {
+  if (pr.state !== 'OPEN' || pr.isDraft || pr.hasConflicts) return false
+  const counts = countChecks(pr.checks)
+  const isGreen = counts.fail === 0 && counts.pending === 0
+  const isReviewed = pr.reviewDecision === 'APPROVED' || pr.reviewDecision === null
+  return isGreen && isReviewed
+}
+
+/** What changed on my open PRs since the last read, each as one line to toast. The first read says nothing. */
+export function prChanges({ last, next }: { last: readonly BoardPr[] | null; next: readonly BoardPr[] }): string[] {
+  if (last === null) return []
+  const before = new Map(last.map(pr => [pr.url, pr]))
+  return next.flatMap(pr => {
+    const previous = before.get(pr.url)
+    const isStillOpen = previous !== undefined && previous.state === 'OPEN' && pr.state === 'OPEN'
+    return isStillOpen ? changesOf({ previous, pr }) : []
+  })
+}
+
+/** A ticket that is still open although a PR naming it merged and none naming it is open: one to move to Done. */
+export function isMergedButOpen({ ticket, prs }: { ticket: Ticket; prs: readonly BoardPr[] }): boolean {
+  if (ticket.isDone) return false
+  const named = prs.filter(pr => namesTicket({ pr, ticketId: ticket.id }))
+  return named.some(pr => pr.state === 'MERGED') && !named.some(pr => pr.state === 'OPEN')
+}
+
+function changesOf({ previous, pr }: { previous: BoardPr; pr: BoardPr }): string[] {
+  const label = `${pr.repo}#${pr.number}`
+  const changes: string[] = []
+  const failing = pr.checks.filter(check => check.state === 'fail')
+  const wasFailing = countChecks(previous.checks).fail > 0
+  if (failing.length > 0 && !wasFailing) changes.push(`${label}: CI failed (${failing.map(check => check.name).join(', ')}).`)
+  const waiting = pr.threads.filter(thread => !thread.isReplied).length
+  const waitedBefore = previous.threads.filter(thread => !thread.isReplied).length
+  if (waiting > waitedBefore) changes.push(`${label}: ${waiting - waitedBefore} new review thread${waiting - waitedBefore === 1 ? '' : 's'}.`)
+  if (isReadyToMerge(pr) && !isReadyToMerge(previous)) changes.push(`${label} is green and ready to merge.`)
+  return changes
 }

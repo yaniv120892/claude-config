@@ -53,6 +53,8 @@ export type BoardPr = {
   mergedAt: number | null
   /** When the merge commit's deployment to production succeeded. */
   deployedAt: number | null
+  /** Whether the repo has any deployment at all; a repo with none is finished at merge. */
+  hasDeploys: boolean
 }
 
 export type Ticket = {
@@ -137,6 +139,8 @@ declare module 'claude-code' {
       isShowingAllPrs: boolean
       /** The ticket row expanded to list its PRs. */
       openTicket: string | null
+      /** The PR whose Merge was pressed once and waits for the second press. */
+      confirmingMerge: string | null
     }
   }
 }

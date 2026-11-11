@@ -40,6 +40,15 @@ function contextBreakdown({ totalTokens, autoCompactThreshold }: { totalTokens: 
 
 type WorldOptions = { lines?: object[]; slackAnswer?: string; workspace?: string }
 
+const OPEN_ROWS = [
+  row({ number: 1, threads: [thread({ author: 'reviewer' })], checks: [{ __typename: 'CheckRun', name: 'lint', status: 'COMPLETED', conclusion: 'FAILURE', detailsUrl: 'https://ci/2' }] }),
+  row({ number: 4 }),
+]
+const MERGED_ROWS = [
+  row({ number: 3, state: 'MERGED', mergedAt: '2026-11-01T10:20:00Z', deployments: DEPLOYED }),
+  row({ number: 6, state: 'MERGED', mergedAt: '2026-10-29T09:00:00Z', deployments: DEPLOYED }),
+]
+
 /** A session with two open PRs and one deployed ten minutes ago, a sidecar that prints `lines`, in the cmux workspace titled `workspace`. */
 function fakeWorld(on: On, { lines = [], slackAnswer = '{"ok":true}', workspace = 'billing' }: WorldOptions = {}) {
   const clock = mock.clock(on, { now: NOW })
@@ -50,6 +59,9 @@ function fakeWorld(on: On, { lines = [], slackAnswer = '{"ok":true}', workspace 
   const verdicts: string[] = []
   const spawned: { argv: readonly string[]; env?: Record<string, string> }[] = []
   const slackCalls: { method: string; body: Record<string, unknown>; authorization: string | undefined }[] = []
+  const ran: string[] = []
+  const linearWrites: Record<string, unknown>[] = []
+  const board = { open: OPEN_ROWS, merged: MERGED_ROWS }
   on('http.fetch', ($, e) => {
     slackCalls.push({
       method: e.url.replace('https://slack.com/api/', ''),
@@ -80,29 +92,26 @@ function fakeWorld(on: On, { lines = [], slackAnswer = '{"ok":true}', workspace 
     },
   }))
   on('mcp.call', ($, e) => {
+    if (e.tool === 'save_issue') {
+      linearWrites.push(e.args)
+      return { value: { content: [{ type: 'text', text: '{}' }], isError: false } }
+    }
     const issues =
       e.args.state === 'completed' && e.args.completedAt === '-P1D'
         ? [{ id: 'YAN-2', title: 'Refund flow', url: 'https://linear.app/x/issue/YAN-2', status: 'Done' }]
         : e.args.state === 'started'
-          ? [{ id: 'YAN-1', title: 'Charge twice', url: 'https://linear.app/x/issue/YAN-1', status: 'In Progress' }]
+          ? [
+              { id: 'YAN-1', title: 'Charge twice', url: 'https://linear.app/x/issue/YAN-1', status: 'In Progress' },
+              { id: 'YAN-3', title: 'Receipts', url: 'https://linear.app/x/issue/YAN-3', status: 'In Progress' },
+            ]
           : [{ id: 'YAN-9', title: 'Done a month ago', url: 'https://linear.app/x/issue/YAN-9', status: 'Done' }]
     return { value: { content: [{ type: 'text', text: JSON.stringify({ issues }) }], isError: false } }
   })
   on('process.run', ($, e) => {
+    ran.push(e.argv.join(' '))
     if (e.argv[0] === 'cmux') return ok(workspaceListing(workspace))
     if (e.argv[0] === 'git') return ok('main\n')
-    return ok(
-      boardAnswer(
-        [
-          row({ number: 1, threads: [thread({ author: 'reviewer' })], checks: [{ __typename: 'CheckRun', name: 'lint', status: 'COMPLETED', conclusion: 'FAILURE', detailsUrl: 'https://ci/2' }] }),
-          row({ number: 4 }),
-        ],
-        [
-          row({ number: 3, state: 'MERGED', mergedAt: '2026-11-01T10:20:00Z', deployments: DEPLOYED }),
-          row({ number: 6, state: 'MERGED', mergedAt: '2026-10-29T09:00:00Z', deployments: DEPLOYED }),
-        ],
-      ),
-    )
+    return ok(boardAnswer(board.open, board.merged))
   })
   on('model.complete', ($, e) => {
     verdicts.push(String(e.prompt))
@@ -121,7 +130,7 @@ function fakeWorld(on: On, { lines = [], slackAnswer = '{"ok":true}', workspace 
     yield { stream: 'stdout' as const, text: output.slice(25) }
     return { value: { code: 0, signal: null } }
   })
-  return { clock, prompts, toasts, spawned, verdicts, slackCalls }
+  return { clock, prompts, toasts, spawned, verdicts, slackCalls, ran, linearWrites, board }
 }
 
 const PR_MESSAGE = {
@@ -320,6 +329,83 @@ describe('the ticket this workspace works on', () => {
       '/pr-workflows:pr-polish https://github.com/acme/app/pull/1',
       '/pr-workflows:pr-polish https://github.com/acme/app/pull/4',
     ])
+    await pane.unmount()
+  })
+})
+
+describe('acting on the board', () => {
+  test('a ticket whose PR merged while it stayed open moves to Done in one press', async ($, on) => {
+    const { clock, linearWrites, toasts } = fakeWorld(on)
+    await start($, clock)
+    await $.command.run(slash('cockpit', 'prs'))
+
+    const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
+    expect(await pane.find({ key: 'done-YAN-1' })).toBeUndefined()
+    await pane.press({ key: 'done-YAN-3' })
+    expect(linearWrites).toEqual([{ id: 'YAN-3', state: 'Done' }])
+    expect(toasts).toContain('YAN-3 moved to Done.')
+    await pane.unmount()
+  })
+
+  test('a green PR that needs no review merges on the second press, by squash, and its branch goes', async ($, on) => {
+    const { clock, ran, toasts, board } = fakeWorld(on)
+    board.open = [OPEN_ROWS[0] ?? row({ number: 1 }), row({ number: 4, reviewDecision: null })]
+    await start($, clock)
+    await $.command.run(slash('cockpit', 'prs'))
+
+    const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
+    expect(await pane.find({ key: 'merge-https://github.com/acme/app/pull/1' })).toBeUndefined()
+    await pane.press({ key: 'merge-https://github.com/acme/app/pull/4' })
+    expect(ran.some(command => command.includes('/merge'))).toBe(false)
+    expect((await pane.find({ key: 'merge-https://github.com/acme/app/pull/4' }))?.props.label).toBe('⏎ Confirm merge')
+
+    await pane.press({ key: 'merge-https://github.com/acme/app/pull/4' })
+    expect(ran).toContain('gh api -X PUT repos/acme/app/pulls/4/merge -f merge_method=squash')
+    expect(ran).toContain('gh api -X DELETE repos/acme/app/git/refs/heads/yan-4-change')
+    expect(toasts).toContain('acme/app#4 merged.')
+    await pane.unmount()
+  })
+
+  test('a ticket opens a cmux workspace of its own', async ($, on) => {
+    const { clock, prompts } = fakeWorld(on)
+    await start($, clock)
+    await $.command.run(slash('cockpit', 'prs'))
+
+    const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
+    await pane.press({ key: 'ticket-YAN-1' })
+    await pane.press({ key: 'workspace-YAN-1' })
+    expect(prompts).toEqual(['/cmux:ticket-workspace YAN-1'])
+    await pane.unmount()
+  })
+
+  test('a new failure, a new review thread and a PR turning ready each toast on the next read', async ($, on) => {
+    const { clock, toasts, board } = fakeWorld(on)
+    await start($, clock)
+    expect(toasts.filter(text => text.startsWith('acme/app#'))).toEqual([])
+
+    board.open = [
+      row({ number: 1, threads: [thread({ author: 'reviewer' }), thread({ author: 'reviewer' })], checks: [{ __typename: 'CheckRun', name: 'lint', status: 'COMPLETED', conclusion: 'FAILURE', detailsUrl: 'https://ci/2' }] }),
+      row({ number: 4, reviewDecision: null }),
+    ]
+    await clock.advance(120_000)
+    expect(toasts).toContain('acme/app#1: 1 new review thread.')
+    expect(toasts).toContain('acme/app#4 is green and ready to merge.')
+
+    board.open = [row({ number: 4, reviewDecision: null, checks: [{ __typename: 'CheckRun', name: 'tests', status: 'COMPLETED', conclusion: 'FAILURE', detailsUrl: '' }] })]
+    await clock.advance(120_000)
+    expect(toasts).toContain('acme/app#4: CI failed (tests).')
+  })
+
+  test('a merged PR in a repo that never deploys reads as merged, not as waiting for production', async ($, on) => {
+    const { clock, board } = fakeWorld(on)
+    board.merged = [row({ number: 3, state: 'MERGED', mergedAt: '2026-11-01T10:20:00Z', hasDeploys: false })]
+    await start($, clock)
+    await $.command.run(slash('cockpit', 'prs'))
+
+    const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
+    const shown = (await pane.findAll({ type: 'Text' })).map(element => element.text).join('|')
+    expect(shown).toContain('merged 20m')
+    expect(shown).not.toContain('not in prod')
     await pane.unmount()
   })
 })
