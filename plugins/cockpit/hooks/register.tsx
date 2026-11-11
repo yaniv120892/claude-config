@@ -91,12 +91,12 @@ const VERDICT_MODEL = 'haiku'
 const ALERT_EXCERPT_LENGTH = 400
 const SKILL_HOTKEYS = 'abcdefghijkl'
 const POLISH_SKILL = '/pr-workflows:pr-polish'
+const MINUTE_MS = 60_000
 
 const FOCUS_SOURCE = {
   workspace: 'From the workspace name.',
   branch: 'From the branch name.',
 } as const satisfies Record<Focus['source'], string>
-const MINUTE_MS = 60_000
 
 const VERDICT_LOOK = {
   likely: { label: 'LIKELY RELATED', color: 'error' },
@@ -397,7 +397,8 @@ async function readFocus($: Engine, tickets: readonly Ticket[]): Promise<Focus |
 
 async function readWorkspaceTitle($: Engine): Promise<string | null> {
   const workspaceId = await $.env.get('CMUX_WORKSPACE_ID')
-  if (workspaceId === undefined || workspaceId === '') return null
+  const isOutsideCmux = workspaceId === undefined || workspaceId === ''
+  if (isOutsideCmux) return null
   try {
     const ran = await $.process.run(['cmux', 'workspace', 'list', '--id-format', 'both', '--json'], {
       timeoutMs: 5_000,
@@ -415,8 +416,10 @@ async function readBranch($: Engine): Promise<string | null> {
   try {
     const ran = await $.process.run(['git', 'branch', '--show-current'], { timeoutMs: 5_000 })
     const branch = ran.stdout.trim()
-    return ran.exitCode === 0 && branch !== '' ? branch : null
-  } catch {
+    const isOnBranch = ran.exitCode === 0 && branch !== ''
+    return isOnBranch ? branch : null
+  } catch (error) {
+    $.ui.log(`cockpit: the branch could not be read: ${String(error)}`, { to: 'debug' })
     return null
   }
 }
@@ -544,6 +547,10 @@ async function setDismissed($: Engine, url: string, isDismissed: boolean): Promi
   const next = isDismissed ? [url, ...known].slice(0, 200) : known
   await $.store.set(DISMISSED_KEY, next)
   await update($, dismissed, () => next)
+}
+
+function prLabel(pr: BoardPr): string {
+  return `${pr.repo.split('/')[1] ?? pr.repo}#${pr.number}`
 }
 
 function stateWord(pr: BoardPr): string {
@@ -768,6 +775,10 @@ export const register: Register = (on, options) => {
       )
     }
 
+    function drawPolish({ key, pr }: { key: string; pr: BoardPr }) {
+      return <Button key={key} plain label="✦ Polish" onPress={() => runSlash($, `${POLISH_SKILL} ${pr.url}`)} />
+    }
+
     function toggleExpanded(url: string) {
       return update($, expanded, last => (last === url ? null : url))
     }
@@ -793,11 +804,9 @@ export const register: Register = (on, options) => {
               label={isHidden ? '↺' : '✕'}
               onPress={() => setDismissed($, pr.url, !isHidden)}
             />
-            {pr.state === 'OPEN' && (
-              <Button key={`polish-${pr.url}`} plain label="✦ Polish" onPress={() => runSlash($, `${POLISH_SKILL} ${pr.url}`)} />
-            )}
+            {pr.state === 'OPEN' && drawPolish({ key: `polish-${pr.url}`, pr })}
             <Text wrap="truncate-end">
-              <Link href={pr.url} label={`${pr.repo.split('/')[1] ?? pr.repo}#${pr.number}`} />
+              <Link href={pr.url} label={prLabel(pr)} />
               {pr.state === 'MERGED' && pr.deployedAt !== null && (
                 <Text color="success" bold>
                   {' '}
@@ -885,16 +894,9 @@ export const register: Register = (on, options) => {
     function drawTicketPr({ ticketId, pr }: { ticketId: string; pr: BoardPr }) {
       return (
         <Box key={`ticket-pr-${ticketId}-${pr.url}`} flexDirection="row" gap={1}>
-          {pr.state === 'OPEN' && (
-            <Button
-              key={`ticket-polish-${ticketId}-${pr.url}`}
-              plain
-              label="✦ Polish"
-              onPress={() => runSlash($, `${POLISH_SKILL} ${pr.url}`)}
-            />
-          )}
+          {pr.state === 'OPEN' && drawPolish({ key: `ticket-polish-${ticketId}-${pr.url}`, pr })}
           <Text wrap="truncate-end">
-            <Link href={pr.url} label={`${pr.repo.split('/')[1] ?? pr.repo}#${pr.number}`} />
+            <Link href={pr.url} label={prLabel(pr)} />
             <Text color={pr.state === 'OPEN' ? 'warning' : 'merged'}> {stateWord(pr)}</Text>
             <Text dimColor> · {pr.title}</Text>
           </Text>
