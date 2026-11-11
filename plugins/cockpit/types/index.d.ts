@@ -1,4 +1,4 @@
-export type Tab = 'inbox' | 'prs' | 'alerts' | 'skills' | 'usage'
+export type Tab = 'inbox' | 'prs' | 'alerts' | 'skills'
 
 export type Reviewer = 'claude' | 'codex'
 
@@ -6,6 +6,10 @@ export type Reviewer = 'claude' | 'codex'
 export type InboxItem = {
   /** The PR's URL: one row per PR, however often it is posted. */
   prUrl: string
+  /** The Slack message: `<channel id>:<ts>`; empty for a row an earlier version stored. */
+  messageId: string
+  /** The thread a reply joins: `<channel id>:<ts>` of its first message, the message itself when it is top-level. */
+  threadId: string
   repo: string
   number: number
   from: string
@@ -51,7 +55,14 @@ export type BoardPr = {
   deployedAt: number | null
 }
 
-export type Ticket = { id: string; title: string; url: string; status: string }
+export type Ticket = {
+  id: string
+  title: string
+  url: string
+  status: string
+  /** Done within the last day; a day on, it leaves the board. */
+  isDone: boolean
+}
 
 export type Board = {
   prs: BoardPr[]
@@ -83,13 +94,18 @@ export type SlackLink = {
 
 export type UsageLimit = { label: string; percent: number; resetsAt: number | null }
 
-export type UsageDay = { day: string; costUsd: number; fiveHourPeak: number; weekPeak: number }
+/** How full the context is: against the auto-compact threshold when auto-compact is on, else against the window. */
+export type ContextGauge = {
+  percent: number
+  /** Tokens left before auto-compact runs; null when it is off or its threshold is not known. */
+  tokensToCompact: number | null
+  isAutoCompactOff: boolean
+}
 
 export type UsageView = {
-  contextPercent: number | null
+  context: ContextGauge | null
   limits: UsageLimit[]
   costUsd: number | null
-  days: UsageDay[]
 }
 
 export type SkillButton = { prompt: string; count: number; isPinned: boolean }
@@ -107,6 +123,9 @@ declare module 'claude-code' {
       slack: SlackLink
       usage: Shaped<UsageView | null>
       skills: Shaped<SkillButton[]>
+      /** The row whose reply field is open, and what has been typed in it. */
+      replyingTo: string | null
+      replyDraft: string
     }
   }
 }

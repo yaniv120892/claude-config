@@ -76,7 +76,8 @@ export function relevantMessage({ event, selfUserId, alertChannelIds }) {
   const isFromPerson = typeof event.user === 'string' && event.bot_id === undefined && event.subtype !== 'bot_message'
   const isRelevant = isAlertChannel ? isTopLevel : isFromPerson && mentionsPullRequest(text)
   if (!isRelevant) return null
-  return { channel: event.channel, user: event.user ?? null, botName: event.username ?? null, ts: event.ts, text, isAlertChannel }
+  const threadTs = typeof event.thread_ts === 'string' ? event.thread_ts : event.ts
+  return { channel: event.channel, user: event.user ?? null, botName: event.username ?? null, ts: event.ts, threadTs, text, isAlertChannel }
 }
 
 /** Whether the lock's holder is gone: its file names no process, or one that is not a sidecar (a reused pid). */

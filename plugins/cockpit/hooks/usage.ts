@@ -1,17 +1,16 @@
-import type { SkillButton, UsageDay, UsageLimit } from '../types'
+import type { ContextGauge, SkillButton, UsageLimit } from '../types'
 
-const KEPT_DAYS = 14
 const MAX_SKILL_BUTTONS = 12
-const LIMIT_LABELS: Record<string, string> = { five_hour: '5-hour', seven_day: 'Weekly', spend_limit: 'Spend' }
+const LIMIT_LABELS: Record<string, string> = { five_hour: '5h', seven_day: 'Week', spend_limit: 'Spend' }
 
 type RateLimit = { kind: string; percentUsed: number; resetsAt?: string }
 
-/** One day's readings: each session's running cost, and the highest each limit stood at. */
-type LedgerDay = { sessions: Record<string, number>; fiveHourPeak: number; weekPeak: number }
-
-type UsageLedger = Record<string, LedgerDay>
-
-type UsageReading = { day: string; sessionId: string; costUsd: number | null; limits: readonly UsageLimit[] }
+type ContextReading = {
+  percent: number | undefined
+  tokens: number | undefined
+  compactAt: number | undefined
+  isAutoCompactOff: boolean
+}
 
 export function usageLimits(rateLimits: readonly RateLimit[]): UsageLimit[] {
   return rateLimits.map(limit => ({
@@ -21,58 +20,43 @@ export function usageLimits(rateLimits: readonly RateLimit[]): UsageLimit[] {
   }))
 }
 
+/** The context as a share of the auto-compact threshold, so 100% is the moment it compacts. */
+export function contextGauge({ percent, tokens, compactAt, isAutoCompactOff }: ContextReading): ContextGauge | null {
+  const canMeasureToCompact = !isAutoCompactOff && tokens !== undefined && compactAt !== undefined && compactAt > 0
+  if (canMeasureToCompact) {
+    return { percent: Math.round((tokens / compactAt) * 100), tokensToCompact: Math.max(0, compactAt - tokens), isAutoCompactOff }
+  }
+  return percent === undefined ? null : { percent: Math.round(percent), tokensToCompact: null, isAutoCompactOff }
+}
+
+export function kiloTokens(tokens: number): string {
+  return tokens >= 1000 ? `${Math.round(tokens / 1000)}k` : String(tokens)
+}
+
 function asRecord<T>(stored: unknown): Record<string, T> {
   return typeof stored === 'object' && stored !== null && !Array.isArray(stored) ? { ...stored } : {}
 }
 
-export function asLedger(stored: unknown): UsageLedger {
-  return asRecord(stored)
-}
-
-function peak(limits: readonly UsageLimit[], label: string, last: number): number {
-  return Math.max(last, limits.find(limit => limit.label === label)?.percent ?? 0)
-}
-
-export function recordUsage(ledger: UsageLedger, reading: UsageReading): UsageLedger {
-  const last = ledger[reading.day] ?? { sessions: {}, fiveHourPeak: 0, weekPeak: 0 }
-  const sessions = reading.costUsd === null ? last.sessions : { ...last.sessions, [reading.sessionId]: reading.costUsd }
-  const day: LedgerDay = {
-    sessions,
-    fiveHourPeak: peak(reading.limits, LIMIT_LABELS.five_hour ?? '', last.fiveHourPeak),
-    weekPeak: peak(reading.limits, LIMIT_LABELS.seven_day ?? '', last.weekPeak),
-  }
-  const kept = Object.entries({ ...ledger, [reading.day]: day })
-    .sort(([a], [b]) => a.localeCompare(b))
-    .slice(-KEPT_DAYS)
-  return Object.fromEntries(kept)
-}
-
-/**
- * Each day's cost, oldest first. A session's cost runs on across days, so a day counts
- * only what the session added since the day before.
- */
-export function usageDays(ledger: UsageLedger): UsageDay[] {
-  const spentBefore: Record<string, number> = {}
-  return Object.entries(ledger)
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([day, { sessions, fiveHourPeak, weekPeak }]) => {
-      let costUsd = 0
-      for (const [sessionId, total] of Object.entries(sessions)) {
-        costUsd += Math.max(0, total - (spentBefore[sessionId] ?? 0))
-        spentBefore[sessionId] = Math.max(total, spentBefore[sessionId] ?? 0)
-      }
-      return { day, costUsd, fiveHourPeak, weekPeak }
-    })
-}
-
 export function bar(percent: number, width: number): string {
   const filled = Math.round((Math.min(100, Math.max(0, percent)) / 100) * width)
-  return `${'█'.repeat(filled)}${'░'.repeat(width - filled)}`
+  return `${'▰'.repeat(filled)}${'▱'.repeat(width - filled)}`
 }
 
-export function usageColor(percent: number): 'green' | 'yellow' | 'red' {
-  if (percent >= 75) return 'red'
-  return percent >= 50 ? 'yellow' : 'green'
+const STRIP_CHROME = 4
+const GAUGE_TEXT = 18
+const COST_TEXT = 9
+const MAX_BAR = 8
+
+/** How wide each bar in the usage strip is: what the pane has left once every gauge's text fits, none on a narrow pane. */
+export function stripBarWidth({ columns, gauges }: { columns: number; gauges: number }): number {
+  if (gauges === 0) return 0
+  const spare = columns - STRIP_CHROME - COST_TEXT - gauges * GAUGE_TEXT
+  return Math.max(0, Math.min(MAX_BAR, Math.floor(spare / gauges)))
+}
+
+export function usageColor(percent: number): 'success' | 'warning' | 'error' {
+  if (percent >= 75) return 'error'
+  return percent >= 50 ? 'warning' : 'success'
 }
 
 export function asCounts(stored: unknown): Record<string, number> {

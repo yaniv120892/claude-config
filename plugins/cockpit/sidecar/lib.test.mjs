@@ -27,6 +27,13 @@ test("forwards another person's PR link, and never my own", () => {
   assert.equal(relevantMessage({ event, selfUserId: 'U2', alertChannelIds: ALERTS }), null)
 })
 
+test('a PR link posted inside a thread names the thread it sits in, so a reply joins it', () => {
+  const event = { type: 'message', channel: 'C0REVIEWS1', ts: '1.5', thread_ts: '1.2', user: 'U2', text: 'https://github.com/acme/app/pull/12' }
+  assert.equal(relevantMessage({ event, selfUserId: 'U1', alertChannelIds: ALERTS })?.threadTs, '1.2')
+  const topLevel = { ...event, thread_ts: undefined }
+  assert.equal(relevantMessage({ event: topLevel, selfUserId: 'U1', alertChannelIds: ALERTS })?.threadTs, '1.5')
+})
+
 test('forwards every message of an alert channel, and no other chatter or edit', () => {
   const alert = { type: 'message', channel: 'C0ALERTS01', ts: '1.2', subtype: 'bot_message', username: 'Monitor', text: 'down' }
   assert.equal(relevantMessage({ event: alert, selfUserId: 'U1', alertChannelIds: ALERTS })?.botName, 'Monitor')

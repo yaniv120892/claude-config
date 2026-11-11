@@ -8,7 +8,7 @@ const TICKET_ID = /^[A-Za-z][A-Za-z0-9]*-\d+$/
 export const BOARD_QUERY = `
 query($open: String!, $merged: String!) {
   open: search(query: $open, type: ISSUE, first: 30) { nodes { ...Row } }
-  merged: search(query: $merged, type: ISSUE, first: 15) { nodes { ...Row ... on PullRequest { files(first: 60) { nodes { path } } } } }
+  merged: search(query: $merged, type: ISSUE, first: 30) { nodes { ...Row ... on PullRequest { files(first: 60) { nodes { path } } } } }
 }
 fragment Row on PullRequest {
   number title url isDraft state mergedAt reviewDecision mergeable headRefName
@@ -27,7 +27,10 @@ fragment Row on PullRequest {
   } }
 }`
 
-/** The two searches the board runs: my open PRs, and mine merged in the last week. */
+/**
+ * The two searches the board runs: my open PRs, and mine merged in the last week. The week keeps my own PRs out of
+ * the inbox and a late deploy matched to its alerts; the board shows only the last day of them (`isOnBoard`).
+ */
 export function boardSearches(now: number): { open: string; merged: string } {
   const since = new Date(now - MERGED_DAYS * DAY_MS).toISOString().slice(0, 10)
   return {
@@ -144,7 +147,7 @@ export function parseBoard(stdout: string, prodEnvironment: string): BoardPr[] {
     .filter(pr => pr !== null)
 }
 
-export function parseTickets(answer: string): Ticket[] {
+export function parseTickets({ answer, isDone }: { answer: string; isDone: boolean }): Ticket[] {
   const issues = record(JSON.parse(answer)).issues
   if (!Array.isArray(issues)) return []
   return issues.map(record).map(issue => ({
@@ -152,6 +155,7 @@ export function parseTickets(answer: string): Ticket[] {
     title: text(issue.title),
     url: text(issue.url),
     status: text(issue.status),
+    isDone,
   }))
 }
 
@@ -172,6 +176,11 @@ export function age(since: number, now: number): string {
   if (minutes < 60) return `${minutes}m`
   const hours = Math.round(minutes / 60)
   return hours < 48 ? `${hours}h` : `${Math.round(hours / 24)}d`
+}
+
+/** Open PRs, and the ones merged in the last day: a day on, a merged PR is in production. */
+export function isOnBoard({ pr, now }: { pr: BoardPr; now: number }): boolean {
+  return pr.state === 'OPEN' || (pr.mergedAt !== null && now - pr.mergedAt <= DAY_MS)
 }
 
 /** PRs that reached production since the last read: the ones to announce. */

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { boardSearches, countChecks, newlyDeployed, parseBoard, parseTickets, ticketOf } from '../hooks/prs'
+import { boardSearches, countChecks, isOnBoard, newlyDeployed, parseBoard, parseTickets, ticketOf } from '../hooks/prs'
 import { boardAnswer, row, thread } from './fixtures'
 
 const CHECKS = [
@@ -57,18 +57,27 @@ describe('the PR board', () => {
     expect(newlyDeployed(null, [deployed])).toEqual([])
   })
 
-  test('searches my open PRs and the ones merged in the last week', async () => {
-    const searches = boardSearches(Date.parse('2026-11-10T08:00:00Z'))
+  test('searches my open PRs and the ones merged in the last week, and shows a merged one for a day', async () => {
+    const now = Date.parse('2026-11-10T08:00:00Z')
+    const searches = boardSearches(now)
     expect(searches.open).toContain('is:open author:@me')
     expect(searches.merged).toContain('merged:>=2026-11-03')
+    const [open, today, lastWeek] = parseBoard(
+      boardAnswer([row({ number: 1 })], [row({ number: 2, state: 'MERGED', mergedAt: '2026-11-09T09:00:00Z' }), row({ number: 3, state: 'MERGED', mergedAt: '2026-11-08T07:00:00Z' })]),
+      'production',
+    )
+    const isAnyMissing = open === undefined || today === undefined || lastWeek === undefined
+    if (isAnyMissing) throw new Error('the board lost a PR')
+    expect([open, today, lastWeek].map(pr => isOnBoard({ pr, now }))).toEqual([true, true, false])
   })
 
   test('links a PR to the ticket its title or branch names', async () => {
-    const tickets = parseTickets(JSON.stringify({ issues: [{ id: 'YAN-1', title: 'One', url: 'https://linear.app/x/issue/YAN-1', status: 'In Progress' }] }))
+    const answer = JSON.stringify({ issues: [{ id: 'YAN-1', title: 'One', url: 'https://linear.app/x/issue/YAN-1', status: 'In Progress' }] })
+    const tickets = parseTickets({ answer, isDone: false })
     const [first, eleventh] = parseBoard(boardAnswer([row({ number: 1 }), row({ number: 11 })]), 'production')
     expect(first === undefined ? null : ticketOf(first, tickets)?.id).toBe('YAN-1')
     expect(eleventh === undefined ? null : ticketOf(eleventh, tickets)).toBe(null)
-    const nameless = [{ id: '', title: 'No id', url: '', status: '' }]
+    const nameless = [{ id: '', title: 'No id', url: '', status: '', isDone: false }]
     expect(first === undefined ? null : ticketOf(first, nameless)).toBe(null)
   })
 })

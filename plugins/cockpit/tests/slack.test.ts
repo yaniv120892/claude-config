@@ -6,6 +6,7 @@ import type { SlackMessage } from '../hooks/slack'
 function message(overrides: Partial<SlackMessage>): SlackMessage {
   return {
     id: 'C1:1.0',
+    threadId: 'C1:1.0',
     channel: '#reviews',
     from: 'Dana',
     text: 'please review https://github.com/acme/app/pull/12',

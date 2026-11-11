@@ -139,6 +139,7 @@ async function forward({ message, workspaceUrl }) {
   emit({
     kind: 'message',
     id: `${message.channel}:${message.ts}`,
+    threadId: `${message.channel}:${message.threadTs}`,
     channel: await channelName(message.channel),
     from: message.botName ?? (await userName(message.user)),
     text: message.text,

@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
-import type { CommandSpec, EngineInterface as Engine, PluginOptions, Register } from 'claude-code'
+import type { CommandSpec, EngineInterface as Engine, PluginOptions, Register, ThemeKey } from 'claude-code'
 
-import type { Alert, AlertVerdict, Board, BoardPr, InboxItem, Reviewer, Tab } from '../types'
+import type { Alert, AlertVerdict, Board, BoardPr, CheckState, ContextGauge, InboxItem, Reviewer, SlackLink, Tab } from '../types'
 import { addAlert, asAlerts, fenceAlert, isRelated, parseVerdict, verdictPrompt, watchedDeploys } from './alerts'
 import type { Verdict } from './alerts'
 import {
@@ -10,53 +10,59 @@ import {
   BOARD_QUERY,
   boardSearches,
   countChecks,
+  isOnBoard,
   newlyDeployed,
   parseBoard,
   parseTickets,
   ticketOf,
 } from './prs'
-import { addToInbox, applyMarks, asInbox, asMarks, excerptOf, markHandled, parseSidecarLine, REVIEW_SKILL, takeLines, waiting } from './slack'
-import type { SlackMessage } from './slack'
 import {
-  asCounts,
-  asLedger,
-  bar,
-  parsePinned,
-  recordUsage,
-  skillButtons,
-  usageColor,
-  usageDays,
-  usageLimits,
-} from './usage'
+  addToInbox,
+  applyMarks,
+  asInbox,
+  asMarks,
+  excerptOf,
+  markHandled,
+  parseSidecarLine,
+  QUICK_REACTIONS,
+  REVIEW_SKILL,
+  slackAddress,
+  slackRefusal,
+  takeLines,
+  waiting,
+} from './slack'
+import type { SlackMessage } from './slack'
+import { asCounts, bar, contextGauge, kiloTokens, parsePinned, skillButtons, stripBarWidth, usageColor, usageLimits } from './usage'
 
 // Every hook lives in this file: the engine follows `$` only into functions
 // declared beside the hook that passes it. The pure logic sits in the files
 // imported above, which is what the tests cover.
 
 const tab = atom({ plugin: 'cockpit', key: 'tab' } as const, 'inbox')
-const inbox = atom({ plugin: 'cockpit', key: 'inbox' } as const, [], { shape: 'inbox-1' })
-const board = atom({ plugin: 'cockpit', key: 'board' } as const, null, { shape: 'board-1' })
+const inbox = atom({ plugin: 'cockpit', key: 'inbox' } as const, [], { shape: 'inbox-2' })
+const board = atom({ plugin: 'cockpit', key: 'board' } as const, null, { shape: 'board-2' })
 const alerts = atom({ plugin: 'cockpit', key: 'alerts' } as const, [], { shape: 'alerts-1' })
 const dismissed = atom({ plugin: 'cockpit', key: 'dismissed' } as const, [])
 const expanded = atom({ plugin: 'cockpit', key: 'expanded' } as const, null)
 const isShowingDismissed = atom({ plugin: 'cockpit', key: 'isShowingDismissed' } as const, false)
 const slack = atom({ plugin: 'cockpit', key: 'slack' } as const, { state: 'off', detail: '' })
-const usage = atom({ plugin: 'cockpit', key: 'usage' } as const, null, { shape: 'usage-1' })
+const usage = atom({ plugin: 'cockpit', key: 'usage' } as const, null, { shape: 'usage-3' })
 const skills = atom({ plugin: 'cockpit', key: 'skills' } as const, [], { shape: 'skills-1' })
+const replyingTo = atom({ plugin: 'cockpit', key: 'replyingTo' } as const, null)
+const replyDraft = atom({ plugin: 'cockpit', key: 'replyDraft' } as const, '')
 
 const PANE = 'cockpit'
 const PANE_TITLE = 'Cockpit'
 const COMMAND: CommandSpec = {
   name: 'cockpit',
   description: 'Open the cockpit: the Slack PR inbox, your PRs and tickets, deploy alerts, skill buttons and usage',
-  argumentHint: '[inbox|prs|alerts|skills|usage]',
+  argumentHint: '[inbox|prs|alerts|skills]',
 }
 const TABS = [
   { id: 'inbox', label: 'Inbox', hotkey: '1' },
   { id: 'prs', label: 'PRs', hotkey: '2' },
   { id: 'alerts', label: 'Alerts', hotkey: '3' },
   { id: 'skills', label: 'Skills', hotkey: '4' },
-  { id: 'usage', label: 'Usage', hotkey: '5' },
 ] as const satisfies readonly { id: Tab; label: string; hotkey: string }[]
 
 // Shared by every open session through $.store, so a dismissal in one shows in all.
@@ -65,29 +71,42 @@ const HANDLED_KEY = 'inboxHandled'
 const ALERTS_KEY = 'alerts'
 const DISMISSED_KEY = 'dismissedPrs'
 const SKILL_COUNTS_KEY = 'skillCounts'
-const USAGE_KEY = 'usageLedger'
 
 const SHARED_POLL_MS = 15_000
 const BOARD_POLL_MS = 120_000
 const SIDECAR_RESTART_MS = 30_000
 const NOTICE_TOAST_MS = 15_000
 const LINEAR_SERVER = 'claude.ai Linear'
+const SLACK_API = 'https://slack.com/api'
+// An ISO 8601 duration, as Linear's completedAt filter reads it.
+const DONE_SHOWN_FOR = '-P1D'
 const VERDICT_MODEL = 'haiku'
 const ALERT_EXCERPT_LENGTH = 400
 const SKILL_HOTKEYS = 'abcdefghijkl'
 const MINUTE_MS = 60_000
 
 const VERDICT_LOOK = {
-  likely: { label: 'LIKELY RELATED', color: 'red' },
-  unclear: { label: 'UNCLEAR', color: 'yellow' },
-  unlikely: { label: 'unlikely related', color: 'green' },
-} as const satisfies Record<AlertVerdict, { label: string; color: string }>
+  likely: { label: 'LIKELY RELATED', color: 'error' },
+  unclear: { label: 'UNCLEAR', color: 'warning' },
+  unlikely: { label: 'unlikely related', color: 'success' },
+} as const satisfies Record<AlertVerdict, { label: string; color: ThemeKey }>
 
 const CHECK_LOOK = {
-  fail: { mark: '✗', color: 'red' },
-  pending: { mark: '◌', color: 'yellow' },
-  pass: { mark: '✓', color: 'green' },
-} as const
+  fail: { mark: '✗', color: 'error' },
+  pending: { mark: '◌', color: 'warning' },
+  pass: { mark: '✓', color: 'success' },
+} as const satisfies Record<CheckState, { mark: string; color: ThemeKey }>
+
+const SLACK_LOOK = {
+  off: 'subtle',
+  starting: 'warning',
+  standby: 'subtle',
+  connected: 'success',
+  error: 'error',
+} as const satisfies Record<SlackLink['state'], ThemeKey>
+
+/** A Slack message a row can act on: `rowKey` tells rows of one message apart (one per PR it links). */
+type SlackTarget = { rowKey: string; messageId: string; threadId: string; permalink: string }
 
 type Config = {
   appToken: string
@@ -287,12 +306,26 @@ async function readPrs($: Engine, config: Config, now: number): Promise<{ prs: B
   }
 }
 
+/** My tickets in progress, then the ones done in the last day: a day on, a done ticket leaves the board. A read that fails keeps the other's tickets. */
 async function readTickets($: Engine): Promise<{ tickets: Board['tickets'] | null; error: string | null }> {
+  const [started, done] = await Promise.all([
+    readIssues($, { filter: { state: 'started' }, isDone: false }),
+    readIssues($, { filter: { state: 'completed', completedAt: DONE_SHOWN_FOR }, isDone: true }),
+  ])
+  const loaded = [...(started.tickets ?? []), ...(done.tickets ?? [])]
+  const isNoneLoaded = started.tickets === null && done.tickets === null
+  return { tickets: isNoneLoaded ? null : loaded, error: started.error ?? done.error }
+}
+
+async function readIssues(
+  $: Engine,
+  { filter, isDone }: { filter: Record<string, string>; isDone: boolean },
+): Promise<{ tickets: Board['tickets'] | null; error: string | null }> {
   let text: string
   try {
     const answer = await $.mcp.call(LINEAR_SERVER, 'list_issues', {
       assignee: 'me',
-      state: 'started',
+      ...filter,
       limit: 20,
       fields: ['title', 'url', 'status'],
     })
@@ -302,7 +335,7 @@ async function readTickets($: Engine): Promise<{ tickets: Board['tickets'] | nul
     return { tickets: null, error: `Linear did not answer: ${String(error)}` }
   }
   try {
-    return { tickets: parseTickets(text), error: null }
+    return { tickets: parseTickets({ answer: text, isDone }), error: null }
   } catch (error) {
     return { tickets: null, error: `Linear's answer could not be read: ${String(error)}` }
   }
@@ -336,24 +369,38 @@ async function readBoard($: Engine, config: Config): Promise<void> {
   }
 }
 
-async function refreshUsage($: Engine): Promise<void> {
-  const [measured, sessionId, now, stored] = await Promise.all([
-    $.session.usage(),
-    $.session.id(),
-    $.clock.now(),
-    $.store.get(USAGE_KEY),
-  ])
-  const limits = usageLimits(measured.rateLimits)
-  const costUsd = measured.cost?.usd ?? null
-  const last = asLedger(stored)
-  const ledger = recordUsage(last, { day: new Date(now).toISOString().slice(0, 10), sessionId, costUsd, limits })
-  if (!isSame(last, ledger)) await $.store.set(USAGE_KEY, ledger)
-  const percent = measured.context.percent
+let usageInFlight: Promise<void> | null = null
+let isUsageStale = false
+
+/** One usage read at a time, so an older reading never lands last; a call during a read runs one more after it. */
+function refreshUsage($: Engine): Promise<void> {
+  if (usageInFlight !== null) {
+    isUsageStale = true
+    return usageInFlight
+  }
+  usageInFlight = readUsage($).finally(() => {
+    usageInFlight = null
+    if (!isUsageStale) return
+    isUsageStale = false
+    inBackground($, refreshUsage($))
+  })
+  return usageInFlight
+}
+
+async function readUsage($: Engine): Promise<void> {
+  // A summary breakdown is estimated locally, with no request, and is what knows the auto-compact threshold.
+  const measured = await $.session.usage({ breakdown: 'summary' })
+  const { breakdown } = measured.context
+  const context = contextGauge({
+    percent: measured.context.percent,
+    tokens: breakdown?.totalTokens,
+    compactAt: breakdown?.autoCompactThreshold,
+    isAutoCompactOff: breakdown?.isAutoCompactEnabled === false,
+  })
   await update($, usage, () => ({
-    contextPercent: percent === undefined ? null : Math.round(percent),
-    limits,
-    costUsd,
-    days: usageDays(ledger),
+    context,
+    limits: usageLimits(measured.rateLimits),
+    costUsd: measured.cost?.usd ?? null,
   }))
 }
 
@@ -379,6 +426,57 @@ async function countSkill($: Engine, config: Config, skill: string): Promise<voi
 function runSlash($: Engine, line: string): void {
   const [command = '', ...args] = line.replace(/^\//, '').split(' ')
   inBackground($, $.command.run({ command, args: args.join(' ') }))
+}
+
+async function compact($: Engine): Promise<void> {
+  try {
+    const result = await $.session.compact()
+    if ('skip' in result) $.ui.toast(`The compaction was stopped: ${result.skip}`)
+  } catch (error) {
+    $.ui.toast(`Compact did not run: ${String(error)}`)
+  }
+  await refreshUsage($)
+}
+
+/** Calls one Slack Web API method as the person, through their user token, and toasts what went wrong. */
+async function callSlack($: Engine, { config, method, body }: { config: Config; method: string; body: Record<string, string> }): Promise<boolean> {
+  try {
+    const answer = await $.http.fetch(`${SLACK_API}/${method}`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${config.userToken}`, 'Content-Type': 'application/json; charset=utf-8' },
+      body: JSON.stringify(body),
+    })
+    const refusal = slackRefusal({ status: answer.status, text: answer.text })
+    if (refusal !== null) $.ui.toast(`Slack ${method} failed: ${refusal}.`, { timeoutMs: NOTICE_TOAST_MS })
+    return refusal === null
+  } catch (error) {
+    $.ui.toast(`Slack ${method} failed: ${String(error)}`, { timeoutMs: NOTICE_TOAST_MS })
+    return false
+  }
+}
+
+async function reactTo($: Engine, { config, target, name }: { config: Config; target: SlackTarget; name: string }): Promise<void> {
+  const address = slackAddress(target.messageId)
+  if (address === null) return
+  const isSent = await callSlack($, { config, method: 'reactions.add', body: { channel: address.channel, timestamp: address.ts, name } })
+  if (isSent) $.ui.toast(`Reacted :${name}: in Slack.`)
+}
+
+async function replyTo($: Engine, { config, target, text }: { config: Config; target: SlackTarget; text: string }): Promise<void> {
+  const thread = slackAddress(target.threadId)
+  if (thread === null) return
+  if (text.trim() === '') return
+  const isSent = await callSlack($, { config, method: 'chat.postMessage', body: { channel: thread.channel, thread_ts: thread.ts, text } })
+  if (!isSent) return
+  await update($, replyingTo, () => null)
+  await update($, replyDraft, () => '')
+  $.ui.toast('Replied in the Slack thread.')
+}
+
+async function toggleReply($: Engine, rowKey: string): Promise<void> {
+  const open = await read($, replyingTo)
+  await update($, replyDraft, () => '')
+  await update($, replyingTo, () => (open === rowKey ? null : rowKey))
 }
 
 async function handleInboxItem($: Engine, item: InboxItem, handledBy: Reviewer | 'dismissed'): Promise<void> {
@@ -408,8 +506,14 @@ function investigatePrompt(alert: Alert): string {
   ].join('\n')
 }
 
-function resetIn(resetsAt: number | null, now: number): string | null {
-  return resetsAt === null || resetsAt <= now ? null : age(now, resetsAt)
+function resetNote({ resetsAt, now }: { resetsAt: number | null; now: number }): string | null {
+  return resetsAt === null || resetsAt <= now ? null : `↻${age(now, resetsAt)}`
+}
+
+/** Tokens left before auto-compact, so its coming is plain; or that it is off. */
+function compactNote(context: ContextGauge): string | null {
+  if (context.tokensToCompact !== null) return `⇣${kiloTokens(context.tokensToCompact)} to compact`
+  return context.isAutoCompactOff ? 'no auto-compact' : null
 }
 
 // A /config change reloads this module, which ends the sidecar and starts it with the new options.
@@ -463,25 +567,78 @@ export const register: Register = (on, options) => {
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
-    const { Box, Text, Button, Link } = $.ui.resolve(e)
-    const [shownTab, items, shownBoard, shownAlerts, hidden, now] = await Promise.all([
+    const { Box, Text, Button, Link, Input } = $.ui.resolve(e)
+    const [storedTab, items, shownBoard, shownAlerts, hidden, openReply, draft, now] = await Promise.all([
       read($, tab),
       read($, inbox),
       read($, board),
       read($, alerts),
       read($, dismissed),
+      read($, replyingTo),
+      read($, replyDraft),
       $.clock.now(),
     ])
+    // A tab an earlier version stored may no longer exist.
+    const shownTab: Tab = isTab(storedTab) ? storedTab : 'inbox'
     const unhandled = waiting(items)
-    const openPrs = (shownBoard?.prs ?? []).filter(pr => !hidden.includes(pr.url))
+    const openPrs = (shownBoard?.prs ?? []).filter(pr => isOnBoard({ pr, now }) && !hidden.includes(pr.url))
     const failing = openPrs.filter(pr => pr.state === 'OPEN' && pr.checks.some(check => check.state === 'fail')).length
     const related = shownAlerts.filter(alert => alert.verdict !== null && isRelated(alert.verdict)).length
-    const badges: Record<Tab, string> = {
-      inbox: unhandled.length > 0 ? ` ${unhandled.length}` : '',
-      prs: failing > 0 ? ` ${openPrs.length} ✗${failing}` : ` ${openPrs.length}`,
-      alerts: related > 0 ? ` ${related}` : '',
-      skills: '',
-      usage: '',
+    const badges: Record<Tab, { text: string; color: ThemeKey | null }> = {
+      inbox: { text: unhandled.length > 0 ? ` ${unhandled.length}` : '', color: 'claude' },
+      prs: failing > 0 ? { text: ` ${openPrs.length} ✗${failing}`, color: 'error' } : { text: ` ${openPrs.length}`, color: null },
+      alerts: { text: related > 0 ? ` ${related}` : '', color: 'error' },
+      skills: { text: '', color: null },
+    }
+
+    function heading(label: string) {
+      return (
+        <Text key={`heading-${label}`}>
+          <Text color="claude">▍</Text>
+          <Text bold>{label}</Text>
+        </Text>
+      )
+    }
+
+    /** React, reply in the thread, or open the message: one row under any Slack message. */
+    function slackActions(target: SlackTarget) {
+      const { rowKey, permalink } = target
+      const openLink = <Link href={permalink} label="↗ Open in Slack" />
+      const canAct = hasSlack && slackAddress(target.messageId) !== null
+      if (!canAct) return <Box key={`slack-${rowKey}`}>{openLink}</Box>
+      return (
+        <Box key={`slack-${rowKey}`} flexDirection="column">
+          <Box flexDirection="row" gap={1}>
+            {QUICK_REACTIONS.map(reaction => (
+              <Button
+                key={`react-${reaction.name}-${rowKey}`}
+                plain
+                label={reaction.glyph}
+                onPress={() => reactTo($, { config, target, name: reaction.name })}
+              />
+            ))}
+            <Button
+              key={`reply-${rowKey}`}
+              plain
+              dimColor={openReply !== rowKey}
+              label="↩ Reply"
+              onPress={() => toggleReply($, rowKey)}
+            />
+            {openLink}
+          </Box>
+          {openReply === rowKey && (
+            <Input
+              key={`reply-text-${rowKey}`}
+              placeholder="Reply in the thread"
+              submitLabel="Send"
+              autoFocus
+              value={draft}
+              onInput={text => update($, replyDraft, () => text)}
+              onSubmit={text => replyTo($, { config, target, text })}
+            />
+          )}
+        </Box>
+      )
     }
 
     async function drawInbox() {
@@ -500,10 +657,9 @@ export const register: Register = (on, options) => {
             <Box key={item.prUrl} flexDirection="column">
               <Text wrap="truncate-end">
                 <Link href={item.prUrl} label={`${item.repo}#${item.number}`} />
-                <Text dimColor>
-                  {' '}
-                  {item.from} in {item.channel} · {age(item.at, now)} ago
-                </Text>
+                <Text dimColor> · </Text>
+                <Link href={item.permalink} label={`${item.from} in ${item.channel}`} />
+                <Text dimColor> · {age(item.at, now)} ago</Text>
               </Text>
               <Text dimColor wrap="truncate-end">
                 {item.excerpt}
@@ -528,12 +684,12 @@ export const register: Register = (on, options) => {
                   label="Dismiss"
                   onPress={() => handleInboxItem($, item, 'dismissed')}
                 />
-                <Link href={item.permalink} label="in Slack" />
               </Box>
+              {slackActions({ rowKey: item.prUrl, messageId: item.messageId, threadId: item.threadId, permalink: item.permalink })}
               <Text> </Text>
             </Box>
           ))}
-          {handled.length > 0 && <Text bold>Handled</Text>}
+          {handled.length > 0 && heading('Handled')}
           {handled.map(item => (
             <Text key={`handled-${item.prUrl}`} dimColor wrap="truncate-end">
               <Link href={item.prUrl} label={`${item.repo}#${item.number}`} />{' '}
@@ -541,9 +697,14 @@ export const register: Register = (on, options) => {
             </Text>
           ))}
           {hasSlack && (
-            <Text dimColor wrap="wrap">
-              {'\n'}Slack: {link.state}
-              {link.detail === '' ? '' : ` · ${link.detail}`}
+            <Text wrap="wrap">
+              {'\n'}
+              <Text color={SLACK_LOOK[link.state]}>●</Text>
+              <Text dimColor>
+                {' '}
+                Slack {link.state}
+                {link.detail === '' ? '' : ` · ${link.detail}`}
+              </Text>
             </Text>
           )}
         </Box>
@@ -578,18 +739,18 @@ export const register: Register = (on, options) => {
             <Text wrap="truncate-end">
               <Link href={pr.url} label={`${pr.repo.split('/')[1] ?? pr.repo}#${pr.number}`} />
               {pr.state === 'MERGED' && pr.deployedAt !== null && (
-                <Text color="green" bold>
+                <Text color="success" bold>
                   {' '}
                   in prod {age(pr.deployedAt, now)}
                 </Text>
               )}
               {pr.state === 'MERGED' && pr.deployedAt === null && (
-                <Text color="magenta"> merged{pr.mergedAt === null ? '' : ` ${age(pr.mergedAt, now)}`}, not in prod</Text>
+                <Text color="merged"> merged{pr.mergedAt === null ? '' : ` ${age(pr.mergedAt, now)}`}, not in prod</Text>
               )}
               {pr.state === 'OPEN' && pr.isDraft && <Text dimColor> draft</Text>}
-              {pr.state === 'OPEN' && pr.reviewDecision === 'APPROVED' && <Text color="green"> approved</Text>}
-              {pr.state === 'OPEN' && pr.reviewDecision === 'CHANGES_REQUESTED' && <Text color="red"> changes requested</Text>}
-              {pr.state === 'OPEN' && pr.hasConflicts && <Text color="red"> conflicts</Text>}
+              {pr.state === 'OPEN' && pr.reviewDecision === 'APPROVED' && <Text color="success"> approved</Text>}
+              {pr.state === 'OPEN' && pr.reviewDecision === 'CHANGES_REQUESTED' && <Text color="error"> changes requested</Text>}
+              {pr.state === 'OPEN' && pr.hasConflicts && <Text color="error"> conflicts</Text>}
               {pr.state === 'OPEN' &&
                 (['fail', 'pending', 'pass'] as const).map(
                   state =>
@@ -601,7 +762,7 @@ export const register: Register = (on, options) => {
                       </Text>
                     ),
                 )}
-              {waitingThreads > 0 && <Text color="yellow"> · {waitingThreads} open</Text>}
+              {waitingThreads > 0 && <Text color="warning"> · {waitingThreads} open</Text>}
               {repliedThreads > 0 && <Text dimColor> · {repliedThreads} replied</Text>}
               {ticket !== null && (
                 <Text>
@@ -627,7 +788,7 @@ export const register: Register = (on, options) => {
                 const where = `${thread.path}${thread.line === null ? '' : `:${thread.line}`}`
                 return (
                   <Text key={`thread-${index}`} wrap="wrap">
-                    {thread.url === null ? <Text color="cyan">{where}</Text> : <Link href={thread.url} label={where} />}{' '}
+                    {thread.url === null ? <Text color="suggestion">{where}</Text> : <Link href={thread.url} label={where} />}{' '}
                     <Text dimColor>{thread.author}:</Text> {thread.excerpt}
                     {thread.isReplied && <Text dimColor> (replied)</Text>}
                   </Text>
@@ -665,22 +826,25 @@ export const register: Register = (on, options) => {
     async function drawPrs() {
       const [openUrl, showsHidden] = await Promise.all([read($, expanded), read($, isShowingDismissed)])
       if (shownBoard === null) return <Text dimColor>Reading your PRs…</Text>
-      const hiddenPrs = shownBoard.prs.filter(pr => hidden.includes(pr.url))
+      const hiddenPrs = shownBoard.prs.filter(pr => isOnBoard({ pr, now }) && hidden.includes(pr.url))
       return (
         <Box flexDirection="column">
-          <Text bold>Tickets in progress</Text>
+          {heading('Tickets')}
           {shownBoard.ticketsError !== null && <Text dimColor>{shownBoard.ticketsError}</Text>}
           {shownBoard.ticketsError === null && shownBoard.tickets.length === 0 && <Text dimColor>None.</Text>}
           {shownBoard.tickets.map(ticket => (
             <Text key={ticket.id} wrap="truncate-end">
-              <Link href={ticket.url} label={ticket.id} /> <Text dimColor>{ticket.status}</Text> · {ticket.title}
+              {ticket.isDone ? <Text color="success">✓ </Text> : <Text color="warning">● </Text>}
+              <Link href={ticket.url} label={ticket.id} /> <Text dimColor>{ticket.status}</Text>{' '}
+              {ticket.isDone ? <Text dimColor>{ticket.title}</Text> : ticket.title}
             </Text>
           ))}
-          <Text bold>{'\n'}Pull requests</Text>
-          {shownBoard.error !== null && <Text color="red">{shownBoard.error}</Text>}
-          {shownBoard.error === null && openPrs.length === 0 && <Text dimColor>None open, none merged this week.</Text>}
+          <Text> </Text>
+          {heading('Pull requests')}
+          {shownBoard.error !== null && <Text color="error">{shownBoard.error}</Text>}
+          {shownBoard.error === null && openPrs.length === 0 && <Text dimColor>None open, none merged in the last day.</Text>}
           {openPrs.map(pr => drawPr(pr, pr.url === openUrl))}
-          {showsHidden && hiddenPrs.length > 0 && <Text bold>{'\n'}Dismissed</Text>}
+          {showsHidden && hiddenPrs.length > 0 && heading('Dismissed')}
           {showsHidden && hiddenPrs.map(pr => drawPr(pr, false))}
           <Text> </Text>
           <Box flexDirection="row" gap={1}>
@@ -710,7 +874,7 @@ export const register: Register = (on, options) => {
             </Text>
           )}
           {watched.map(pr => (
-            <Text key={`watch-${pr.url}`} color="yellow" wrap="truncate-end">
+            <Text key={`watch-${pr.url}`} color="warning" wrap="truncate-end">
               Watching {pr.repo}#{pr.number} for {age(now, (pr.deployedAt ?? now) + config.alertWindowMs)} more
             </Text>
           ))}
@@ -738,6 +902,7 @@ export const register: Register = (on, options) => {
               <Text dimColor wrap="wrap">
                 {alert.reason}
               </Text>
+              {slackActions({ rowKey: alert.id, messageId: alert.id, threadId: alert.id, permalink: alert.permalink })}
               {alert.verdict !== null && isRelated(alert.verdict) && (
                 <Box flexDirection="row">
                   <Button
@@ -778,45 +943,51 @@ export const register: Register = (on, options) => {
       )
     }
 
-    async function drawUsage() {
+    /** One quiet line on every tab: each limit with its reset, the context window and the session's cost. */
+    async function drawUsageStrip() {
       const shown = await read($, usage)
       if (shown === null) return <Text dimColor>Reading the usage…</Text>
-      const width = Math.max(8, Math.min(24, e.props.bodyColumns - 32))
-      const days = shown.days.slice(-7)
-      const topCost = Math.max(...days.map(day => day.costUsd), 0)
+      const gauges = [
+        ...shown.limits.map(limit => ({ label: limit.label, percent: limit.percent, note: resetNote({ resetsAt: limit.resetsAt, now }) })),
+        ...(shown.context === null ? [] : [{ label: 'Ctx', percent: shown.context.percent, note: compactNote(shown.context) }]),
+      ]
+      const isEmpty = gauges.length === 0 && shown.costUsd === null
+      if (isEmpty) return null
+      const width = stripBarWidth({ columns: e.props.bodyColumns, gauges: gauges.length })
       return (
-        <Box flexDirection="column">
-          {shown.limits.length === 0 && <Text dimColor>No usage limit is reported for this account.</Text>}
-          {shown.limits.map(limit => {
-            const reset = resetIn(limit.resetsAt, now)
-            return (
-              <Text key={limit.label} wrap="truncate-end">
-                {limit.label.padEnd(8)} <Text color={usageColor(limit.percent)}>{bar(limit.percent, width)}</Text>{' '}
-                {String(limit.percent).padStart(3)}%{reset !== null && <Text dimColor> resets in {reset}</Text>}
+        <Box borderStyle="round" borderColor="subtle" paddingX={1}>
+          <Text wrap="truncate-end">
+            {gauges.map((gauge, index) => (
+              <Text key={gauge.label}>
+                {index > 0 && <Text dimColor> · </Text>}
+                <Text dimColor>{gauge.label} </Text>
+                {width > 0 && <Text color={usageColor(gauge.percent)}>{bar(gauge.percent, width)} </Text>}
+                <Text color={usageColor(gauge.percent)}>{gauge.percent}%</Text>
+                {gauge.note !== null && <Text dimColor> {gauge.note}</Text>}
               </Text>
-            )
-          })}
-          {shown.contextPercent !== null && (
-            <Text wrap="truncate-end">
-              {'Context'.padEnd(8)}{' '}
-              <Text color={usageColor(shown.contextPercent)}>{bar(shown.contextPercent, width)}</Text>{' '}
-              {String(shown.contextPercent).padStart(3)}%
+            ))}
+            {shown.costUsd !== null && <Text dimColor> · ${shown.costUsd.toFixed(2)}</Text>}
+          </Text>
+        </Box>
+      )
+    }
+
+    function drawTabChip(entry: (typeof TABS)[number]) {
+      const badge = badges[entry.id]
+      const isShown = entry.id === shownTab
+      return (
+        <Button key={`tab-${entry.id}`} plain hotkey={entry.hotkey} label={`${entry.label}${badge.text}`} onPress={() => update($, tab, () => entry.id)}>
+          {isShown ? (
+            <Text inverse bold color="claude">
+              {` ${entry.label}${badge.text} `}
+            </Text>
+          ) : (
+            <Text>
+              <Text dimColor>{` ${entry.label}`}</Text>
+              {badge.color === null ? <Text dimColor>{badge.text}</Text> : <Text bold color={badge.color}>{badge.text}</Text>}{' '}
             </Text>
           )}
-          {shown.costUsd !== null && <Text>This session: ${shown.costUsd.toFixed(2)}</Text>}
-          <Text bold>{'\n'}Last 7 days</Text>
-          {days.map(day => (
-            <Text key={day.day} wrap="truncate-end">
-              {day.day.slice(5)}{' '}
-              <Text color="cyan">{bar(topCost === 0 ? day.fiveHourPeak : (day.costUsd / topCost) * 100, width)}</Text>{' '}
-              ${day.costUsd.toFixed(2)}
-              <Text dimColor>
-                {' '}
-                5h peak {day.fiveHourPeak}% · week {day.weekPeak}%
-              </Text>
-            </Text>
-          ))}
-        </Box>
+        </Button>
       )
     }
 
@@ -831,24 +1002,17 @@ export const register: Register = (on, options) => {
         case 'skills':
           return drawSkills()
         default:
-          return drawUsage()
+          return drawInbox()
       }
     }
 
     return (
       <Box flexDirection="column">
         <Box flexDirection="row" gap={2} flexWrap="wrap">
-          {TABS.map(entry => (
-            <Button
-              key={`tab-${entry.id}`}
-              plain
-              hotkey={entry.hotkey}
-              label={`${entry.id === shownTab ? '▸' : ''}${entry.label}${badges[entry.id]}`}
-              onPress={() => update($, tab, () => entry.id)}
-            />
-          ))}
+          {TABS.map(entry => drawTabChip(entry))}
+          <Button key="compact" plain dimColor label="⇣ Compact" onPress={() => compact($)} />
         </Box>
-        <Text> </Text>
+        {await drawUsageStrip()}
         {await drawTab()}
       </Box>
     )
