@@ -290,6 +290,20 @@ describe('alerts', () => {
   })
 })
 
+describe('an alert with no deploy to compare', () => {
+  test('still offers Investigate', { options: { ...SLACK.options, alertWindowMinutes: 1 } }, async ($, on) => {
+    const { clock, prompts } = fakeWorld(on, [ALERT_MESSAGE])
+    await start($, clock)
+    await $.command.run(slash('cockpit', 'alerts'))
+
+    const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
+    expect(await pane.find({ type: 'Text', text: /no deploy/ })).toBeDefined()
+    await pane.press({ key: 'investigate-C9:2.0' })
+    expect(prompts[0]).toContain('cockpit verdict: no deploy in its window')
+    await pane.unmount()
+  })
+})
+
 describe('skills, usage and compact', () => {
   test('a pinned skill is one press away', { options: { pinnedSkills: 'simplify' } }, async ($, on) => {
     const { clock, prompts } = fakeWorld(on)

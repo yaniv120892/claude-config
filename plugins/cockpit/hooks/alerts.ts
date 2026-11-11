@@ -26,14 +26,17 @@ export function fenceAlert(alertText: string): string {
   return `<slack_alert>\n${body}\n</slack_alert>`
 }
 
-/** What the investigate-alert skill is given: where and when the alert fired, the PR it was compared to, and the alert itself, fenced. */
+/**
+ * What the investigate-alert skill is given: where and when the alert fired, the PR it was compared to,
+ * and the alert itself, fenced. The verdict's reason stays out: a model wrote it from the alert's text.
+ */
 export function investigateArgs(alert: Alert): string {
   return [
     `channel: ${alert.channel}`,
     `slack: ${alert.permalink}`,
     `at: ${new Date(alert.at).toISOString()}`,
     `compared PR: ${alert.prUrl ?? 'none'}`,
-    `cockpit verdict: ${alert.verdict ?? 'no deploy in its window'}${alert.reason === '' ? '' : ` (${alert.reason})`}`,
+    `cockpit verdict: ${alert.verdict ?? 'no deploy in its window'}`,
     '',
     fenceAlert(alert.text),
   ].join('\n')

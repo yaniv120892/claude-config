@@ -495,8 +495,12 @@ async function setDismissed($: Engine, url: string, isDismissed: boolean): Promi
   await update($, dismissed, () => next)
 }
 
-function investigate($: Engine, alert: Alert): void {
-  inBackground($, $.command.run({ command: INVESTIGATE_SKILL, args: investigateArgs(alert) }))
+async function investigate($: Engine, alert: Alert): Promise<void> {
+  try {
+    await $.command.run({ command: INVESTIGATE_SKILL, args: investigateArgs(alert) })
+  } catch (error) {
+    $.ui.toast(`/${INVESTIGATE_SKILL} did not start (${String(error)}). It ships in the dev-workflows plugin.`)
+  }
 }
 
 function resetNote({ resetsAt, now }: { resetsAt: number | null; now: number }): string | null {
@@ -897,7 +901,7 @@ export const register: Register = (on, options) => {
               </Text>
               {slackActions({ rowKey: alert.id, messageId: alert.id, threadId: alert.id, permalink: alert.permalink })}
               <Box flexDirection="row">
-                <Button key={`investigate-${alert.id}`} label="🔎 Investigate" onPress={() => investigate($, alert)} />
+                <Button key={`investigate-${alert.id}`} label="🔎 Investigate" onPress={() => void investigate($, alert)} />
               </Box>
               <Text> </Text>
             </Box>
