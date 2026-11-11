@@ -1,59 +1,21 @@
 import { atom, read, update } from 'claude-code'
 import type { CommandSpec, EngineInterface as Engine, Register, ToolCallResult, ToolResultOf } from 'claude-code'
 
-import type { Band, GitLocation, PlanTask, PrRead, PrSkillRuns, UsageLimit } from '../types'
+import type { Band, GitLocation, PlanTask, UsageLimit } from '../types'
 import { gitWrites, OPT_OUT } from './branch-guard'
 import { credentialReason, findCredential, findTerm, parseTerms, termPattern, termReason } from './credentials'
 import { LAST_ACTIVE_KEY_PREFIX, LAST_ACTIVE_TTL_MS, parseUtcOffset, promptClock, slowToolNote } from './clock'
-import {
-  changesPr,
-  createsPr,
-  isGitWrite,
-  runsGit,
-} from './git-write'
-import {
-  basename,
-  CHECK,
-  CHECK_STATES,
-  countChecks,
-  isReadyToMerge,
-  parsePeopleMarks,
-  parsePrView,
-  peopleLabel,
-  parseThreads,
-  prAddresses,
-  PR_FIELDS,
-  prStatus,
-  prViewError,
-  THREADS_QUERY,
-} from './pr-data'
+import { isGitWrite, runsGit } from './git-write'
 import { addTask, freshTasks, fromTodos, PLAN_KEY_PREFIX, planCount, planTitle, summarize, updateTask } from './plan'
-import { argumentsLine, branchKey, PR_SKILLS, prReferences, prSkillOf, prSkillRuns, recordRun, sessionPrUrl } from './pr-skills'
-import { asRecord } from './store'
+import { basename } from './text'
 import { asTally, countSkill, formatTally } from './tally'
-import {
-  alertText,
-  asAlertedWindows,
-  contextGauge,
-  formatCost,
-  kiloTokens,
-  markAlerted,
-  notAlertedYet,
-  pastAlertLine,
-  shownReset,
-  usageColor,
-  usageLimits,
-} from './usage'
+import { alertText, asAlertedWindows, markAlerted, notAlertedYet, pastAlertLine, usageLimits } from './usage'
 
 // Every hook lives in this file: the engine follows `$` only into functions
 // declared beside the hook that passes it. The pure logic sits in the files
 // imported above, which is what the tests cover.
 
-const band = atom({ plugin: 'mods', key: 'band' } as const, null, { shape: 'band-4' })
-const prRead = atom({ plugin: 'mods', key: 'prRead' } as const, null, { shape: 'pr-read-2' })
-const sessionPrUrls = atom({ plugin: 'mods', key: 'sessionPrUrls' } as const, [])
-const sessionPrs = atom({ plugin: 'mods', key: 'sessionPrs' } as const, [], { shape: 'session-prs-3' })
-const prSkills = atom({ plugin: 'mods', key: 'prSkills' } as const, { root: null, runs: {} })
+const band = atom({ plugin: 'mods', key: 'band' } as const, null, { shape: 'band-5' })
 const planTasks = atom({ plugin: 'mods', key: 'planTasks' } as const, [], { shape: 'plan-tasks-1' })
 
 const DEFAULT_BRANCH_CANDIDATES = ['main', 'master']
@@ -111,9 +73,6 @@ function defaultBranchRefusal(branch: string): string {
   ].join('\n')
 }
 
-const PR_POLL_MS = 90_000
-// The branch's own PR, then the newest opened this session; the cap keeps a long session from flooding the band.
-const MAX_SESSION_PR_ROWS = 8
 // Bash calls a few hundred milliseconds apart share one refresh.
 const BAND_SETTLE_MS = 300
 
@@ -144,58 +103,6 @@ async function readLocation($: Engine): Promise<GitLocation> {
   return { repo: basename(repo.root), dir: basename(cwd), branch, isDirty: Boolean(status?.stdout) }
 }
 
-async function storePr($: Engine, reading: Promise<PrRead>): Promise<void> {
-  const found = await reading
-  const last = await read($, prRead)
-  if (isSame(last, found)) return
-  await update($, prRead, () => found)
-}
-
-/**
- * Rereads each PR opened this session that is still open; a merged or closed one keeps its last read.
- * The one that was the branch's PR at the last read waits for `branchRead` rather than fetching twice.
- */
-async function refreshSessionPrs($: Engine, branchRead: Promise<PrRead>): Promise<void> {
-  const [cwd, known, lastBranch] = await Promise.all([$.session.cwd(), read($, sessionPrUrls), read($, prRead)])
-  const urls = [...new Set([...(await listSessionPrs($, cwd)), ...known])]
-  if (!isSame(urls, known)) await update($, sessionPrUrls, () => urls)
-  if (urls.length === 0) return
-
-  const last = await read($, sessionPrs)
-  const reads = await Promise.all(
-    urls.map(async url => {
-      const previous = last.find(pr => pr.url === url) ?? null
-      if (previous !== null && previous.state !== 'OPEN') return previous
-      if (url === lastBranch?.pr?.url) {
-        const branch = (await branchRead).pr
-        if (branch?.url === url) return branch
-      }
-      return (await readPrView($, url, cwd)).pr ?? previous
-    }),
-  )
-  const next = reads.filter(pr => pr !== null).sort((a, b) => b.number - a.number)
-  if (!isSame(last, next)) await update($, sessionPrs, () => next)
-}
-
-/** The PRs the person opened in this repository since the session began, however they were opened. */
-async function listSessionPrs($: Engine, cwd: string): Promise<string[]> {
-  const since = new Date((await $.session.usage()).startedAt).toISOString()
-  try {
-    const listed = await $.process.run(
-      ['gh', 'pr', 'list', '--author', '@me', '--state', 'all', '--search', `created:>=${since}`, '--json', 'url'],
-      { cwd, timeoutMs: 15000 },
-    )
-    return listed.exitCode === 0 ? prAddresses(listed.stdout).map(address => address.url) : []
-  } catch {
-    return []
-  }
-}
-
-async function rememberSessionPrs($: Engine, output: string): Promise<void> {
-  const urls = prAddresses(output).map(address => address.url)
-  if (urls.length > 0) await update($, sessionPrUrls, known => [...new Set([...urls, ...known])])
-}
-
 /** One toast per limit per window, kept across sessions so a new session does not repeat it. */
 async function alertLimits($: Engine, limits: readonly UsageLimit[]): Promise<void> {
   const nearCap = pastAlertLine(limits)
@@ -206,93 +113,6 @@ async function alertLimits($: Engine, limits: readonly UsageLimit[]): Promise<vo
   await $.store.set(ALERTED_KEY, markAlerted(alerted, due))
   const now = await $.clock.now()
   for (const limit of due) $.ui.toast(alertText(limit, now), { timeoutMs: ALERT_TOAST_MS })
-}
-
-async function readPr($: Engine): Promise<PrRead> {
-  const here = (await read($, band))?.location
-  if (here !== undefined && here.branch === null) return { pr: null, error: null }
-  return readPrView($, null, await $.session.cwd())
-}
-
-/** One PR with its review threads: the branch's own when `url` is null. */
-async function readPrView($: Engine, url: string | null, cwd: string): Promise<PrRead> {
-  let view
-  try {
-    const target = url === null ? [] : [url]
-    view = await $.process.run(['gh', 'pr', 'view', ...target, '--json', PR_FIELDS], { cwd, timeoutMs: 15000 })
-  } catch {
-    return { pr: null, error: 'gh is not installed' }
-  }
-  if (view.exitCode !== 0) return { pr: null, error: prViewError(view.stderr) }
-
-  const parsed = parsePrView(view.stdout)
-  const address = prAddresses(parsed.url)[0]
-  let threads: ReturnType<typeof parseThreads> = { threads: [], resolvedThreads: 0 }
-  try {
-    if (address !== undefined) {
-      const answer = await $.process.run(
-        [
-          'gh', 'api', 'graphql',
-          '-f', `query=${THREADS_QUERY}`,
-          '-F', `owner=${address.owner}`,
-          '-F', `repo=${address.repo}`,
-          '-F', `number=${address.number}`,
-        ],
-        { cwd, timeoutMs: 15000 },
-      )
-      if (answer.exitCode === 0) threads = parseThreads(answer.stdout, parsed.author)
-    }
-  } catch {
-    // The checks still show; the threads read as none.
-  }
-  return { pr: { ...parsed, ...threads }, error: null }
-}
-
-const PR_SKILLS_KEY = 'prSkillRuns'
-
-async function loadPrSkills($: Engine): Promise<void> {
-  const [repo, stored] = await Promise.all([$.session.repo(), $.store.get(PR_SKILLS_KEY)])
-  await update($, prSkills, () => ({ root: repo?.root ?? null, runs: asRecord<PrSkillRuns>(stored) }))
-}
-
-/** gh resolves a number against the repository a PR there would open on, a fork's upstream included. */
-async function prUrlOf($: Engine, cwd: string, number: number): Promise<string | null> {
-  try {
-    const view = await $.process.run(['gh', 'pr', 'view', String(number), '--json', 'url'], { cwd, timeoutMs: 15000 })
-    return view.exitCode === 0 ? (prAddresses(view.stdout)[0]?.url ?? null) : null
-  } catch {
-    return null
-  }
-}
-
-/**
- * The PRs the arguments name, else the branch the session is on. A bare number is matched against
- * the session's PRs first: the session often spans repos, and gh only sees the one at `cwd`.
- */
-async function runTargets($: Engine, root: string | null, cwd: string, args: string): Promise<string[]> {
-  const named = prReferences(args)
-  if (named !== null) {
-    const sessionUrls = await read($, sessionPrUrls)
-    const resolved = await Promise.all(
-      named.numbers.map(number => sessionPrUrl(number, sessionUrls) ?? prUrlOf($, cwd, number)),
-    )
-    const urls = [...new Set([...named.urls, ...resolved.filter(url => url !== null)])]
-    if (urls.length > 0) return urls
-  }
-  if (root === null) return []
-  const branch = await currentBranch($, cwd)
-  return branch === null ? [] : [branchKey(root, branch)]
-}
-
-async function recordPrSkill($: Engine, skill: string, args: string): Promise<void> {
-  const [repo, cwd] = await Promise.all([$.session.repo(), $.session.cwd()])
-  const root = repo?.root ?? null
-  const targets = await runTargets($, root, cwd, args)
-  if (targets.length === 0) return
-  const [stored, now] = await Promise.all([$.store.get(PR_SKILLS_KEY), $.clock.now()])
-  const runs = recordRun(asRecord<PrSkillRuns>(stored), targets, skill, new Date(now).toISOString())
-  await $.store.set(PR_SKILLS_KEY, runs)
-  await update($, prSkills, () => ({ root, runs }))
 }
 
 /** Restores the plan a resumed session left, and drops every session's plan past its day. */
@@ -343,67 +163,21 @@ const ALERT_TOAST_MS = 10_000
 let isBandQueued = false
 // Set by register, which a /config change reruns.
 let isAlerting = true
-let prInFlight: Promise<void> | null = null
-// Each run rewrites the whole stored map, so two at once would drop one.
-let prSkillWrites: Promise<void> = Promise.resolve()
-// A PR skill's arguments, from the call that loads it, until its prompt fires.
-const prSkillArgs = new Map<string, string>()
 // Task calls in one turn can run in parallel; each change lands after the one before.
 let planWrites: Promise<void> = Promise.resolve()
 // The session the plan atom was loaded for; null until the first load.
 let planSession: string | null = null
 
-function notePrSkillArgs(skill: string, args: string): void {
-  const prSkill = prSkillOf(skill)
-  if (prSkill !== null) prSkillArgs.set(prSkill, args)
-}
-let isPrRereadWanted = false
-
-/**
- * One PR read at a time. A call during a read asks for one more after it, since
- * the branch may have moved since that read began; it resolves after both.
- */
-function refreshPr($: Engine): Promise<void> {
-  if (prInFlight !== null) {
-    isPrRereadWanted = true
-    return prInFlight
-  }
-  prInFlight = (async () => {
-    do {
-      isPrRereadWanted = false
-      const branchRead = readPr($)
-      await Promise.all([storePr($, branchRead), refreshSessionPrs($, branchRead)])
-    } while (isPrRereadWanted)
-  })().finally(() => {
-    prInFlight = null
-  })
-  return prInFlight
-}
-
-function stdoutOf(result: unknown): string {
-  const stdout = typeof result === 'object' && result !== null && 'stdout' in result ? result.stdout : ''
-  return typeof stdout === 'string' ? stdout : ''
-}
-
 function inBackground($: Engine, work: Promise<void>): void {
   work.catch(error => $.ui.log(`mods: ${String(error)}`, { to: 'debug' }))
 }
 
-/** Rereads the band; a branch switch rereads the PR too. */
 async function refreshBand($: Engine): Promise<void> {
-  // A summary breakdown is estimated locally, with no request, and is what knows the auto-compact threshold.
-  const [location, modelName, usage] = await Promise.all([readLocation($), $.session.model(), $.session.usage({ breakdown: 'summary' })])
-  const next: Band = {
-    location,
-    model: modelName,
-    context: contextGauge(usage.context),
-    usageLimits: usageLimits(usage.rateLimits),
-    costUsd: usage.cost?.usd ?? null,
-  }
+  const [location, modelName] = await Promise.all([readLocation($), $.session.model()])
+  const next: Band = { location, model: modelName }
   const last = await read($, band)
   if (isSame(last, next)) return
   await update($, band, () => next)
-  if (last !== null && last.location.branch !== location.branch) inBackground($, refreshPr($))
 }
 
 function queueBandRefresh($: Engine): void {
@@ -414,17 +188,6 @@ function queueBandRefresh($: Engine): void {
     inBackground($, refreshBand($))
   })
 }
-
-const PANE = 'mods-pr'
-const PR_COMMAND: CommandSpec = {
-  name: 'pr',
-  description: "Show this branch's PR: checks, open review threads, and the PR skills",
-}
-const PR_ACTIONS = [
-  { key: 'address', hotkey: 'a', label: 'Address feedback', prompt: '/pr-workflows:address-pr-feedback' },
-  { key: 'verify', hotkey: 'v', label: 'Verify state', prompt: '/pr-workflows:verify-pr-state' },
-  { key: 'finalize', hotkey: 'f', label: 'Finalize', prompt: '/pr-workflows:finalize-pr' },
-] as const
 
 /**
  * Where the path really lands, symlinks resolved (`~/.claude/rules` links
@@ -530,32 +293,16 @@ export const register: Register = (on, options) => {
   const hasBranchGuard = isOn('branchGuard')
   const hasStatusBand = isOn('statusBand')
   isAlerting = isOn('alerts')
-  const hasPrSkills = isOn('prSkills') && (hasStatusBand || isOn('prPane'))
   const hasPlanProgress = isOn('planProgress') && hasStatusBand
   const hasTimeAwareness = isOn('timeAwareness')
-  const peopleMarks = parsePeopleMarks(options.peopleMarks)
   const blockedTerms = termPattern(parseTerms(options.blockedTerms))
-  const commands = [
-    ...(isOn('prPane') ? [PR_COMMAND] : []),
-    ...(isOn('skillTally') ? [TALLY_COMMAND] : []),
-  ]
+  const hasSkillTally = isOn('skillTally')
 
   on('session.start', async ($, e, next) => {
-    await Promise.all(commands.map(command => $.command.register(command)))
+    if (hasSkillTally) await $.command.register(TALLY_COMMAND)
     const started = await next(e)
-    if (hasPrSkills) {
-      // Rereading on the PR poll shows the runs other open sessions record.
-      $.clock.after(0, () => inBackground($, loadPrSkills($)))
-      $.clock.every(PR_POLL_MS, () => inBackground($, loadPrSkills($)))
-    }
-    if (hasStatusBand) {
-      // On timers, not in this dispatch, so the first prompt does not wait on git or gh.
-      $.clock.after(0, () => {
-        inBackground($, refreshBand($))
-        inBackground($, refreshPr($))
-      })
-      $.clock.every(PR_POLL_MS, () => inBackground($, refreshPr($)))
-    }
+    // On a timer, not in this dispatch, so the first prompt does not wait on git.
+    if (hasStatusBand) $.clock.after(0, () => inBackground($, refreshBand($)))
     if (hasPlanProgress) $.clock.after(0, () => inBackground($, loadPlans($)))
     if (hasTimeAwareness) $.clock.after(0, () => inBackground($, dropStaleActivity($)))
     return started
@@ -566,27 +313,18 @@ export const register: Register = (on, options) => {
     if (refusal !== null) return refusal
     const ran = await next(e)
     // Other commands that move the branch are caught when the turn ends.
-    if (hasStatusBand && createsPr(e.command)) await rememberSessionPrs($, stdoutOf(ran.result))
-    if (hasStatusBand && runsGit(e.command)) {
-      queueBandRefresh($)
-      if (changesPr(e.command)) $.clock.after(0, () => inBackground($, refreshPr($)))
-    }
+    if (hasStatusBand && runsGit(e.command)) queueBandRefresh($)
     return ran
   }).catch(($, e, next) =>
     // A refresh that broke after the call hands its result on (`next` is replay-safe).
     next(e),
   )
 
-  if (hasStatusBand || isAlerting) {
-    // A window can move a point mid-turn, while the model runs tools. Only the
-    // limits are patched: the rest of the band is reread when the turn ends.
+  if (isAlerting) {
+    // A window can cross the line mid-turn, while the model runs tools.
     on('session.measure', async ($, e, next) => {
       const measured = await next(e)
-      if (e.changed.includes('rateLimits')) {
-        const limits = usageLimits(e.rateLimits)
-        if (hasStatusBand) await update($, band, last => (last === null ? null : { ...last, usageLimits: limits }))
-        if (isAlerting) await alertLimits($, limits)
-      }
+      if (e.changed.includes('rateLimits')) await alertLimits($, usageLimits(e.rateLimits))
       return measured
     })
   }
@@ -601,20 +339,13 @@ export const register: Register = (on, options) => {
   }
 
   if (hasStatusBand) {
-
-
     on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
       const shown = await read($, band)
       if (e.props.hasSurvey || shown === null) return next(e)
 
-      const { Box, Text, Link } = $.ui.resolve(e)
-      const { location: here, model: modelName, context, usageLimits: limits, costUsd } = shown
-      const now = await $.clock.now()
-      const current = (await read($, prRead))?.pr ?? null
-      const opened = (await read($, sessionPrs)).filter(pr => pr.url !== current?.url).slice(0, MAX_SESSION_PR_ROWS)
-      const rows = current === null ? opened : [current, ...opened]
+      const { Box, Text } = $.ui.resolve(e)
+      const { location: here, model: modelName } = shown
       const place = here.repo !== null && here.repo !== here.dir ? `${here.repo}/${here.dir}` : here.dir
-      const skills = hasPrSkills ? await read($, prSkills) : null
       const plan = hasPlanProgress ? summarize(await read($, planTasks)) : null
       const activeTitle = plan === null ? null : planTitle(plan, e.props.bodyColumns)
 
@@ -639,27 +370,6 @@ export const register: Register = (on, options) => {
               </Text>
             )}
             <Text color="magenta"> [{modelName}]</Text>
-            {context !== null && (
-              <Text>
-                <Text color={usageColor(context.percent)}> ctx {context.percent}%</Text>
-                {context.tokensToCompact !== null && <Text dimColor> ⇣{kiloTokens(context.tokensToCompact)}</Text>}
-              </Text>
-            )}
-            {limits.map((limit, index) => {
-              const reset = shownReset(limit, now)
-              const followsAnotherGauge = index > 0 || context !== null
-              return (
-                <Text key={limit.label}>
-                  {followsAnotherGauge && <Text dimColor> ·</Text>}
-                  <Text color={usageColor(limit.percent)}>
-                    {' '}
-                    {limit.label} {limit.percent}%
-                  </Text>
-                  {reset !== null && <Text dimColor> ↻{reset}</Text>}
-                </Text>
-              )
-            })}
-            {limits.length === 0 && costUsd !== null && <Text dimColor>{context !== null && ' ·'} {formatCost(costUsd)}</Text>}
           </Text>
           {plan !== null && (
             <Text wrap="truncate-end">
@@ -669,54 +379,6 @@ export const register: Register = (on, options) => {
               {activeTitle !== null && <Text> · {activeTitle}</Text>}
             </Text>
           )}
-          {rows.map(pr => {
-            const status = prStatus(pr)
-            const counts = countChecks(pr.checks)
-            const replied = pr.threads.filter(thread => thread.isReplied).length
-            const open = pr.threads.length - replied
-            // A merged or closed PR is past the point where the skills matter.
-            const skillsRan = skills === null || pr.state !== 'OPEN' ? null : prSkillRuns(skills.runs, skills.root, pr)
-            return (
-              <Text key={pr.url} wrap="truncate-end">
-                <Text dimColor>PR </Text>
-                <Link href={pr.url} label={`#${pr.number}`} />
-                {pr.people.length > 0 && <Text> {peopleLabel(pr.people, peopleMarks)}</Text>}
-                <Text color={status.color}> {status.label}</Text>
-                {(['fail', 'pending', 'pass'] as const).map(
-                  state =>
-                    counts[state] > 0 && (
-                      <Text key={state} color={CHECK[state].color}>
-                        {' '}
-                        {CHECK[state].mark}
-                        {counts[state]}
-                      </Text>
-                    ),
-                )}
-                {open > 0 && <Text color="yellow"> · {open} open</Text>}
-                {replied > 0 && <Text dimColor> · {replied} replied</Text>}
-                {pr.resolvedThreads > 0 && <Text dimColor> · {pr.resolvedThreads} resolved</Text>}
-                {pr.state === 'OPEN' && pr.mergeable === 'CONFLICTING' && <Text color="red"> · conflicts</Text>}
-                {pr.state === 'OPEN' && pr.mergeState === 'BEHIND' && <Text color="yellow"> · behind base</Text>}
-                {isReadyToMerge(pr) && <Text color="green" bold> · ready to merge</Text>}
-                {skillsRan !== null && (
-                  <Text>
-                    {' ·'}
-                    {PR_SKILLS.map(({ skill, label }) => {
-                      const ran = skill in skillsRan
-                      return (
-                        <Text key={skill} color={ran ? 'green' : undefined} dimColor={!ran}>
-                          {' '}
-                          {ran ? '✓' : '○'}
-                          {label}
-                        </Text>
-                      )
-                    })}
-                  </Text>
-                )}
-                <Text dimColor> · {pr.title}</Text>
-              </Text>
-            )
-          })}
         </Box>
       )
     })
@@ -755,109 +417,6 @@ export const register: Register = (on, options) => {
     })
   }
 
-  if (isOn('prPane')) {
-    on('command.run', { command: 'pr' }, async $ => {
-      await $.ui.open({ id: PANE, title: 'Pull request' })
-      await refreshPr($)
-      const current = (await read($, prRead))?.pr ?? null
-      return { text: current === null ? 'No PR for this branch yet.' : `PR #${current.number} is in the pane.` }
-    })
-
-    on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
-      const { Box, Text, Button, Link } = $.ui.resolve(e)
-      const last = await read($, prRead)
-      const refresh = <Button key="refresh" hotkey="r" label="Refresh" onPress={() => inBackground($, refreshPr($))} />
-
-      if (last?.pr == null) {
-        return (
-          <Box flexDirection="column">
-            <Text dimColor>{last === null ? 'Reading the PR…' : (last.error ?? 'No PR for this branch.')}</Text>
-            {refresh}
-          </Box>
-        )
-      }
-
-      const current = last.pr
-      const skills = hasPrSkills ? await read($, prSkills) : null
-      const skillsRan = skills === null || current.state !== 'OPEN' ? null : prSkillRuns(skills.runs, skills.root, current)
-      const checks = [...current.checks].sort((a, b) => CHECK_STATES.indexOf(a.state) - CHECK_STATES.indexOf(b.state))
-      const counts = countChecks(current.checks)
-      return (
-        <Box flexDirection="column">
-          <Text bold wrap="wrap">
-            #{current.number} {current.title}
-          </Text>
-          <Link key="url" href={current.url} label={current.url} />
-          <Text>
-            <Text color={current.state === 'OPEN' ? 'green' : 'magenta'}>{current.state.toLowerCase()}</Text>
-            {current.isDraft && <Text dimColor> · draft</Text>}
-            {current.mergeable === 'CONFLICTING' ? (
-              <Text color="red"> · merge conflicts</Text>
-            ) : (
-              <Text> · {current.mergeable.toLowerCase()}</Text>
-            )}
-            {current.reviewDecision !== null && (
-              <Text> · {current.reviewDecision.toLowerCase().replace('_', ' ')}</Text>
-            )}
-          </Text>
-
-          <Text bold>
-            {'\n'}Checks{(['fail', 'pending', 'pass'] as const).map(state => ` ${CHECK[state].mark}${counts[state]}`)}
-          </Text>
-          {checks.length === 0 && <Text dimColor>No checks reported.</Text>}
-          {checks.map(check => (
-            <Text wrap="truncate-end">
-              <Text color={CHECK[check.state].color}>{CHECK[check.state].mark}</Text> {check.name}
-            </Text>
-          ))}
-
-          <Text bold>
-            {'\n'}Open threads ({current.threads.length})
-          </Text>
-          {current.threads.length === 0 && <Text dimColor>None.</Text>}
-          {current.threads.map(thread => (
-            <Text wrap="truncate-end">
-              <Text color="cyan">
-                {thread.path}
-                {thread.line === null ? '' : `:${thread.line}`}
-              </Text>{' '}
-              <Text dimColor>{thread.author}:</Text> {thread.excerpt}
-              {thread.isReplied && <Text dimColor> (replied)</Text>}
-            </Text>
-          ))}
-
-          {skillsRan !== null && (
-            <Box flexDirection="column">
-              <Text bold>{'\n'}PR skills</Text>
-              {PR_SKILLS.map(({ skill }) => {
-                const ranAt = skillsRan[skill]
-                return (
-                  <Text key={skill} wrap="truncate-end">
-                    {ranAt === undefined ? <Text dimColor>○</Text> : <Text color="green">✓</Text>} {skill}
-                    <Text dimColor> {ranAt === undefined ? 'not run' : `ran ${ranAt.slice(0, 10)}`}</Text>
-                  </Text>
-                )
-              })}
-            </Box>
-          )}
-
-          <Text> </Text>
-          <Box flexDirection="row" gap={1}>
-            {refresh}
-            {PR_ACTIONS.map(action => (
-              <Button
-                key={action.key}
-                hotkey={action.hotkey}
-                label={action.label}
-                onPress={() => void $.prompt.submit({ text: action.prompt })}
-              />
-            ))}
-          </Box>
-        </Box>
-      )
-    })
-  }
-
   if (isOn('ruleGuard')) {
     on('tool.call', { tool: 'Write' }, async ($, e, next) => (await guardEdit($, e.file_path, e.content, blockedTerms)) ?? next(e))
       .catch(($, e, next) => guardFailed(next.called, e.file_path, e.content) ?? next(e))
@@ -883,40 +442,14 @@ export const register: Register = (on, options) => {
     })
   }
 
-  // skill.prompt fires however a skill loads: typed as /name, the Skill tool,
-  // or preloaded into a subagent.
-  if (hasPrSkills) {
-    on('tool.call', { tool: 'Skill' }, async ($, e, next) => {
-      notePrSkillArgs(e.skill, e.args ?? '')
-      return next(e)
-    })
-    on('command.run', async ($, e, next) => {
-      notePrSkillArgs(e.command, e.args)
-      return next(e)
-    })
-  }
-
-  const hasSkillTally = isOn('skillTally')
-  if (hasSkillTally || hasPrSkills) {
+  if (hasSkillTally) {
     on('skill.prompt', async ($, e, next) => {
       const prompted = await next(e)
-      const prSkill = hasPrSkills ? prSkillOf(e.skill) : null
-      if (prSkill !== null) {
-        const args = prSkillArgs.get(prSkill) ?? argumentsLine(e.text)
-        prSkillArgs.delete(prSkill)
-        prSkillWrites = prSkillWrites.then(() => recordPrSkill($, prSkill, args)).catch(error => {
-          $.ui.log(`mods: ${String(error)}`, { to: 'debug' })
-        })
-      }
-      if (hasSkillTally) {
-        const now = new Date(await $.clock.now()).toISOString()
-        await $.store.set(TALLY_KEY, countSkill(asTally(await $.store.get(TALLY_KEY)), e.skill, now))
-      }
+      const now = new Date(await $.clock.now()).toISOString()
+      await $.store.set(TALLY_KEY, countSkill(asTally(await $.store.get(TALLY_KEY)), e.skill, now))
       return prompted
     })
-  }
 
-  if (hasSkillTally) {
     on('command.run', { command: 'skill-tally' }, async ($, e) => {
       if (e.args.trim() === 'reset') {
         await $.store.delete(TALLY_KEY)

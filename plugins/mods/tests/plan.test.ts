@@ -31,7 +31,6 @@ function fakeSession(on: On, stored: Record<string, unknown> = {}) {
   on('session.cwd', () => ({ value: '/w/scratch' }))
   on('session.repo', () => ({ value: null }))
   on('session.model', () => ({ value: 'claude-opus-5-5' }))
-  on('session.usage', () => ({ value: { startedAt: 0, context: { window: 200_000, percent: 10 }, rateLimits: [], cost: { usd: 0 } } }))
   on('tool.call', { tool: 'Bash' }, () => ({ result: { stdout: '', stderr: '', interrupted: false } }))
   let nextId = 0
   const failed = (key: string) => {
