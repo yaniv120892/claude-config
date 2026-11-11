@@ -612,6 +612,46 @@ describe('Slack events', () => {
   })
 })
 
+describe('asking for a review', () => {
+  test('Ask review takes a name and runs the skill that DMs that reviewer, from the PR list or a ticket', async ($, on) => {
+    const { clock, prompts } = fakeWorld(on)
+    await start($, clock)
+    await $.command.run(slash('cockpit', 'prs'))
+
+    const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
+    expect(await pane.find({ key: 'ask-review-https://github.com/acme/app/pull/3' })).toBeUndefined()
+    await pane.press({ key: 'ask-review-https://github.com/acme/app/pull/4' })
+    await pane.input({ key: 'ask-review-name-https://github.com/acme/app/pull/4', text: '  ' })
+    expect(prompts).toEqual([])
+    await pane.input({ key: 'ask-review-name-https://github.com/acme/app/pull/4', text: 'Dana' })
+    expect(prompts).toEqual(['/pr-workflows:ask-pr-review-slack https://github.com/acme/app/pull/4 Dana'])
+    expect(await pane.find({ key: 'ask-review-name-https://github.com/acme/app/pull/4' })).toBeUndefined()
+
+    await pane.press({ key: 'ticket-YAN-1' })
+    await pane.press({ key: 'ticket-ask-review-YAN-1-https://github.com/acme/app/pull/1' })
+    expect(await pane.find({ key: 'ask-review-name-https://github.com/acme/app/pull/1' })).toBeUndefined()
+    await pane.input({ key: 'ask-review-name-YAN-1 https://github.com/acme/app/pull/1', text: 'Alex' })
+    expect(prompts[1]).toBe('/pr-workflows:ask-pr-review-slack https://github.com/acme/app/pull/1 Alex')
+
+    await pane.press({ key: 'ask-review-https://github.com/acme/app/pull/4' })
+    await pane.press({ key: 'ask-review-https://github.com/acme/app/pull/4' })
+    expect(await pane.find({ key: 'ask-review-name-https://github.com/acme/app/pull/4' })).toBeUndefined()
+    await pane.unmount()
+  })
+
+  test('an open PR shows who was asked to review it and who approved it', async ($, on) => {
+    const { clock, board } = fakeWorld(on)
+    board.open = [row({ number: 1, requested: ['dana'], reviews: [{ login: 'alex', state: 'APPROVED' }, { login: 'sam', state: 'CHANGES_REQUESTED' }] })]
+    await start($, clock)
+    await $.command.run(slash('cockpit', 'prs'))
+
+    const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
+    const shown = await shownText(pane)
+    for (const expected of ['👀 dana', '✓alex', '✗sam']) expect(shown).toContain(expected)
+    await pane.unmount()
+  })
+})
+
 describe('the setup checklist', () => {
   test('a fresh install lists every step on the Alerts tab and counts them on the others', async ($, on) => {
     const { clock } = fakeWorld(on)

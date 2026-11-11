@@ -36,6 +36,11 @@ export type BoardThread = {
   isReplied: boolean
 }
 
+export type ReviewerState = 'requested' | 'approved' | 'changes' | 'commented'
+
+/** Someone on an open PR other than its author: asked for a review, or the last review they left. */
+export type BoardReviewer = { name: string; state: ReviewerState }
+
 export type BoardPr = {
   url: string
   repo: string
@@ -53,6 +58,8 @@ export type BoardPr = {
   checks: BoardCheck[]
   /** Unresolved review threads only; an open PR's alone. */
   threads: BoardThread[]
+  /** An open PR's alone. */
+  reviewers: BoardReviewer[]
   /** A merged PR's alone: what an alert is compared to. */
   files: string[]
   mergedAt: number | null
@@ -177,6 +184,9 @@ declare module 'claude-code' {
       openTicket: string | null
       /** The PR whose Merge was pressed once, and when: a second press soon after merges it. */
       confirmingMerge: PendingMerge | null
+      /** The row whose ask-for-review field is open, and the reviewer typed in it. */
+      askingReviewFor: string | null
+      reviewerDraft: string
       setupFacts: Shaped<SetupFacts>
     }
   }

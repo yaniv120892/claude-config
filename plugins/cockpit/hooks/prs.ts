@@ -1,4 +1,4 @@
-import type { BoardCheck, BoardPr, BoardThread, CheckState, Quota, Ticket } from '../types'
+import type { BoardCheck, BoardPr, BoardReviewer, BoardThread, CheckState, Quota, ReviewerState, Ticket } from '../types'
 
 const MERGED_DAYS = 7
 const DAY_MS = 86_400_000
@@ -14,7 +14,7 @@ const TICKET_MENTION = /\b([A-Za-z][A-Za-z0-9]*)-(\d+)\b/g
 
 /**
  * GitHub charges a query by the `first:` sizes of its nested connections, so each search asks only for what its rows
- * show: an open PR its checks and threads; a merged one its deploys and the files an alert is compared to.
+ * show: an open PR its checks, threads and reviewers; a merged one its deploys and the files an alert is compared to.
  */
 export const BOARD_QUERY = `
 query($open: String!, $merged: String!) {
@@ -26,6 +26,8 @@ fragment Open on PullRequest {
   number title url isDraft state reviewDecision mergeable headRefName headRefOid isCrossRepository
   author { login }
   repository { nameWithOwner }
+  reviewRequests(first: 5) { nodes { requestedReviewer { ... on User { login } ... on Team { name } } } }
+  latestReviews(first: 5) { nodes { author { login } state } }
   commits(last: 1) { nodes { commit { statusCheckRollup { contexts(first: 40) { nodes {
     __typename
     ... on CheckRun { name status conclusion detailsUrl }
@@ -131,6 +133,28 @@ function deployedAt(mergeCommit: unknown, prodEnvironment: string): number | nul
   return live.length === 0 ? null : Math.min(...live)
 }
 
+const REVIEW_STATE: Readonly<Record<string, ReviewerState>> = {
+  APPROVED: 'approved',
+  CHANGES_REQUESTED: 'changes',
+  COMMENTED: 'commented',
+}
+
+/** Who is on the PR besides its author: the last review each left, and a request standing over an older review. */
+function parseReviewers(row: Json, prAuthor: string): BoardReviewer[] {
+  const byName = new Map<string, ReviewerState>()
+  for (const review of nodes(row.latestReviews)) {
+    const state = REVIEW_STATE[text(review.state)]
+    if (state !== undefined) byName.set(text(record(review.author).login), state)
+  }
+  for (const request of nodes(row.reviewRequests)) {
+    const reviewer = record(request.requestedReviewer)
+    byName.set(text(reviewer.login) || text(reviewer.name), 'requested')
+  }
+  return [...byName]
+    .filter(([name]) => name !== '' && name !== prAuthor)
+    .map(([name, state]) => ({ name, state }))
+}
+
 function parseRow(row: Json, prodEnvironment: string): BoardPr | null {
   const url = text(row.url)
   if (url === '' || typeof row.number !== 'number') return null
@@ -153,6 +177,7 @@ function parseRow(row: Json, prodEnvironment: string): BoardPr | null {
     threads: nodes(row.reviewThreads)
       .filter(thread => thread.isResolved !== true)
       .map(thread => parseThread(thread, author)),
+    reviewers: parseReviewers(row, author),
     files: nodes(row.files).map(file => text(file.path)),
     mergedAt: time(row.mergedAt),
     deployedAt: deployedAt(row.mergeCommit, prodEnvironment),

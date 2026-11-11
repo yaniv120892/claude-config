@@ -47,7 +47,7 @@ describe('the PR board', () => {
     expect(pr?.threads[0]?.excerpt).toBe('Rename this.')
   })
 
-  test('an open row parses without deploys or files, and a merged row without checks or threads', async () => {
+  test('an open row parses without deploys or files, and a merged row without checks, threads or reviewers', async () => {
     const deployed = [{ environment: 'production', statuses: [{ state: 'SUCCESS', createdAt: '2026-11-01T10:05:00Z' }] }]
     const openRow = row({ number: 1, checks: CHECKS, threads: [thread({ author: 'reviewer' })] })
     const mergedRow = row({ number: 2, state: 'MERGED', mergedAt: '2026-11-01T10:00:00Z', deployments: deployed })
@@ -58,7 +58,7 @@ describe('the PR board', () => {
 
     const [, openFragment = '', mergedFragment = ''] = BOARD_QUERY.split(/fragment \w+ on PullRequest/)
     for (const mergedOnly of ['mergeCommit', 'files', 'deployments']) expect(openFragment).not.toContain(mergedOnly)
-    for (const openOnly of ['reviewThreads', 'statusCheckRollup']) expect(mergedFragment).not.toContain(openOnly)
+    for (const openOnly of ['reviewThreads', 'statusCheckRollup', 'reviewRequests']) expect(mergedFragment).not.toContain(openOnly)
     expect(BOARD_QUERY).toContain('rateLimit { limit remaining resetAt cost }')
 
     const [open, merged] = parseBoard(boardAnswer([openRow], [mergedRow]), 'production')
@@ -68,14 +68,37 @@ describe('the PR board', () => {
       checks: 5,
       threads: 1,
     })
-    expect({ files: merged?.files, deployedAt: merged?.deployedAt, checks: merged?.checks, threads: merged?.threads }).toEqual({
+    expect({ files: merged?.files, deployedAt: merged?.deployedAt, checks: merged?.checks, threads: merged?.threads, reviewers: merged?.reviewers }).toEqual({
       files: ['src/billing/charge.ts'],
       deployedAt: Date.parse('2026-11-01T10:05:00Z'),
       checks: [],
       threads: [],
+      reviewers: [],
     })
   })
 
+  test('names who is on an open PR: a standing request over an older review, the last review of each, never its author', async () => {
+    const [pr] = parseBoard(
+      boardAnswer([
+        row({
+          number: 1,
+          requested: ['dana', 'me'],
+          reviews: [
+            { login: 'dana', state: 'COMMENTED' },
+            { login: 'alex', state: 'APPROVED' },
+            { login: 'sam', state: 'CHANGES_REQUESTED' },
+            { login: 'kim', state: 'DISMISSED' },
+          ],
+        }),
+      ]),
+      'production',
+    )
+    expect(pr?.reviewers).toEqual([
+      { name: 'dana', state: 'requested' },
+      { name: 'alex', state: 'approved' },
+      { name: 'sam', state: 'changes' },
+    ])
+  })
 
   test('a merged PR is deployed only once its production deployment succeeded', async () => {
     const preview = { environment: 'Preview', statuses: [{ state: 'SUCCESS', createdAt: '2026-11-01T10:00:00Z' }] }

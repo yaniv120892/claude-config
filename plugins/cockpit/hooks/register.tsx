@@ -7,12 +7,14 @@ import type {
   Board,
   BoardLease,
   BoardPr,
+  BoardReviewer,
   CheckState,
   ContextGauge,
   Focus,
   InboxItem,
   PendingMerge,
   Reviewer,
+  ReviewerState,
   SetupFacts,
   SharedBoard,
   SlackLink,
@@ -87,6 +89,8 @@ const focus = atom({ plugin: 'cockpit', key: 'focus' } as const, null, { shape: 
 const isShowingAllPrs = atom({ plugin: 'cockpit', key: 'isShowingAllPrs' } as const, false)
 const openTicket = atom({ plugin: 'cockpit', key: 'openTicket' } as const, null)
 const confirmingMerge = atom({ plugin: 'cockpit', key: 'confirmingMerge' } as const, null)
+const askingReviewFor = atom({ plugin: 'cockpit', key: 'askingReviewFor' } as const, null)
+const reviewerDraft = atom({ plugin: 'cockpit', key: 'reviewerDraft' } as const, '')
 const setupFacts = atom({ plugin: 'cockpit', key: 'setupFacts' } as const, { scopes: 'unknown', lastEventAt: null }, { shape: 'setup-1' })
 
 const PANE = 'cockpit'
@@ -130,6 +134,7 @@ const VERDICT_MODEL = 'haiku'
 const ALERT_EXCERPT_LENGTH = 400
 const SKILL_HOTKEYS = 'abcdefghijkl'
 const POLISH_SKILL = '/pr-workflows:pr-polish'
+const ASK_REVIEW_SKILL = '/pr-workflows:ask-pr-review-slack'
 const WORKSPACE_SKILL = '/cmux:ticket-workspace'
 const DONE_STATE = 'Done'
 const MERGE_CONFIRM_MS = 10_000
@@ -152,6 +157,13 @@ const CHECK_LOOK = {
   pending: { mark: '◌', color: 'warning' },
   pass: { mark: '✓', color: 'success' },
 } as const satisfies Record<CheckState, { mark: string; color: ThemeKey }>
+
+const REVIEWER_LOOK = {
+  requested: { mark: '👀 ', color: null },
+  approved: { mark: '✓', color: 'success' },
+  changes: { mark: '✗', color: 'error' },
+  commented: { mark: '💬', color: null },
+} as const satisfies Record<ReviewerState, { mark: string; color: ThemeKey | null }>
 
 // A sidecar in standby defers to another session's connection, which delivers the events.
 const EVENT_LINK_STATES: ReadonlySet<SlackLink['state']> = new Set(['connected', 'standby'])
@@ -736,6 +748,21 @@ async function handleInboxItem($: Engine, item: InboxItem, handledBy: Reviewer |
   if (handledBy !== 'dismissed') runSlash($, `${REVIEW_SKILL[handledBy]} ${item.prUrl}`)
 }
 
+async function toggleAskReview($: Engine, rowKey: string): Promise<void> {
+  const open = await read($, askingReviewFor)
+  await update($, reviewerDraft, () => '')
+  await update($, askingReviewFor, () => (open === rowKey ? null : rowKey))
+}
+
+/** Asks the named teammate on Slack to review the PR, through the skill that checks it is ready first. */
+async function askForReview($: Engine, { pr, name }: { pr: BoardPr; name: string }): Promise<void> {
+  const reviewer = name.trim()
+  if (reviewer === '') return
+  runSlash($, `${ASK_REVIEW_SKILL} ${pr.url} ${reviewer}`)
+  await update($, askingReviewFor, () => null)
+  await update($, reviewerDraft, () => '')
+}
+
 async function setDismissed($: Engine, url: string, isDismissed: boolean): Promise<void> {
   const known = asDismissed(await $.store.get(DISMISSED_KEY)).filter(other => other !== url)
   const next = isDismissed ? [url, ...known].slice(0, 200) : known
@@ -824,7 +851,7 @@ export const register: Register = (on, options) => {
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const { Box, Text, Button, Link, Input } = $.ui.resolve(e)
-    const [storedTab, items, shownBoard, shownAlerts, hidden, openReply, draft, confirming, facts, link, now] = await Promise.all([
+    const [storedTab, items, shownBoard, shownAlerts, hidden, openReply, draft, confirming, askingFor, reviewerName, facts, link, now] = await Promise.all([
       read($, tab),
       read($, inbox),
       read($, board),
@@ -833,6 +860,8 @@ export const register: Register = (on, options) => {
       read($, replyingTo),
       read($, replyDraft),
       read($, confirmingMerge),
+      read($, askingReviewFor),
+      read($, reviewerDraft),
       read($, setupFacts),
       read($, slack),
       $.clock.now(),
@@ -977,6 +1006,33 @@ export const register: Register = (on, options) => {
       )
     }
 
+    function drawAskReview({ key, rowKey }: { key: string; rowKey: string }) {
+      return <Button key={key} plain dimColor={askingFor !== rowKey} label="📣 Ask review" onPress={() => toggleAskReview($, rowKey)} />
+    }
+
+    /** The field a reviewer's name is typed in, under the row whose Ask review was pressed. */
+    function drawReviewerField({ rowKey, pr }: { rowKey: string; pr: BoardPr }) {
+      if (askingFor !== rowKey) return null
+      return (
+        <Input
+          key={`ask-review-name-${rowKey}`}
+          placeholder="Who should review it? (a name)"
+          submitLabel="Ask"
+          autoFocus
+          value={reviewerName}
+          onInput={text => update($, reviewerDraft, () => text)}
+          onSubmit={name => askForReview($, { pr, name })}
+        />
+      )
+    }
+
+    function drawReviewer(reviewer: BoardReviewer) {
+      const look = REVIEWER_LOOK[reviewer.state]
+      const label = ` ${look.mark}${reviewer.name}`
+      if (look.color === null) return <Text key={`reviewer-${reviewer.name}`} dimColor>{label}</Text>
+      return <Text key={`reviewer-${reviewer.name}`} color={look.color}>{label}</Text>
+    }
+
     function drawPolish({ key, pr }: { key: string; pr: BoardPr }) {
       return <Button key={key} plain label="✦ Polish" onPress={() => runSlash($, `${POLISH_SKILL} ${pr.url}`)} />
     }
@@ -1007,6 +1063,7 @@ export const register: Register = (on, options) => {
               onPress={() => setDismissed($, pr.url, !isHidden)}
             />
             {pr.state === 'OPEN' && drawPolish({ key: `polish-${pr.url}`, pr })}
+            {pr.state === 'OPEN' && drawAskReview({ key: `ask-review-${pr.url}`, rowKey: pr.url })}
             {isReadyToMerge(pr) && (
               <Button
                 key={`merge-${pr.url}`}
@@ -1045,6 +1102,8 @@ export const register: Register = (on, options) => {
                       </Text>
                     ),
                 )}
+              {pr.state === 'OPEN' && pr.reviewers.length > 0 && <Text dimColor> ·</Text>}
+              {pr.state === 'OPEN' && pr.reviewers.map(drawReviewer)}
               {waitingThreads > 0 && <Text color="warning"> · {waitingThreads} open</Text>}
               {repliedThreads > 0 && <Text dimColor> · {repliedThreads} replied</Text>}
               {ticket !== null && (
@@ -1056,6 +1115,7 @@ export const register: Register = (on, options) => {
               <Text dimColor> · {pr.title}</Text>
             </Text>
           </Box>
+          {drawReviewerField({ rowKey: pr.url, pr })}
           {isOpen && (
             <Box flexDirection="column" paddingLeft={4}>
               {pr.checks
@@ -1106,14 +1166,19 @@ export const register: Register = (on, options) => {
     }
 
     function drawTicketPr({ ticketId, pr }: { ticketId: string; pr: BoardPr }) {
+      const rowKey = `${ticketId} ${pr.url}`
       return (
-        <Box key={`ticket-pr-${ticketId}-${pr.url}`} flexDirection="row" gap={1}>
-          {pr.state === 'OPEN' && drawPolish({ key: `ticket-polish-${ticketId}-${pr.url}`, pr })}
-          <Text wrap="truncate-end">
-            <Link href={pr.url} label={prLabel(pr)} />
-            <Text color={pr.state === 'OPEN' ? 'warning' : 'merged'}> {stateWord(pr)}</Text>
-            <Text dimColor> · {pr.title}</Text>
-          </Text>
+        <Box key={`ticket-pr-${ticketId}-${pr.url}`} flexDirection="column">
+          <Box flexDirection="row" gap={1}>
+            {pr.state === 'OPEN' && drawPolish({ key: `ticket-polish-${ticketId}-${pr.url}`, pr })}
+            {pr.state === 'OPEN' && drawAskReview({ key: `ticket-ask-review-${ticketId}-${pr.url}`, rowKey })}
+            <Text wrap="truncate-end">
+              <Link href={pr.url} label={prLabel(pr)} />
+              <Text color={pr.state === 'OPEN' ? 'warning' : 'merged'}> {stateWord(pr)}</Text>
+              <Text dimColor> · {pr.title}</Text>
+            </Text>
+          </Box>
+          {drawReviewerField({ rowKey, pr })}
         </Box>
       )
     }
