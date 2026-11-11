@@ -338,6 +338,35 @@ describe('alerts', () => {
     }
     await pane.unmount()
   })
+
+  test('Investigate runs the investigate-alert skill on the alert, with where it fired and the PR it was compared to', SLACK, async ($, on) => {
+    const { clock, prompts } = fakeWorld(on, { lines: [ALERT_MESSAGE] })
+    await start($, clock)
+    await $.command.run(slash('cockpit', 'alerts'))
+
+    const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
+    await pane.press({ key: 'investigate-C9:2.0' })
+    const [investigation = ''] = prompts
+    expect(investigation.startsWith('/dev-workflows:investigate-alert channel: #prod-alerts')).toBe(true)
+    for (const expected of ['slack: https://acme.slack.com/archives/C9/p20', 'compared PR: https://github.com/acme/app/pull/3', '<slack_alert>\n5xx spike on billing-api\n</slack_alert>']) {
+      expect(investigation).toContain(expected)
+    }
+    await pane.unmount()
+  })
+})
+
+describe('an alert with no deploy to compare', () => {
+  test('still offers Investigate', { options: { ...SLACK.options, alertWindowMinutes: 1 } }, async ($, on) => {
+    const { clock, prompts } = fakeWorld(on, { lines: [ALERT_MESSAGE] })
+    await start($, clock)
+    await $.command.run(slash('cockpit', 'alerts'))
+
+    const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
+    expect(await pane.find({ type: 'Text', text: /no deploy/ })).toBeDefined()
+    await pane.press({ key: 'investigate-C9:2.0' })
+    expect(prompts[0]).toContain('cockpit verdict: no deploy in its window')
+    await pane.unmount()
+  })
 })
 
 describe('skills, usage and compact', () => {

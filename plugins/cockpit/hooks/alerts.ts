@@ -15,7 +15,7 @@ export function watchedDeploys(prs: readonly BoardPr[], alertAt: number, windowM
     .sort((a, b) => (b.deployedAt ?? 0) - (a.deployedAt ?? 0))
 }
 
-/** Whether the verdict ties the alert to the deploy: what toasts, counts on the tab and offers Investigate. */
+/** Whether the verdict ties the alert to the deploy: what toasts and counts on the tab. */
 export function isRelated(verdict: AlertVerdict): boolean {
   return IS_RELATED[verdict]
 }
@@ -24,6 +24,22 @@ export function isRelated(verdict: AlertVerdict): boolean {
 export function fenceAlert(alertText: string): string {
   const body = alertText.slice(0, MAX_ALERT_TEXT).replaceAll('</slack_alert>', '')
   return `<slack_alert>\n${body}\n</slack_alert>`
+}
+
+/**
+ * What the investigate-alert skill is given: where and when the alert fired, the PR it was compared to,
+ * and the alert itself, fenced. The verdict's reason stays out: a model wrote it from the alert's text.
+ */
+export function investigateArgs(alert: Alert): string {
+  return [
+    `channel: ${alert.channel}`,
+    `slack: ${alert.permalink}`,
+    `at: ${new Date(alert.at).toISOString()}`,
+    `compared PR: ${alert.prUrl ?? 'none'}`,
+    `cockpit verdict: ${alert.verdict ?? 'no deploy in its window'}`,
+    '',
+    fenceAlert(alert.text),
+  ].join('\n')
 }
 
 export function verdictPrompt(alertText: string, deployed: readonly BoardPr[]): string {
