@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { boardSearches, countChecks, isOnBoard, newlyDeployed, parseBoard, parseTickets, ticketOf } from '../hooks/prs'
+import { boardSearches, countChecks, isOnBoard, newlyDeployed, parseBoard, parseTickets, ticketIdIn, ticketOf, workspaceTitle } from '../hooks/prs'
 import { boardAnswer, row, thread } from './fixtures'
 
 const CHECKS = [
@@ -79,5 +79,26 @@ describe('the PR board', () => {
     expect(eleventh === undefined ? null : ticketOf(eleventh, tickets)).toBe(null)
     const nameless = [{ id: '', title: 'No id', url: '', status: '', isDone: false }]
     expect(first === undefined ? null : ticketOf(first, nameless)).toBe(null)
+  })
+})
+
+describe('the ticket a workspace works on', () => {
+  const teamKeys = new Set(['YAN'])
+
+  test('is the first mention of a known team, or one written in capitals', async () => {
+    expect(ticketIdIn({ text: 'YAN-172 cockpit', teamKeys })).toBe('YAN-172')
+    expect(ticketIdIn({ text: 'yaniv120892/yan-174-cockpit-show', teamKeys })).toBe('YAN-174')
+    expect(ticketIdIn({ text: 'fix RDBAZ-12 import', teamKeys })).toBe('RDBAZ-12')
+  })
+
+  test('is none for a name that only looks like one', async () => {
+    expect(ticketIdIn({ text: 'cockpit-2', teamKeys })).toBe(null)
+    expect(ticketIdIn({ text: 'main', teamKeys })).toBe(null)
+  })
+
+  test('reads the title of my own workspace from the cmux list', async () => {
+    const listing = JSON.stringify({ workspaces: [{ id: 'a', title: 'Hermes' }, { id: 'b', title: 'YAN-9 work' }] })
+    expect(workspaceTitle({ listing, workspaceId: 'b' })).toBe('YAN-9 work')
+    expect(workspaceTitle({ listing, workspaceId: 'c' })).toBe(null)
   })
 })

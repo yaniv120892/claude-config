@@ -64,6 +64,12 @@ export type Ticket = {
   isDone: boolean
 }
 
+/** The ticket this session works on, and where its id was found. */
+export type Focus = {
+  ticketId: string
+  source: 'workspace' | 'branch'
+}
+
 export type Board = {
   prs: BoardPr[]
   tickets: Ticket[]
@@ -126,6 +132,11 @@ declare module 'claude-code' {
       /** The row whose reply field is open, and what has been typed in it. */
       replyingTo: string | null
       replyDraft: string
+      focus: Shaped<Focus | null>
+      /** The PRs tab shows every PR, not only the focus ticket's. */
+      isShowingAllPrs: boolean
+      /** The ticket row expanded to list its PRs. */
+      openTicket: string | null
     }
   }
 }

@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { CommandSpec, EngineInterface as Engine, PluginOptions, Register, ThemeKey } from 'claude-code'
 
-import type { Alert, AlertVerdict, Board, BoardPr, CheckState, ContextGauge, InboxItem, Reviewer, SlackLink, Tab } from '../types'
+import type { Alert, AlertVerdict, Board, BoardPr, CheckState, ContextGauge, Focus, InboxItem, Reviewer, SlackLink, Tab, Ticket } from '../types'
 import { addAlert, asAlerts, fenceAlert, isRelated, parseVerdict, verdictPrompt, watchedDeploys } from './alerts'
 import type { Verdict } from './alerts'
 import {
@@ -11,10 +11,14 @@ import {
   boardSearches,
   countChecks,
   isOnBoard,
+  namesTicket,
   newlyDeployed,
   parseBoard,
   parseTickets,
+  teamKeysOf,
+  ticketIdIn,
   ticketOf,
+  workspaceTitle,
 } from './prs'
 import {
   addToInbox,
@@ -50,6 +54,9 @@ const usage = atom({ plugin: 'cockpit', key: 'usage' } as const, null, { shape: 
 const skills = atom({ plugin: 'cockpit', key: 'skills' } as const, [], { shape: 'skills-1' })
 const replyingTo = atom({ plugin: 'cockpit', key: 'replyingTo' } as const, null)
 const replyDraft = atom({ plugin: 'cockpit', key: 'replyDraft' } as const, '')
+const focus = atom({ plugin: 'cockpit', key: 'focus' } as const, null, { shape: 'focus-1' })
+const isShowingAllPrs = atom({ plugin: 'cockpit', key: 'isShowingAllPrs' } as const, false)
+const openTicket = atom({ plugin: 'cockpit', key: 'openTicket' } as const, null)
 
 const PANE = 'cockpit'
 const PANE_TITLE = 'Cockpit'
@@ -83,7 +90,13 @@ const DONE_SHOWN_FOR = '-P1D'
 const VERDICT_MODEL = 'haiku'
 const ALERT_EXCERPT_LENGTH = 400
 const SKILL_HOTKEYS = 'abcdefghijkl'
+const POLISH_SKILL = '/pr-workflows:pr-polish'
 const MINUTE_MS = 60_000
+
+const FOCUS_SOURCE = {
+  workspace: 'From the workspace name.',
+  branch: 'From the branch name.',
+} as const satisfies Record<Focus['source'], string>
 
 const VERDICT_LOOK = {
   likely: { label: 'LIKELY RELATED', color: 'error' },
@@ -362,10 +375,52 @@ async function readBoard($: Engine, config: Config): Promise<void> {
     readAt: now,
   }
   await update($, board, () => next)
+  const found = await readFocus($, next.tickets)
+  await update($, focus, () => found)
   for (const pr of newlyDeployed(last?.prs ?? null, next.prs)) {
     $.ui.toast(`${pr.repo}#${pr.number} reached production. Alerts are compared to it for ${config.alertWindowMinutes}m.`, {
       timeoutMs: NOTICE_TOAST_MS,
     })
+  }
+}
+
+/** The ticket this session works on: the one the cmux workspace title names, else the one its branch names. */
+async function readFocus($: Engine, tickets: readonly Ticket[]): Promise<Focus | null> {
+  const teamKeys = teamKeysOf(tickets)
+  const title = await readWorkspaceTitle($)
+  const fromWorkspace = title === null ? null : ticketIdIn({ text: title, teamKeys })
+  if (fromWorkspace !== null) return { ticketId: fromWorkspace, source: 'workspace' }
+  const branch = await readBranch($)
+  const fromBranch = branch === null ? null : ticketIdIn({ text: branch, teamKeys })
+  return fromBranch === null ? null : { ticketId: fromBranch, source: 'branch' }
+}
+
+async function readWorkspaceTitle($: Engine): Promise<string | null> {
+  const workspaceId = await $.env.get('CMUX_WORKSPACE_ID')
+  const isOutsideCmux = workspaceId === undefined || workspaceId === ''
+  if (isOutsideCmux) return null
+  try {
+    const ran = await $.process.run(['cmux', 'workspace', 'list', '--id-format', 'both', '--json'], {
+      timeoutMs: 5_000,
+      env: { CMUX_QUIET: '1' },
+    })
+    if (ran.exitCode !== 0) return null
+    return workspaceTitle({ listing: ran.stdout, workspaceId })
+  } catch (error) {
+    $.ui.log(`cockpit: the cmux workspace title could not be read: ${String(error)}`, { to: 'debug' })
+    return null
+  }
+}
+
+async function readBranch($: Engine): Promise<string | null> {
+  try {
+    const ran = await $.process.run(['git', 'branch', '--show-current'], { timeoutMs: 5_000 })
+    const branch = ran.stdout.trim()
+    const isOnBranch = ran.exitCode === 0 && branch !== ''
+    return isOnBranch ? branch : null
+  } catch (error) {
+    $.ui.log(`cockpit: the branch could not be read: ${String(error)}`, { to: 'debug' })
+    return null
   }
 }
 
@@ -492,6 +547,15 @@ async function setDismissed($: Engine, url: string, isDismissed: boolean): Promi
   const next = isDismissed ? [url, ...known].slice(0, 200) : known
   await $.store.set(DISMISSED_KEY, next)
   await update($, dismissed, () => next)
+}
+
+function prLabel(pr: BoardPr): string {
+  return `${pr.repo.split('/')[1] ?? pr.repo}#${pr.number}`
+}
+
+function stateWord(pr: BoardPr): string {
+  if (pr.state === 'OPEN') return pr.isDraft ? 'draft' : 'open'
+  return pr.deployedAt === null ? 'merged' : 'in prod'
 }
 
 function investigatePrompt(alert: Alert): string {
@@ -711,6 +775,10 @@ export const register: Register = (on, options) => {
       )
     }
 
+    function drawPolish({ key, pr }: { key: string; pr: BoardPr }) {
+      return <Button key={key} plain label="✦ Polish" onPress={() => runSlash($, `${POLISH_SKILL} ${pr.url}`)} />
+    }
+
     function toggleExpanded(url: string) {
       return update($, expanded, last => (last === url ? null : url))
     }
@@ -736,8 +804,9 @@ export const register: Register = (on, options) => {
               label={isHidden ? '↺' : '✕'}
               onPress={() => setDismissed($, pr.url, !isHidden)}
             />
+            {pr.state === 'OPEN' && drawPolish({ key: `polish-${pr.url}`, pr })}
             <Text wrap="truncate-end">
-              <Link href={pr.url} label={`${pr.repo.split('/')[1] ?? pr.repo}#${pr.number}`} />
+              <Link href={pr.url} label={prLabel(pr)} />
               {pr.state === 'MERGED' && pr.deployedAt !== null && (
                 <Text color="success" bold>
                   {' '}
@@ -810,11 +879,6 @@ export const register: Register = (on, options) => {
                       onPress={() => runSlash($, `/pr-workflows:verify-pr-state ${pr.url}`)}
                     />
                   )}
-                  <Button
-                    key={`polish-${pr.url}`}
-                    label="Polish"
-                    onPress={() => runSlash($, `/pr-workflows:pr-polish ${pr.url}`)}
-                  />
                 </Box>
               )}
             </Box>
@@ -823,27 +887,88 @@ export const register: Register = (on, options) => {
       )
     }
 
+    function toggleTicket(ticketId: string) {
+      return update($, openTicket, last => (last === ticketId ? null : ticketId))
+    }
+
+    function drawTicketPr({ ticketId, pr }: { ticketId: string; pr: BoardPr }) {
+      return (
+        <Box key={`ticket-pr-${ticketId}-${pr.url}`} flexDirection="row" gap={1}>
+          {pr.state === 'OPEN' && drawPolish({ key: `ticket-polish-${ticketId}-${pr.url}`, pr })}
+          <Text wrap="truncate-end">
+            <Link href={pr.url} label={prLabel(pr)} />
+            <Text color={pr.state === 'OPEN' ? 'warning' : 'merged'}> {stateWord(pr)}</Text>
+            <Text dimColor> · {pr.title}</Text>
+          </Text>
+        </Box>
+      )
+    }
+
+    function drawTicket({ ticket, isOpen, focusId }: { ticket: Ticket; isOpen: boolean; focusId: string | null }) {
+      const ticketPrs = openPrs.filter(pr => namesTicket({ pr, ticketId: ticket.id }))
+      return (
+        <Box key={ticket.id} flexDirection="column">
+          <Box flexDirection="row" gap={1}>
+            <Button key={`ticket-${ticket.id}`} plain label={isOpen ? '▾' : '▸'} onPress={() => toggleTicket(ticket.id)} />
+            <Text wrap="truncate-end">
+              {ticket.isDone ? <Text color="success">✓ </Text> : <Text color="warning">● </Text>}
+              <Link href={ticket.url} label={ticket.id} /> <Text dimColor>{ticket.status}</Text>
+              {ticket.id === focusId && <Text color="claude"> ◆ here</Text>}
+              {ticketPrs.length > 0 && <Text color="suggestion"> · {ticketPrs.length} PR{ticketPrs.length === 1 ? '' : 's'}</Text>}{' '}
+              {ticket.isDone ? <Text dimColor>{ticket.title}</Text> : ticket.title}
+            </Text>
+          </Box>
+          {isOpen && (
+            <Box flexDirection="column" paddingLeft={4}>
+              {ticketPrs.length === 0 && <Text dimColor>No open PRs, none merged in the last day.</Text>}
+              {ticketPrs.map(pr => drawTicketPr({ ticketId: ticket.id, pr }))}
+            </Box>
+          )}
+        </Box>
+      )
+    }
+
+    function drawFocusLine({ focused, showsAll }: { focused: Focus; showsAll: boolean }) {
+      return (
+        <Box key="focus-line" flexDirection="row" gap={1}>
+          <Text dimColor>{FOCUS_SOURCE[focused.source]}</Text>
+          <Button
+            key="all-prs"
+            plain
+            label={showsAll ? `Only ${focused.ticketId}` : `All PRs (${openPrs.length})`}
+            onPress={() => update($, isShowingAllPrs, last => !last)}
+          />
+        </Box>
+      )
+    }
+
     async function drawPrs() {
-      const [openUrl, showsHidden] = await Promise.all([read($, expanded), read($, isShowingDismissed)])
+      const [openUrl, showsHidden, focused, showsAll, expandedTicket] = await Promise.all([
+        read($, expanded),
+        read($, isShowingDismissed),
+        read($, focus),
+        read($, isShowingAllPrs),
+        read($, openTicket),
+      ])
       if (shownBoard === null) return <Text dimColor>Reading your PRs…</Text>
       const hiddenPrs = shownBoard.prs.filter(pr => isOnBoard({ pr, now }) && hidden.includes(pr.url))
+      const focusId = focused?.ticketId ?? null
+      const isFiltered = focusId !== null && !showsAll
+      const listed = isFiltered ? openPrs.filter(pr => namesTicket({ pr, ticketId: focusId })) : openPrs
       return (
         <Box flexDirection="column">
           {heading('Tickets')}
           {shownBoard.ticketsError !== null && <Text dimColor>{shownBoard.ticketsError}</Text>}
           {shownBoard.ticketsError === null && shownBoard.tickets.length === 0 && <Text dimColor>None.</Text>}
-          {shownBoard.tickets.map(ticket => (
-            <Text key={ticket.id} wrap="truncate-end">
-              {ticket.isDone ? <Text color="success">✓ </Text> : <Text color="warning">● </Text>}
-              <Link href={ticket.url} label={ticket.id} /> <Text dimColor>{ticket.status}</Text>{' '}
-              {ticket.isDone ? <Text dimColor>{ticket.title}</Text> : ticket.title}
-            </Text>
-          ))}
+          {shownBoard.tickets.map(ticket => drawTicket({ ticket, isOpen: ticket.id === expandedTicket, focusId }))}
           <Text> </Text>
-          {heading('Pull requests')}
+          {heading(isFiltered ? `Pull requests · ${focusId}` : 'Pull requests')}
+          {focused !== null && drawFocusLine({ focused, showsAll })}
           {shownBoard.error !== null && <Text color="error">{shownBoard.error}</Text>}
-          {shownBoard.error === null && openPrs.length === 0 && <Text dimColor>None open, none merged in the last day.</Text>}
-          {openPrs.map(pr => drawPr(pr, pr.url === openUrl))}
+          {shownBoard.error === null && listed.length === 0 && (
+            <Text dimColor>{isFiltered ? `No PRs for ${focusId} yet.` : 'None open, none merged in the last day.'}</Text>
+          )}
+          {listed.map(pr => drawPr(pr, pr.url === openUrl))}
           {showsHidden && hiddenPrs.length > 0 && heading('Dismissed')}
           {showsHidden && hiddenPrs.map(pr => drawPr(pr, false))}
           <Text> </Text>

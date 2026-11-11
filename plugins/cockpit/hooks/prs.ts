@@ -4,6 +4,7 @@ const MERGED_DAYS = 7
 const DAY_MS = 86_400_000
 // Also what makes an id safe to build a pattern from.
 const TICKET_ID = /^[A-Za-z][A-Za-z0-9]*-\d+$/
+const TICKET_MENTION = /\b([A-Za-z][A-Za-z0-9]*)-(\d+)\b/g
 
 export const BOARD_QUERY = `
 query($open: String!, $merged: String!) {
@@ -167,8 +168,40 @@ export function countChecks(checks: readonly BoardCheck[]): Record<CheckState, n
 
 /** The ticket a PR works on: the one whose id its title or branch names. */
 export function ticketOf(pr: BoardPr, tickets: readonly Ticket[]): Ticket | null {
-  const named = `${pr.title} ${pr.branch}`.toLowerCase()
-  return tickets.find(ticket => TICKET_ID.test(ticket.id) && new RegExp(`\\b${ticket.id.toLowerCase()}\\b`).test(named)) ?? null
+  return tickets.find(ticket => namesTicket({ pr, ticketId: ticket.id })) ?? null
+}
+
+/** Whether a PR's title or branch names the ticket. */
+export function namesTicket({ pr, ticketId }: { pr: BoardPr; ticketId: string }): boolean {
+  if (!TICKET_ID.test(ticketId)) return false
+  return new RegExp(`\\b${ticketId.toLowerCase()}\\b`).test(`${pr.title} ${pr.branch}`.toLowerCase())
+}
+
+/**
+ * The ticket a workspace title or branch names. A mention counts when its team key is one the
+ * board's tickets use, or when it is written in capitals (`YAN-12`), so `cockpit-2` is no ticket.
+ */
+export function ticketIdIn({ text, teamKeys }: { text: string; teamKeys: ReadonlySet<string> }): string | null {
+  for (const [, key = '', number = ''] of text.matchAll(TICKET_MENTION)) {
+    const isKnownTeam = teamKeys.has(key.toUpperCase())
+    const isWrittenAsKey = key.length >= 2 && key === key.toUpperCase()
+    const isTicket = isKnownTeam || isWrittenAsKey
+    if (isTicket) return `${key.toUpperCase()}-${number}`
+  }
+  return null
+}
+
+export function teamKeysOf(tickets: readonly Ticket[]): Set<string> {
+  return new Set(tickets.map(ticket => ticket.id.split('-')[0]?.toUpperCase() ?? '').filter(key => key !== ''))
+}
+
+/** The title of the cmux workspace with this id, from `cmux workspace list --json`. */
+export function workspaceTitle({ listing, workspaceId }: { listing: string; workspaceId: string }): string | null {
+  const parsed: unknown = JSON.parse(listing)
+  const listed = record(parsed).workspaces
+  const workspaces = Array.isArray(listed) ? listed.map(record) : []
+  const found = workspaces.find(workspace => text(workspace.id) === workspaceId)
+  return found === undefined ? null : text(found.title)
 }
 
 export function age(since: number, now: number): string {
