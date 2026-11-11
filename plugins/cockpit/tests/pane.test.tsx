@@ -74,7 +74,7 @@ function fakeWorld(on: On, { lines = [], slackAnswer = '{"ok":true}', workspace 
   on('session.usage', () => ({
     value: {
       startedAt: 0,
-      context: { window: 200_000, percent: 31.2, breakdown: contextBreakdown({ totalTokens: 62_000, autoCompactThreshold: 160_000 }) },
+      context: { window: 200_000, tokens: 80_000, percent: 40, breakdown: contextBreakdown({ totalTokens: 62_000, autoCompactThreshold: 160_000 }) },
       rateLimits: [{ kind: 'five_hour', percentUsed: 42, resetsAt: '2026-11-01T12:00:00Z' }],
       cost: { usd: 1.5 },
     },
@@ -387,7 +387,7 @@ describe('skills, usage and compact', () => {
       await $.command.run(slash('cockpit', shownTab))
       const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
       const shown = (await pane.findAll({ type: 'Text' })).map(element => element.text).join('|')
-      for (const expected of ['5h', '42%', '↻1h', 'Ctx', '39%', '⇣98k to compact', '$1.50']) expect(shown).toContain(expected)
+      for (const expected of ['5h', '42%', '↻1h', 'Ctx', '50%', '⇣80k to compact', '$1.50']) expect(shown).toContain(expected)
       await pane.unmount()
     }
   })

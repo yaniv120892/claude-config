@@ -51,3 +51,23 @@ function ran(exitCode: number, stdout: string, stderr: string) {
 
 export const ok = (stdout: string) => ran(0, stdout, '')
 export const fail = (stderr: string) => ran(1, '', stderr)
+
+/** The /context breakdown as a summary estimates it, with auto-compact on: its `totalTokens` reads low beside the API's count. */
+export function contextBreakdown({ totalTokens, autoCompactThreshold }: { totalTokens: number; autoCompactThreshold: number }) {
+  return {
+    categories: [],
+    totalTokens,
+    maxTokens: 400_000,
+    rawMaxTokens: 400_000,
+    autocompactSource: 'settings' as const,
+    percentage: Math.round((totalTokens / 400_000) * 100),
+    gridRows: [],
+    model: 'claude-opus-5-5',
+    memoryFiles: [],
+    mcpTools: [],
+    agents: [],
+    autoCompactThreshold,
+    isAutoCompactEnabled: true,
+    apiUsage: null,
+  }
+}

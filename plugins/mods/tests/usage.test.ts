@@ -2,8 +2,10 @@ import { describe, expect, test } from 'claude-code/testing'
 
 import {
   alertText,
+  contextGauge,
   formatCost,
   formatResetIn,
+  kiloTokens,
   markAlerted,
   notAlertedYet,
   pastAlertLine,
@@ -56,11 +58,13 @@ describe('reset times', () => {
     expect(formatResetIn('soon', NOW)).toBe(null)
   })
 
-  test('show only from 75%', () => {
-    const limit = { label: '5h', name: '5-hour', percent: 74, resetsAt: IN_72_MINUTES }
-    expect(shownReset(limit, NOW)).toBe(null)
-    expect(shownReset({ ...limit, percent: 75 }, NOW)).toBe('1h12m')
-    expect(shownReset({ ...limit, percent: 99, resetsAt: null }, NOW)).toBe(null)
+  test('show on the band at every level, rounded to their largest unit', () => {
+    const limit = { label: '5h', name: '5-hour', percent: 7, resetsAt: IN_72_MINUTES }
+    expect(shownReset(limit, NOW)).toBe('1h')
+    expect(shownReset({ ...limit, resetsAt: '2026-10-05T09:45:00.000Z' }, NOW)).toBe('45m')
+    expect(shownReset({ ...limit, resetsAt: '2026-10-11T09:00:00.000Z' }, NOW)).toBe('6d')
+    expect(shownReset({ ...limit, resetsAt: null }, NOW)).toBe(null)
+    expect(shownReset({ ...limit, resetsAt: '2026-10-05T08:59:00.000Z' }, NOW)).toBe(null)
   })
 })
 
@@ -84,4 +88,25 @@ describe('alerts', () => {
 test('formatCost reads in dollars and cents', () => {
   expect(formatCost(1.237)).toBe('$1.24')
   expect(formatCost(0)).toBe('$0.00')
+})
+
+describe('the context gauge', () => {
+  const threshold = { autoCompactThreshold: 367_000, isAutoCompactEnabled: true }
+
+  test("counts the last response's tokens against the auto-compact threshold, so 100% is when it compacts", () => {
+    expect(contextGauge({ tokens: 300_000, percent: 30, breakdown: threshold })).toEqual({ percent: 82, tokensToCompact: 67_000, isAutoCompactOff: false })
+    expect(kiloTokens(67_000)).toBe('67k')
+  })
+
+  test('never reads the summary estimate, which can count a fraction of the window', () => {
+    const estimated = { ...threshold, totalTokens: 77_000 }
+    expect(contextGauge({ tokens: 300_000, percent: 30, breakdown: estimated })?.percent).toBe(82)
+    expect(contextGauge({ percent: undefined, breakdown: estimated })).toBe(null)
+  })
+
+  test('falls back to the share of the window when auto-compact is off or its threshold is unknown', () => {
+    expect(contextGauge({ tokens: 62_000, percent: 31.2, breakdown: { ...threshold, isAutoCompactEnabled: false } })).toEqual({ percent: 31, tokensToCompact: null, isAutoCompactOff: true })
+    expect(contextGauge({ tokens: 62_000, percent: 31.2 })).toEqual({ percent: 31, tokensToCompact: null, isAutoCompactOff: false })
+    expect(contextGauge({})).toBe(null)
+  })
 })
