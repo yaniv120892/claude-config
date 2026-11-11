@@ -1,31 +1,48 @@
-import type { BoardCheck, BoardPr, BoardThread, CheckState, Ticket } from '../types'
+import type { BoardCheck, BoardPr, BoardThread, CheckState, Quota, Ticket } from '../types'
 
 const MERGED_DAYS = 7
 const DAY_MS = 86_400_000
+const MINUTE_MS = 60_000
+export const BOARD_POLL_MS = 2 * MINUTE_MS
+export const SLOW_POLL_MS = 10 * MINUTE_MS
+// Below this share of the hour's GraphQL points left, the board reads at the slow pace.
+const LOW_QUOTA_SHARE = 0.2
+const RATE_LIMITED = /rate limit/i
 // Also what makes an id safe to build a pattern from.
 const TICKET_ID = /^[A-Za-z][A-Za-z0-9]*-\d+$/
 const TICKET_MENTION = /\b([A-Za-z][A-Za-z0-9]*)-(\d+)\b/g
 
+/**
+ * GitHub charges a query by the `first:` sizes of its nested connections, so each search asks only for what its rows
+ * show: an open PR its checks and threads; a merged one its deploys and the files an alert is compared to.
+ */
 export const BOARD_QUERY = `
 query($open: String!, $merged: String!) {
-  open: search(query: $open, type: ISSUE, first: 30) { nodes { ...Row } }
-  merged: search(query: $merged, type: ISSUE, first: 30) { nodes { ...Row ... on PullRequest { files(first: 60) { nodes { path } } } } }
+  rateLimit { limit remaining resetAt cost }
+  open: search(query: $open, type: ISSUE, first: 25) { nodes { ...Open } }
+  merged: search(query: $merged, type: ISSUE, first: 20) { nodes { ...Merged } }
 }
-fragment Row on PullRequest {
-  number title url isDraft state mergedAt reviewDecision mergeable headRefName headRefOid isCrossRepository
+fragment Open on PullRequest {
+  number title url isDraft state reviewDecision mergeable headRefName headRefOid isCrossRepository
   author { login }
-  repository { nameWithOwner deployments { totalCount } }
-  mergeCommit { deployments(first: 10) { nodes { environment createdAt statuses(first: 10) { nodes { state createdAt } } } } }
-  commits(last: 1) { nodes { commit { statusCheckRollup { contexts(first: 60) { nodes {
+  repository { nameWithOwner }
+  commits(last: 1) { nodes { commit { statusCheckRollup { contexts(first: 40) { nodes {
     __typename
     ... on CheckRun { name status conclusion detailsUrl }
     ... on StatusContext { context state targetUrl }
   } } } } } }
-  reviewThreads(first: 60) { nodes {
+  reviewThreads(first: 20) { nodes {
     isResolved path line
     comments(first: 1) { nodes { author { login } body url } }
     latest: comments(last: 1) { nodes { author { login } } }
   } }
+}
+fragment Merged on PullRequest {
+  number title url state mergedAt headRefName
+  author { login }
+  repository { nameWithOwner deployments { totalCount } }
+  mergeCommit { deployments(first: 5) { nodes { environment createdAt statuses(first: 5) { nodes { state createdAt } } } } }
+  files(first: 40) { nodes { path } }
 }`
 
 /**
@@ -139,6 +156,7 @@ function parseRow(row: Json, prodEnvironment: string): BoardPr | null {
     files: nodes(row.files).map(file => text(file.path)),
     mergedAt: time(row.mergedAt),
     deployedAt: deployedAt(row.mergeCommit, prodEnvironment),
+    // An open row does not ask; only a merged one shows whether its repo deploys.
     hasDeploys: record(record(row.repository).deployments).totalCount !== 0,
   }
 }
@@ -149,6 +167,49 @@ export function parseBoard(stdout: string, prodEnvironment: string): BoardPr[] {
   return [...nodes(data.open), ...nodes(data.merged)]
     .map(row => parseRow(row, prodEnvironment))
     .filter(pr => pr !== null)
+}
+
+/** What the board's query cost and left of the hour's GraphQL points, or null when the answer does not say. */
+export function parseQuota(stdout: string): Quota | null {
+  const rateLimit = record(record(record(JSON.parse(stdout)).data).rateLimit)
+  const { limit, remaining, cost } = rateLimit
+  const isCounted = typeof limit === 'number' && typeof remaining === 'number'
+  if (!isCounted) return null
+  return { limit, remaining, resetAt: time(rateLimit.resetAt), cost: typeof cost === 'number' ? cost : 0, isExhausted: false }
+}
+
+/** Whether gh failed because GitHub's rate limit refused the query. */
+export function isRateLimited({ stdout, stderr }: { stdout: string; stderr: string }): boolean {
+  return RATE_LIMITED.test(stderr) || stdout.includes('"RATE_LIMIT')
+}
+
+/** The quota after a read the rate limit refused: none left, until the reset the last read reported. */
+export function exhaustedQuota(last: Quota | null): Quota {
+  return { limit: last?.limit ?? 0, remaining: 0, resetAt: last?.resetAt ?? null, cost: last?.cost ?? 0, isExhausted: true }
+}
+
+function isLowQuota(quota: Quota | null): boolean {
+  return quota !== null && quota.limit > 0 && quota.remaining / quota.limit < LOW_QUOTA_SHARE
+}
+
+/**
+ * When the board is next read: two minutes on, or ten when the hour's points run low or Slack events bring
+ * the changes; after a refusal, once the quota resets.
+ */
+export function nextReadAt({ quota, now, hasEvents }: { quota: Quota | null; now: number; hasEvents: boolean }): number {
+  if (quota?.isExhausted === true) {
+    const resetAt = quota.resetAt ?? 0
+    return resetAt > now ? resetAt : now + SLOW_POLL_MS
+  }
+  const isSlow = hasEvents || isLowQuota(quota)
+  return now + (isSlow ? SLOW_POLL_MS : BOARD_POLL_MS)
+}
+
+/** The footer note when the quota slowed the board, or null at the normal pace. */
+export function quotaNote(quota: Quota | null): string | null {
+  if (quota === null) return null
+  if (quota.isExhausted) return 'slowed: GitHub quota used up'
+  return isLowQuota(quota) ? `slowed: GitHub quota ${quota.remaining}/${quota.limit}` : null
 }
 
 export function parseTickets({ answer, isDone }: { answer: string; isDone: boolean }): Ticket[] {

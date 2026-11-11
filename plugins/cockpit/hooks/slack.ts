@@ -16,6 +16,8 @@ export type SlackMessage = {
 type SidecarLine =
   | { kind: 'status'; link: SlackLink }
   | { kind: 'message'; message: SlackMessage }
+  /** A message in an event channel: something on the board may have changed. */
+  | { kind: 'event' }
 
 const PULL_REQUEST = /https:\/\/github\.com\/([\w.-]+\/[\w.-]+)\/pull\/(\d+)/g
 const MAX_INBOX = 50
@@ -65,6 +67,7 @@ export function parseSidecarLine(line: string): SidecarLine | null {
   if (fields.kind === 'status' && isLinkState(fields.state)) {
     return { kind: 'status', link: { state: fields.state, detail: text(fields.detail) } }
   }
+  if (fields.kind === 'event') return { kind: 'event' }
   if (fields.kind === 'message' && typeof fields.id === 'string' && typeof fields.at === 'number') {
     return {
       kind: 'message',
@@ -112,6 +115,18 @@ export function slackAddress(messageId: string): { channel: string; ts: string }
 }
 
 /** What a Slack Web API answer says went wrong, in words the person can act on; null when it went through. */
+/** What a Slack answer shows of the app's scopes: enough, missing one, or nothing either way. */
+export function scopesShown(text: string): 'ok' | 'missing' | null {
+  let answer: { ok?: unknown; error?: unknown } = {}
+  try {
+    answer = JSON.parse(text)
+  } catch {
+    return null
+  }
+  if (answer.ok === true || answer.error === 'already_reacted') return 'ok'
+  return answer.error === 'missing_scope' ? 'missing' : null
+}
+
 export function slackRefusal({ status, text }: { status: number; text: string }): string | null {
   let answer: { ok?: unknown; error?: unknown; needed?: unknown } = {}
   try {

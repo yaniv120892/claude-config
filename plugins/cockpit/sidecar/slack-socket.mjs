@@ -9,7 +9,7 @@
 import { execFileSync } from 'node:child_process'
 import { readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 
-import { backoffMs, isLockStale, parseChannels, permalinkOf, relevantMessage } from './lib.mjs'
+import { backoffMs, isBoardEvent, isLockStale, parseChannels, permalinkOf, relevantMessage } from './lib.mjs'
 
 const APP_TOKEN = process.env.SLACK_APP_TOKEN ?? ''
 const USER_TOKEN = process.env.SLACK_USER_TOKEN ?? ''
@@ -91,8 +91,9 @@ async function slack({ method, token, params = {} }) {
   return answer
 }
 
-async function resolveAlertChannels() {
-  const { ids, names } = parseChannels(process.env.COCKPIT_ALERT_CHANNELS)
+/** The ids of the channels an option names, by id or by name. */
+async function resolveChannels(option) {
+  const { ids, names } = parseChannels(option)
   const found = new Set(ids)
   let cursor = ''
   while (names.length > 0 && cursor !== null) {
@@ -204,9 +205,11 @@ function listen({ url, onEvent, onHello }) {
 async function lead() {
   let identity = null
   let alertChannelIds = null
+  let eventChannelIds = null
   let attempt = 0
 
   function onEvent(event) {
+    if (isBoardEvent({ event, eventChannelIds })) emit({ kind: 'event', channel: event.channel })
     const message = relevantMessage({ event, selfUserId: identity.user_id, alertChannelIds })
     if (message === null) return
     forward({ message, workspaceUrl: identity.url }).catch(error => status('error', String(error.message)))
@@ -221,7 +224,8 @@ async function lead() {
   for (;;) {
     try {
       identity ??= await slack({ method: 'auth.test', token: USER_TOKEN })
-      alertChannelIds ??= await resolveAlertChannels()
+      alertChannelIds ??= await resolveChannels(process.env.COCKPIT_ALERT_CHANNELS)
+      eventChannelIds ??= await resolveChannels(process.env.COCKPIT_EVENT_CHANNELS)
       const { url } = await slack({ method: 'apps.connections.open', token: APP_TOKEN })
       await listen({ url, onEvent, onHello })
       status('starting', 'Reconnecting to Slack.')

@@ -35,7 +35,8 @@ describe('reading Slack messages', () => {
     expect(takeLines(`${first.rest}:2}\n`)).toEqual({ lines: ['{"b":2}'], rest: '' })
   })
 
-  test('reads a status and a message, and nothing else', async () => {
+  test('reads a status, a message and an event, and nothing else', async () => {
+    expect(parseSidecarLine('{"kind":"event","channel":"C0EVENTS01"}')).toEqual({ kind: 'event' })
     expect(parseSidecarLine('{"kind":"status","state":"connected","detail":""}')).toEqual({
       kind: 'status',
       link: { state: 'connected', detail: '' },

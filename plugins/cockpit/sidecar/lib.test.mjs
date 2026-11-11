@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
-import { backoffMs, flattenMessage, isLockStale, parseChannels, permalinkOf, relevantMessage } from './lib.mjs'
+import { backoffMs, flattenMessage, isBoardEvent, isLockStale, parseChannels, permalinkOf, relevantMessage } from './lib.mjs'
 
 const ALERTS = new Set(['C0ALERTS01'])
 
@@ -77,4 +77,13 @@ test('a lock is stale when its pid is gone or belongs to another program', () =>
   assert.equal(isLockStale({ holder: 41, commandOf: () => '/usr/sbin/cupsd' }), true)
   assert.equal(isLockStale({ holder: 41, commandOf: () => null }), true)
   assert.equal(isLockStale({ holder: Number.NaN, commandOf: () => 'slack-socket' }), true)
+})
+
+test("an event channel's messages are board events, a bot's and a thread reply's as much as a person's; other channels' are not", () => {
+  const eventChannelIds = new Set(['C0EVENTS01'])
+  const githubNotice = { type: 'message', channel: 'C0EVENTS01', ts: '1.7', subtype: 'bot_message', bot_id: 'B9', text: 'Review requested on acme/app#12' }
+  assert.equal(isBoardEvent({ event: githubNotice, eventChannelIds }), true)
+  assert.equal(isBoardEvent({ event: { ...githubNotice, thread_ts: '1.2' }, eventChannelIds }), true)
+  assert.equal(isBoardEvent({ event: { ...githubNotice, channel: 'C0REVIEWS1' }, eventChannelIds }), false)
+  assert.equal(isBoardEvent({ event: { ...githubNotice, subtype: 'message_deleted' }, eventChannelIds }), false)
 })

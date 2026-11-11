@@ -11,24 +11,41 @@ type RowOptions = {
   isFromFork?: boolean
 }
 
-export function row({ number, state = 'OPEN', mergedAt = null, deployments = [], checks = [], threads = [], title, hasDeploys = true, reviewDecision = 'REVIEW_REQUIRED', isFromFork = false }: RowOptions) {
+/** A search result as the board's query asks for it: an open PR's fragment, or a merged PR's slimmer one. */
+export function row(options: RowOptions) {
+  return options.state === 'MERGED' ? mergedRow(options) : openRow(options)
+}
+
+function openRow({ number, checks = [], threads = [], title, reviewDecision = 'REVIEW_REQUIRED', isFromFork = false }: RowOptions) {
   return {
     number,
     title: title ?? `feat(YAN-${number}): change ${number}`,
     url: `https://github.com/acme/app/pull/${number}`,
     isDraft: false,
-    state,
-    mergedAt,
+    state: 'OPEN',
     reviewDecision,
     mergeable: 'MERGEABLE',
     headRefName: `yan-${number}-change`,
     headRefOid: `sha${number}`,
     isCrossRepository: isFromFork,
     author: { login: 'me' },
-    repository: { nameWithOwner: 'acme/app', deployments: { totalCount: hasDeploys ? 3 : 0 } },
-    mergeCommit: state === 'MERGED' ? { deployments: { nodes: deployments.map(d => ({ ...d, statuses: { nodes: d.statuses } })) } } : null,
+    repository: { nameWithOwner: 'acme/app' },
     commits: { nodes: [{ commit: { statusCheckRollup: { contexts: { nodes: checks } } } }] },
     reviewThreads: { nodes: threads },
+  }
+}
+
+function mergedRow({ number, mergedAt = null, deployments = [], title, hasDeploys = true }: RowOptions) {
+  return {
+    number,
+    title: title ?? `feat(YAN-${number}): change ${number}`,
+    url: `https://github.com/acme/app/pull/${number}`,
+    state: 'MERGED',
+    mergedAt,
+    headRefName: `yan-${number}-change`,
+    author: { login: 'me' },
+    repository: { nameWithOwner: 'acme/app', deployments: { totalCount: hasDeploys ? 3 : 0 } },
+    mergeCommit: { deployments: { nodes: deployments.map(d => ({ ...d, statuses: { nodes: d.statuses } })) } },
     files: { nodes: [{ path: 'src/billing/charge.ts' }] },
   }
 }
@@ -43,8 +60,10 @@ export function thread({ author, lastAuthor, isResolved = false }: { author: str
   }
 }
 
-export function boardAnswer(open: object[], merged: object[] = []): string {
-  return JSON.stringify({ data: { open: { nodes: open }, merged: { nodes: merged } } })
+export const PLENTY_OF_QUOTA = { limit: 5000, remaining: 4800, resetAt: '2026-11-01T11:00:00Z', cost: 3 }
+
+export function boardAnswer(open: object[], merged: object[] = [], rateLimit: object = PLENTY_OF_QUOTA): string {
+  return JSON.stringify({ data: { rateLimit, open: { nodes: open }, merged: { nodes: merged } } })
 }
 
 function ran(exitCode: number, stdout: string, stderr: string) {

@@ -51,8 +51,9 @@ export type BoardPr = {
   reviewDecision: 'APPROVED' | 'CHANGES_REQUESTED' | 'REVIEW_REQUIRED' | null
   hasConflicts: boolean
   checks: BoardCheck[]
-  /** Unresolved review threads only. */
+  /** Unresolved review threads only; an open PR's alone. */
   threads: BoardThread[]
+  /** A merged PR's alone: what an alert is compared to. */
   files: string[]
   mergedAt: number | null
   /** When the merge commit's deployment to production succeeded. */
@@ -79,13 +80,31 @@ export type Focus = {
   source: 'workspace' | 'branch'
 }
 
+/** GitHub's GraphQL points for the hour, as the board's last read left them. */
+export type Quota = {
+  limit: number
+  remaining: number
+  resetAt: number | null
+  /** What the board's query cost. */
+  cost: number
+  /** GitHub refused the read for its rate limit. */
+  isExhausted: boolean
+}
+
 export type Board = {
   prs: BoardPr[]
   tickets: Ticket[]
   error: string | null
   ticketsError: string | null
   readAt: number
+  quota: Quota | null
 }
+
+/** The board one session read for every session on the machine, and when the next read is due. */
+export type SharedBoard = { board: Board; nextReadAt: number }
+
+/** Which session reads the board now, and until when its claim holds. */
+export type BoardLease = { owner: string; until: number }
 
 export type AlertVerdict = 'likely' | 'unlikely' | 'unclear'
 
@@ -105,6 +124,16 @@ export type Alert = {
 export type SlackLink = {
   state: 'off' | 'starting' | 'standby' | 'connected' | 'error'
   detail: string
+}
+
+/** What Slack's answers showed of the app's scopes: a reaction or reply that went through, or one refused for a scope. */
+export type SlackScopes = 'unknown' | 'ok' | 'missing'
+
+/** What the setup checklist reads beyond the options, kept in the store for every session. */
+export type SetupFacts = {
+  scopes: SlackScopes
+  /** When the sidecar last forwarded a message from an event channel. */
+  lastEventAt: number | null
 }
 
 export type UsageLimit = { label: string; percent: number; resetsAt: number | null }
@@ -148,6 +177,7 @@ declare module 'claude-code' {
       openTicket: string | null
       /** The PR whose Merge was pressed once, and when: a second press soon after merges it. */
       confirmingMerge: PendingMerge | null
+      setupFacts: Shaped<SetupFacts>
     }
   }
 }

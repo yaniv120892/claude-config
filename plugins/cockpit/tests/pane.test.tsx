@@ -2,7 +2,8 @@ import type { On } from 'claude-code'
 import { describe, expect, mock, test } from 'claude-code/testing'
 import type { Engine, MockClock } from 'claude-code/testing'
 
-import { boardAnswer, ok, row, thread } from './fixtures'
+import { parseBoard } from '../hooks/prs'
+import { boardAnswer, ok, PLENTY_OF_QUOTA, row, thread } from './fixtures'
 
 const NOW = Date.parse('2026-11-01T10:40:00Z')
 const PANE = {
@@ -38,7 +39,15 @@ function contextBreakdown({ totalTokens, autoCompactThreshold }: { totalTokens: 
   }
 }
 
-type WorldOptions = { lines?: object[]; slackAnswer?: string; workspace?: string }
+type WorldOptions = {
+  lines?: object[]
+  slackAnswer?: string
+  workspace?: string
+  /** What the store holds when the session starts: what another session left. */
+  stored?: Record<string, unknown>
+  /** The sidecar stays up after printing its lines, as a live connection does. */
+  staysConnected?: boolean
+}
 
 const OPEN_ROWS = [
   row({ number: 1, threads: [thread({ author: 'reviewer' })], checks: [{ __typename: 'CheckRun', name: 'lint', status: 'COMPLETED', conclusion: 'FAILURE', detailsUrl: 'https://ci/2' }] }),
@@ -50,9 +59,9 @@ const MERGED_ROWS = [
 ]
 
 /** A session with two open PRs and one deployed ten minutes ago, a sidecar that prints `lines`, in the cmux workspace titled `workspace`. */
-function fakeWorld(on: On, { lines = [], slackAnswer = '{"ok":true}', workspace = 'billing' }: WorldOptions = {}) {
+function fakeWorld(on: On, { lines = [], slackAnswer = '{"ok":true}', workspace = 'billing', stored = {}, staysConnected = false }: WorldOptions = {}) {
   const clock = mock.clock(on, { now: NOW })
-  mock.store(on)
+  mock.store(on, stored)
   mock.env(on, { HOME: '/home/me', CMUX_WORKSPACE_ID: 'ws-mine' })
   const prompts: string[] = []
   const toasts: string[] = []
@@ -61,7 +70,7 @@ function fakeWorld(on: On, { lines = [], slackAnswer = '{"ok":true}', workspace 
   const slackCalls: { method: string; body: Record<string, unknown>; authorization: string | undefined }[] = []
   const ran: string[] = []
   const linearWrites: Record<string, unknown>[] = []
-  const board = { open: OPEN_ROWS, merged: MERGED_ROWS }
+  const board: { open: object[]; merged: object[]; rateLimit: object } = { open: OPEN_ROWS, merged: MERGED_ROWS, rateLimit: PLENTY_OF_QUOTA }
   on('http.fetch', ($, e) => {
     slackCalls.push({
       method: e.url.replace('https://slack.com/api/', ''),
@@ -111,7 +120,7 @@ function fakeWorld(on: On, { lines = [], slackAnswer = '{"ok":true}', workspace 
     ran.push(e.argv.join(' '))
     if (e.argv[0] === 'cmux') return ok(workspaceListing(workspace))
     if (e.argv[0] === 'git') return ok('main\n')
-    return ok(boardAnswer(board.open, board.merged))
+    return ok(boardAnswer(board.open, board.merged, board.rateLimit))
   })
   on('model.complete', ($, e) => {
     verdicts.push(String(e.prompt))
@@ -128,6 +137,7 @@ function fakeWorld(on: On, { lines = [], slackAnswer = '{"ok":true}', workspace 
     const output = lines.map(line => `${JSON.stringify(line)}\n`).join('')
     yield { stream: 'stdout' as const, text: output.slice(0, 25) }
     yield { stream: 'stdout' as const, text: output.slice(25) }
+    if (staysConnected) await clock.sleep(86_400_000)
     return { value: { code: 0, signal: null } }
   })
   return { clock, prompts, toasts, spawned, verdicts, slackCalls, ran, linearWrites, board }
@@ -162,6 +172,14 @@ function workspaceListing(mine: string): string {
       { id: 'ws-mine', title: mine },
     ],
   })
+}
+
+function boardReads(ran: readonly string[]): number {
+  return ran.filter(command => command.startsWith('gh api graphql')).length
+}
+
+async function shownText(pane: { findAll: (query: { type: 'Text' }) => Promise<readonly { text: string }[]> }): Promise<string> {
+  return (await pane.findAll({ type: 'Text' })).map(element => element.text).join('|')
 }
 
 async function start($: Engine, clock: MockClock) {
@@ -509,5 +527,128 @@ describe('skills, usage and compact', () => {
     expect(compactions).toBe(1)
     expect(toasts).toContain('The compaction was stopped: a hook kept the history')
     await pane.unmount()
+  })
+})
+
+describe('one board reader per machine', () => {
+  const storedBoard = {
+    prs: parseBoard(boardAnswer([row({ number: 8, title: 'feat(YAN-1): read by another session' })]), 'production'),
+    tickets: [],
+    error: null,
+    ticketsError: null,
+    readAt: NOW - 30_000,
+    quota: null,
+  }
+
+  test('/cockpit reads afresh although the stored board is not due, and works out the ticket this session is on', async ($, on) => {
+    const { clock, ran } = fakeWorld(on, { stored: { board: { board: storedBoard, nextReadAt: NOW + 60_000 } } })
+    await start($, clock)
+    await $.command.run(slash('cockpit', 'prs'))
+    await clock.settle()
+    expect(boardReads(ran)).toBe(1)
+    expect(ran.some(command => command.startsWith('cmux'))).toBe(true)
+  })
+
+  test('the stored board is adopted on a tick, with no read of its own', async ($, on) => {
+    const { clock, ran } = fakeWorld(on, { stored: { board: { board: storedBoard, nextReadAt: NOW + 60_000 } } })
+    await start($, clock)
+    expect(boardReads(ran)).toBe(0)
+    const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
+    await pane.press({ key: 'tab-prs' })
+    expect(await shownText(pane)).toContain('read by another session')
+    await pane.unmount()
+
+    await clock.advance(60_000)
+    expect(boardReads(ran)).toBe(1)
+  })
+
+  test("another session's live lease holds off every read, a forced one too, until it runs out", async ($, on) => {
+    const { clock, ran } = fakeWorld(on, { stored: { boardLease: { owner: 'session-b', until: NOW + 45_000 } } })
+    await start($, clock)
+    await $.command.run(slash('cockpit', 'prs'))
+    await clock.advance(30_000)
+    expect(boardReads(ran)).toBe(0)
+
+    await clock.advance(30_000)
+    expect(boardReads(ran)).toBe(1)
+  })
+})
+
+describe('the GitHub quota', () => {
+  test('below a fifth of the quota the board reads every ten minutes and the footer says so', async ($, on) => {
+    const { clock, ran, board } = fakeWorld(on)
+    board.rateLimit = { limit: 5000, remaining: 742, resetAt: '2026-11-01T11:00:00Z', cost: 3 }
+    await start($, clock)
+    await $.command.run(slash('cockpit', 'prs'))
+    const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
+    expect(await shownText(pane)).toContain('slowed: GitHub quota 742/5000')
+    await pane.unmount()
+
+    const afterFirst = boardReads(ran)
+    await clock.advance(9 * 60_000)
+    expect(boardReads(ran)).toBe(afterFirst)
+    // The read is due ten minutes after it ran, and the next 30-second tick takes it.
+    await clock.advance(90_000)
+    expect(boardReads(ran)).toBe(afterFirst + 1)
+  })
+})
+
+describe('Slack events', () => {
+  const EVENTS = { options: { ...SLACK.options, eventChannels: 'cockpit-events' } }
+  const EVENT = { kind: 'event', channel: 'C0EVENTS01' }
+
+  test('a burst of events in an event channel rereads the board once, after the burst', EVENTS, async ($, on) => {
+    const { clock, ran, spawned } = fakeWorld(on, { lines: [{ kind: 'status', state: 'connected', detail: '' }, EVENT, EVENT, EVENT] })
+    await start($, clock)
+    expect(spawned[0]?.env?.COCKPIT_EVENT_CHANNELS).toBe('cockpit-events')
+    expect(boardReads(ran)).toBe(1)
+
+    await clock.advance(8_000)
+    expect(boardReads(ran)).toBe(1)
+    await clock.advance(1_500)
+    expect(boardReads(ran)).toBe(2)
+    await clock.advance(15_000)
+    expect(boardReads(ran)).toBe(2)
+  })
+})
+
+describe('the setup checklist', () => {
+  test('a fresh install lists every step on the Alerts tab and counts them on the others', async ($, on) => {
+    const { clock } = fakeWorld(on)
+    await start($, clock)
+    const inboxPane = await $.ui.mount({ ...PANE, surface: 'terminal' })
+    expect(await shownText(inboxPane)).toContain('Setup: 6 steps left')
+    await inboxPane.unmount()
+
+    await $.command.run(slash('cockpit', 'alerts'))
+    const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
+    const shown = await shownText(pane)
+    for (const step of ['Slack tokens', 'Slack connected', 'Slack reactions and replies', 'Alert channels', 'Event channels', 'Events flowing']) {
+      expect(shown).toContain(step)
+    }
+    expect(shown).toContain('Set eventChannels under cockpit in /config')
+    expect(shown).not.toContain('steps left')
+    await pane.unmount()
+  })
+
+  test('a finished setup shows no step, and a refused scope brings its step back', { options: { ...SLACK.options, eventChannels: 'cockpit-events' } }, async ($, on) => {
+    const { clock } = fakeWorld(on, {
+      lines: [{ kind: 'status', state: 'connected', detail: '' }, { kind: 'event', channel: 'C0EVENTS01' }, PR_MESSAGE],
+      stored: { setup: { scopes: 'ok', lastEventAt: null } },
+      staysConnected: true,
+      slackAnswer: '{"ok":false,"error":"missing_scope","needed":"reactions:write"}',
+    })
+    await start($, clock)
+    await $.command.run(slash('cockpit', 'alerts'))
+    const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
+    expect(await pane.find({ type: 'Text', text: /Setup/ })).toBeUndefined()
+
+    await pane.unmount()
+
+    await $.command.run(slash('cockpit', 'inbox'))
+    const inboxPane = await $.ui.mount({ ...PANE, surface: 'terminal' })
+    await inboxPane.press({ key: 'react-eyes-https://github.com/acme/web/pull/77' })
+    expect(await shownText(inboxPane)).toContain('Setup: 1 step left')
+    await inboxPane.unmount()
   })
 })
