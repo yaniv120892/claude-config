@@ -1,11 +1,9 @@
 import { record } from './json'
-import type { ScopeVerdict, SetupFacts, SlackLink } from '../types'
+import type { ScopeVerdict, SetupFacts, SetupStep, SlackLink } from '../types'
 
 const EVENT_FRESH_MS = 7 * 86_400_000
 // A sidecar in standby defers to another session's connection, which is the one up.
 const LINK_UP: ReadonlySet<SlackLink['state']> = new Set(['connected', 'standby'])
-
-export type SetupStep = { id: string; label: string; isDone: boolean; todo: string }
 
 type SetupState = {
   hasTokens: boolean
@@ -19,7 +17,8 @@ type SetupState = {
 /** Each step the cockpit needs, from the options and what Slack has shown: none is a stored checkbox. */
 export function setupSteps({ hasTokens, link, alertChannels, eventChannels, facts, now }: SetupState): SetupStep[] {
   const verdicts = Object.values(facts.scopes)
-  const isScopeMissing = verdicts.includes('missing')
+  const refused = Object.keys(facts.scopes).filter(method => facts.scopes[method] === 'missing')
+  const isScopeMissing = refused.length > 0
   return [
     {
       id: 'tokens',
@@ -33,7 +32,7 @@ export function setupSteps({ hasTokens, link, alertChannels, eventChannels, fact
       label: 'Slack reactions and replies',
       isDone: verdicts.includes('ok') && !isScopeMissing,
       todo: isScopeMissing
-        ? 'Update the Slack app from plugins/cockpit/slack-app-manifest.yaml and reinstall it: a reaction or reply was refused for a scope.'
+        ? `Update the Slack app from plugins/cockpit/slack-app-manifest.yaml and reinstall it, then use ${refused.join(' and ')} once more: Slack refused it for a scope.`
         : 'React to or reply to a Slack message from the Inbox once, to confirm the app may.',
     },
     { id: 'alerts', label: 'Alert channels', isDone: alertChannels !== '', todo: 'Set alertChannels under cockpit in /config.' },
@@ -60,7 +59,11 @@ export function asSetupFacts(stored: unknown): SetupFacts {
   const facts = record(stored)
   const scopes: Record<string, ScopeVerdict> = {}
   for (const [method, verdict] of Object.entries(record(facts.scopes))) {
-    if (verdict === 'ok' || verdict === 'missing') scopes[method] = verdict
+    if (isScopeVerdict(verdict)) scopes[method] = verdict
   }
   return { scopes, lastEventAt: typeof facts.lastEventAt === 'number' ? facts.lastEventAt : null }
+}
+
+function isScopeVerdict(value: unknown): value is ScopeVerdict {
+  return value === 'ok' || value === 'missing'
 }

@@ -122,7 +122,8 @@ export function scopesShown(text: string): 'ok' | 'missing' | null {
   } catch {
     return null
   }
-  if (answer.ok === true || answer.error === 'already_reacted') return 'ok'
+  const isAccepted = answer.ok === true || answer.error === 'already_reacted'
+  if (isAccepted) return 'ok'
   return answer.error === 'missing_scope' ? 'missing' : null
 }
 

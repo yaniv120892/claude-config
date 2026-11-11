@@ -553,7 +553,7 @@ describe('one board reader per machine', () => {
   }
 
   test('/cockpit reads afresh although the stored board is not due, and works out the ticket this session is on', async ($, on) => {
-    const { clock, ran } = fakeWorld(on, { stored: { board: { board: storedBoard, nextReadAt: NOW + 60_000 } } })
+    const { clock, ran } = fakeWorld(on, { stored: { 'board-3': { board: storedBoard, nextReadAt: NOW + 60_000 } } })
     await start($, clock)
     await $.command.run(slash('cockpit', 'prs'))
     await clock.settle()
@@ -562,7 +562,7 @@ describe('one board reader per machine', () => {
   })
 
   test('the stored board is adopted on a tick, with no read of its own', async ($, on) => {
-    const { clock, ran } = fakeWorld(on, { stored: { board: { board: storedBoard, nextReadAt: NOW + 60_000 } } })
+    const { clock, ran } = fakeWorld(on, { stored: { 'board-3': { board: storedBoard, nextReadAt: NOW + 60_000 } } })
     await start($, clock)
     expect(boardReads(ran)).toBe(0)
     const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
@@ -598,7 +598,7 @@ describe('a forced read', () => {
   })
   test('two asked for during one read share one read after it', async ($, on) => {
     const fresh = { prs: [], tickets: [], error: null, ticketsError: null, readAt: NOW - 1_000, quota: null }
-    const { clock, ran } = fakeWorld(on, { ghDelayMs: 5_000, stored: { board: { board: fresh, nextReadAt: NOW + 600_000 } } })
+    const { clock, ran } = fakeWorld(on, { ghDelayMs: 5_000, stored: { 'board-3': { board: fresh, nextReadAt: NOW + 600_000 } } })
     await start($, clock)
     await $.command.run(slash('cockpit', 'prs'))
     await clock.advance(1_000)
@@ -614,7 +614,7 @@ describe('what holds a forced read back', () => {
 
   test("one that loses to another session's lease tries again once the lease is gone, not at the next due read", async ($, on) => {
     const { clock, ran } = fakeWorld(on, {
-      stored: { board: { board: freshBoard, nextReadAt: NOW + 600_000 }, boardLease: { owner: 'session-b', until: NOW + 20_000 } },
+      stored: { 'board-3': { board: freshBoard, nextReadAt: NOW + 600_000 }, boardLease: { owner: 'session-b', until: NOW + 20_000 } },
     })
     await start($, clock)
     await $.command.run(slash('cockpit', 'prs'))
@@ -624,16 +624,24 @@ describe('what holds a forced read back', () => {
     expect(boardReads(ran)).toBe(1)
   })
 
-  test('none runs while GitHub refuses the query for its rate limit, until the reset', async ($, on) => {
+  test('while GitHub refuses the query for its rate limit, one reads the tickets alone until the reset', async ($, on) => {
     const exhausted = { ...freshBoard, quota: { limit: 5000, remaining: 0, resetAt: NOW + 1_800_000, cost: 13, isExhausted: true } }
-    const { clock, ran } = fakeWorld(on, { stored: { board: { board: exhausted, nextReadAt: NOW + 1_800_000 } } })
+    const { clock, ran } = fakeWorld(on, { stored: { 'board-3': { board: exhausted, nextReadAt: NOW + 1_800_000 } } })
     await start($, clock)
     await $.command.run(slash('cockpit', 'prs'))
     await clock.advance(60_000)
     expect(boardReads(ran)).toBe(0)
     const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
-    expect(await shownText(pane)).toContain('slowed: GitHub quota used up')
+    const shown = await shownText(pane)
+    expect(shown).toContain('slowed: GitHub quota used up')
+    expect(shown).toContain('Charge twice')
     await pane.unmount()
+  })
+
+  test('a board stored by another version, under another key, is not adopted', async ($, on) => {
+    const { clock, ran } = fakeWorld(on, { stored: { board: { board: { prs: [{ url: 'old' }], tickets: [], readAt: NOW }, nextReadAt: NOW + 600_000 } } })
+    await start($, clock)
+    expect(boardReads(ran)).toBe(1)
   })
 
   test('a Linear read that hangs gives up before the lease runs out', async ($, on) => {

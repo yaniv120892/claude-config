@@ -171,7 +171,7 @@ function parseRow(row: Json, prodEnvironment: string): BoardPr | null {
     reviewDecision: decision === 'APPROVED' || decision === 'CHANGES_REQUESTED' || decision === 'REVIEW_REQUIRED' ? decision : null,
     hasConflicts: row.mergeable === 'CONFLICTING',
     checks: nodes(rollup.contexts).map(parseCheck),
-    checksState: typeof rollup.state === 'string' ? checkState(rollup.state === 'EXPECTED' ? 'PENDING' : rollup.state) : null,
+    checksState: typeof rollup.state === 'string' ? checkState(rollup.state) : null,
     threads: nodes(row.reviewThreads)
       .filter(thread => thread.isResolved !== true)
       .map(thread => parseThread(thread, author)),

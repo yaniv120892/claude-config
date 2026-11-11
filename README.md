@@ -159,7 +159,8 @@ once it is gone, since that session may have read before the change. The board
 is due every 2 minutes; every 10 when less than a fifth of the hour's GitHub
 GraphQL points are left (the PRs footer says `slowed: GitHub quota 742/5000`)
 or when Slack events have arrived in the last week; and once GitHub refuses
-the query for its rate limit, no read runs, forced or not, until the reset.
+the query for its rate limit, nothing asks GitHub again until the reset, while a
+forced read still rereads the Linear tickets.
 Each session still toasts PR changes in its own terminal, from the board it
 showed before.
 

@@ -146,6 +146,9 @@ export type SetupFacts = {
   lastEventAt: number | null
 }
 
+/** One thing the cockpit needs set up: whether it is, and what to do when it is not. */
+export type SetupStep = { id: string; label: string; isDone: boolean; todo: string }
+
 export type UsageLimit = { label: string; percent: number; resetsAt: number | null }
 
 /** How full the context is: against the auto-compact threshold when auto-compact is on, else against the window. */

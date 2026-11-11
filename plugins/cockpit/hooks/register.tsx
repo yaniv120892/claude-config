@@ -16,6 +16,7 @@ import type {
   Reviewer,
   ReviewerState,
   SetupFacts,
+  SetupStep,
   SharedBoard,
   SlackLink,
   Tab,
@@ -48,7 +49,6 @@ import {
   workspaceTitle,
 } from './prs'
 import { asSetupFacts, isEventFlowing, isLinkUp, setupSteps } from './setup'
-import type { SetupStep } from './setup'
 import { asLease, asSharedBoard, isLeasedToOther, isNewerBoard, LEASE_MS } from './share'
 import {
   addToInbox,
@@ -75,7 +75,9 @@ import { asCounts, bar, contextGauge, kiloTokens, parsePinned, skillButtons, str
 
 const tab = atom({ plugin: 'cockpit', key: 'tab' } as const, 'inbox')
 const inbox = atom({ plugin: 'cockpit', key: 'inbox' } as const, [], { shape: 'inbox-2' })
-const board = atom({ plugin: 'cockpit', key: 'board' } as const, null, { shape: 'board-3' })
+// The stored board's key carries the same shape, so a session of another version never adopts a board it cannot read.
+const BOARD_SHAPE = 'board-3'
+const board = atom({ plugin: 'cockpit', key: 'board' } as const, null, { shape: BOARD_SHAPE })
 const alerts = atom({ plugin: 'cockpit', key: 'alerts' } as const, [], { shape: 'alerts-1' })
 const dismissed = atom({ plugin: 'cockpit', key: 'dismissed' } as const, [])
 const expanded = atom({ plugin: 'cockpit', key: 'expanded' } as const, null)
@@ -115,7 +117,7 @@ const ALERTS_KEY = 'alerts'
 const DISMISSED_KEY = 'dismissedPrs'
 const SKILL_COUNTS_KEY = 'skillCounts'
 // One session reads the board for the machine and stores it here; the lease names which one is reading.
-const BOARD_KEY = 'board'
+const BOARD_KEY = BOARD_SHAPE
 const LEASE_KEY = 'boardLease'
 const SETUP_KEY = 'setup'
 
@@ -245,11 +247,24 @@ async function syncShared($: Engine): Promise<void> {
   if (!isSame(shownAlerts, next.alerts)) await update($, alerts, () => next.alerts)
   if (!isSame(shownDismissed, next.dismissed)) await update($, dismissed, () => next.dismissed)
   const facts = asSetupFacts(storedSetup)
-  if (!isSame(await read($, setupFacts), facts)) await update($, setupFacts, () => facts)
+  const shownFacts = await read($, setupFacts)
+  if (!isSame(shownFacts, facts)) await update($, setupFacts, () => facts)
 }
 
-/** Records what the setup checklist learns, for every session. */
-async function noteSetup($: Engine, learn: (facts: SetupFacts) => SetupFacts): Promise<void> {
+let setupWrite: Promise<void> = Promise.resolve()
+
+/** Records what the setup checklist learns, for every session; one write at a time, so none overwrites another. */
+function noteSetup($: Engine, learn: (facts: SetupFacts) => SetupFacts): Promise<void> {
+  setupWrite = writeSetup($, { learn, previous: setupWrite })
+  return setupWrite
+}
+
+async function writeSetup($: Engine, { learn, previous }: { learn: (facts: SetupFacts) => SetupFacts; previous: Promise<void> }): Promise<void> {
+  try {
+    await previous
+  } catch {
+    // The earlier write's own caller logs its failure.
+  }
   const facts = learn(asSetupFacts(await $.store.get(SETUP_KEY)))
   await $.store.set(SETUP_KEY, facts)
   await update($, setupFacts, () => facts)
@@ -324,10 +339,12 @@ async function takeSidecarLine($: Engine, config: Config, line: string): Promise
     return
   }
   if (parsed.kind === 'event') {
-    const isNewBurst = !isForcedReadScheduled
     inBackground($, scheduleForcedRead($, config))
     const at = await $.clock.now()
-    if (isNewBurst) await noteSetup($, facts => ({ ...facts, lastEventAt: at }))
+    const isNewBurst = at - lastEventNotedAt >= EVENT_DEBOUNCE_MS
+    if (!isNewBurst) return
+    lastEventNotedAt = at
+    await noteSetup($, facts => ({ ...facts, lastEventAt: at }))
     return
   }
   if (parsed.message.isAlertChannel) await takeAlert($, config, parsed.message)
@@ -488,8 +505,7 @@ async function syncBoard($: Engine, config: Config, { isForced }: { isForced: bo
   const [stored, now] = await Promise.all([$.store.get(BOARD_KEY), $.clock.now()])
   const shared = asSharedBoard(stored)
   if (shared !== null) await adoptBoard($, config, shared.board)
-  const isRefusedUntilReset = shared?.board.quota?.isExhausted === true && now < shared.nextReadAt
-  const isDue = !isRefusedUntilReset && (isForced || shared === null || now >= shared.nextReadAt)
+  const isDue = isForced || shared === null || now >= shared.nextReadAt
   if (!isDue) return
   const owner = await $.session.id()
   const isLeased = await takeLease($, { owner, now })
@@ -497,8 +513,11 @@ async function syncBoard($: Engine, config: Config, { isForced }: { isForced: bo
     if (isForced) inBackground($, scheduleForcedRead($, config))
     return
   }
+  // GitHub would refuse a forced read before its reset too: that one reads Linear alone.
+  const isGitHubRefused = shared?.board.quota?.isExhausted === true && now < shared.nextReadAt
   try {
-    await readBoard($, config, { now, last: shared?.board ?? null })
+    if (isGitHubRefused) await readTicketsOnly($, config, { now, shared })
+    else await readBoard($, config, { now, last: shared?.board ?? null })
   } finally {
     await releaseLease($, owner)
   }
@@ -535,6 +554,14 @@ async function readBoard($: Engine, config: Config, { now, last }: { now: number
   await adoptBoard($, config, next)
 }
 
+/** Rereads the tickets of a board GitHub refuses for now, keeping its PRs and when it is next due. */
+async function readTicketsOnly($: Engine, config: Config, { now, shared }: { now: number; shared: SharedBoard }): Promise<void> {
+  const tickets = await readTickets($)
+  const next: Board = { ...shared.board, tickets: tickets.tickets ?? shared.board.tickets, ticketsError: tickets.error, readAt: now }
+  await $.store.set(BOARD_KEY, { board: next, nextReadAt: shared.nextReadAt } satisfies SharedBoard)
+  await adoptBoard($, config, next)
+}
+
 /**
  * Shows a board newer than this session's, toasting what changed since the one it showed. Each session toasts
  * in its own terminal, as it did when each read its own board.
@@ -556,6 +583,7 @@ async function adoptBoard($: Engine, config: Config, next: Board): Promise<void>
 
 let isForcedReadScheduled = false
 let lastScheduledReadAt = 0
+let lastEventNotedAt = 0
 
 /**
  * One forced read once a burst of Slack events has passed, or once another session's lease is gone; at most one
@@ -564,9 +592,14 @@ let lastScheduledReadAt = 0
 async function scheduleForcedRead($: Engine, config: Config): Promise<void> {
   if (isForcedReadScheduled) return
   isForcedReadScheduled = true
-  const now = await $.clock.now()
-  const wait = Math.max(EVENT_DEBOUNCE_MS, lastScheduledReadAt + FORCED_READ_GAP_MS - now)
-  $.clock.after(wait, () => inBackground($, readScheduled($, config)))
+  try {
+    const now = await $.clock.now()
+    const wait = Math.max(EVENT_DEBOUNCE_MS, lastScheduledReadAt + FORCED_READ_GAP_MS - now)
+    $.clock.after(wait, () => inBackground($, readScheduled($, config)))
+  } catch (error) {
+    isForcedReadScheduled = false
+    throw error
+  }
 }
 
 async function readScheduled($: Engine, config: Config): Promise<void> {
