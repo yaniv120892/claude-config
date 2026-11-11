@@ -128,7 +128,7 @@ describe('the status band', () => {
     const band = await $.ui.mount({ plugin: 'mods', surface: 'terminal', component: 'AbovePrompt', props: BAND_PROPS })
     const text = (await band.findAll({ type: 'Text' })).map(element => element.text).join('|')
     expect(text).toContain('5h 57%')
-    expect(text).not.toContain('wk ')
+    expect(text).not.toContain('81%')
     expect(gitCalls).toEqual([])
     await band.unmount()
   })
@@ -157,8 +157,21 @@ describe('the status band', () => {
 
     const band = await $.ui.mount({ plugin: 'mods', surface: 'terminal', component: 'AbovePrompt', props: BAND_PROPS })
     const text = (await band.findAll({ type: 'Text' })).map(element => element.text).join('|')
-    expect(text).toContain('$1.24')
-    expect(text).not.toContain('5h ')
+    expect(text).toContain('82% ⇣67k · $1.24')
+    expect(text).not.toContain('23%')
+    await band.unmount()
+  })
+
+  test('draws the share of the window, with no tokens to compact, when auto-compact is off', async ($, on) => {
+    const { clock, usage } = fakeRepo(on, { hasPr: false })
+    usage.context.breakdown = { ...usage.context.breakdown, isAutoCompactEnabled: false }
+    await $.tool.call({ tool: 'Bash', command: 'git status' })
+    await clock.advance(1000)
+
+    const band = await $.ui.mount({ plugin: 'mods', surface: 'terminal', component: 'AbovePrompt', props: BAND_PROPS })
+    const text = (await band.findAll({ type: 'Text' })).map(element => element.text).join('|')
+    expect(text).toContain('ctx 30%')
+    expect(text).not.toContain('⇣')
     await band.unmount()
   })
 

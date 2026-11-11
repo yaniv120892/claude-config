@@ -14,6 +14,7 @@ const MINUTE_MS = 60_000
 const HOUR_MINUTES = 60
 const DAY_HOURS = 24
 const DAY_MINUTES = DAY_HOURS * HOUR_MINUTES
+const SHOWN_IN_DAYS_FROM_HOURS = 2 * DAY_HOURS
 
 /** The fields of the session's context usage the gauge reads, as `$.session.usage({ breakdown })` returns them. */
 type ContextReading = {
@@ -45,6 +46,7 @@ export function usageLimits(rateLimits: readonly SessionRateLimit[]): UsageLimit
  * Counts the tokens the last API response was answered over, not the breakdown's
  * `totalTokens`: a summary breakdown estimates locally and can read a fraction of the
  * real window. With auto-compact off, or no threshold known, it is the share of the window.
+ * Kept identical to its twin in the other plugin (mods and cockpit share no code).
  */
 export function contextGauge({ tokens, percent, breakdown }: ContextReading): ContextGauge | null {
   const compactAt = breakdown?.isAutoCompactEnabled === true ? breakdown.autoCompactThreshold : undefined
@@ -62,8 +64,8 @@ export function kiloTokens(tokens: number): string {
 
 /** `45m`, `2h14m` or `3d4h` until the reset; null once it has passed or when it cannot be read. */
 export function formatResetIn(resetsAt: string, now: number): string | null {
-  const minutes = Math.ceil((Date.parse(resetsAt) - now) / MINUTE_MS)
-  if (!Number.isFinite(minutes) || minutes <= 0) return null
+  const minutes = minutesUntil(resetsAt, now)
+  if (minutes === null) return null
   if (minutes < HOUR_MINUTES) return `${minutes}m`
   if (minutes < DAY_MINUTES) return `${Math.floor(minutes / HOUR_MINUTES)}h${minutes % HOUR_MINUTES}m`
   return `${Math.floor(minutes / DAY_MINUTES)}d${Math.floor((minutes % DAY_MINUTES) / HOUR_MINUTES)}h`
@@ -71,12 +73,11 @@ export function formatResetIn(resetsAt: string, now: number): string | null {
 
 /** `45m`, `2h` or `6d` until the reset, rounded to its largest unit, as the band draws it; null when unknown or passed. */
 export function shownReset(limit: UsageLimit, now: number): string | null {
-  if (limit.resetsAt === null) return null
-  const minutes = Math.round((Date.parse(limit.resetsAt) - now) / MINUTE_MS)
-  if (!Number.isFinite(minutes) || minutes <= 0) return null
+  const minutes = limit.resetsAt === null ? null : minutesUntil(limit.resetsAt, now)
+  if (minutes === null) return null
   if (minutes < HOUR_MINUTES) return `${minutes}m`
   const hours = Math.round(minutes / HOUR_MINUTES)
-  return hours < 2 * DAY_HOURS ? `${hours}h` : `${Math.round(hours / DAY_HOURS)}d`
+  return hours < SHOWN_IN_DAYS_FROM_HOURS ? `${hours}h` : `${Math.round(hours / DAY_HOURS)}d`
 }
 
 export function pastAlertLine(limits: readonly UsageLimit[]): UsageLimit[] {
@@ -102,4 +103,10 @@ export function alertText(limit: UsageLimit, now: number): string {
 
 export function formatCost(usd: number): string {
   return `$${usd.toFixed(2)}`
+}
+
+/** Whole minutes until `resetsAt`, rounded up; null once it has passed or when it cannot be read. */
+function minutesUntil(resetsAt: string, now: number): number | null {
+  const minutes = Math.ceil((Date.parse(resetsAt) - now) / MINUTE_MS)
+  return Number.isFinite(minutes) && minutes > 0 ? minutes : null
 }

@@ -47,7 +47,7 @@ export type PullRequest = {
 export type Band = {
   location: GitLocation
   model: string
-  /** Null until the first response of the live window reports its tokens. */
+  /** Null until the first response of the live window reports its share of the window. */
   context: ContextGauge | null
   /** Empty off a subscription, or before the first response reports a window. */
   usageLimits: UsageLimit[]

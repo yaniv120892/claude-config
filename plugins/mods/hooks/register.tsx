@@ -659,7 +659,7 @@ export const register: Register = (on, options) => {
                 </Text>
               )
             })}
-            {limits.length === 0 && costUsd !== null && <Text dimColor> {formatCost(costUsd)}</Text>}
+            {limits.length === 0 && costUsd !== null && <Text dimColor>{context !== null && ' ·'} {formatCost(costUsd)}</Text>}
           </Text>
           {plan !== null && (
             <Text wrap="truncate-end">

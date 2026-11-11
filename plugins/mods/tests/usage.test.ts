@@ -66,6 +66,15 @@ describe('reset times', () => {
     expect(shownReset({ ...limit, resetsAt: null }, NOW)).toBe(null)
     expect(shownReset({ ...limit, resetsAt: '2026-10-05T08:59:00.000Z' }, NOW)).toBe(null)
   })
+
+  test('round to the nearer hour on the band, and count a part minute as one', () => {
+    const limit = { label: '5h', name: '5-hour', percent: 7, resetsAt: '2026-10-05T10:29:00.000Z' }
+    expect(shownReset(limit, NOW)).toBe('1h')
+    expect(shownReset({ ...limit, resetsAt: '2026-10-05T10:30:00.000Z' }, NOW)).toBe('2h')
+    expect(shownReset({ ...limit, resetsAt: '2026-10-07T08:00:00.000Z' }, NOW)).toBe('47h')
+    expect(shownReset({ ...limit, resetsAt: '2026-10-07T09:00:00.000Z' }, NOW)).toBe('2d')
+    expect(shownReset({ ...limit, resetsAt: '2026-10-05T09:00:20.000Z' }, NOW)).toBe('1m')
+  })
 })
 
 describe('alerts', () => {

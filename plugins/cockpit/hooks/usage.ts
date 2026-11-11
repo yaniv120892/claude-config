@@ -26,6 +26,7 @@ export function usageLimits(rateLimits: readonly RateLimit[]): UsageLimit[] {
  * Counts the tokens the last API response was answered over, not the breakdown's
  * `totalTokens`: a summary breakdown estimates locally and can read a fraction of the
  * real window. With auto-compact off, or no threshold known, it is the share of the window.
+ * Kept identical to its twin in the other plugin (mods and cockpit share no code).
  */
 export function contextGauge({ tokens, percent, breakdown }: ContextReading): ContextGauge | null {
   const compactAt = breakdown?.isAutoCompactEnabled === true ? breakdown.autoCompactThreshold : undefined
