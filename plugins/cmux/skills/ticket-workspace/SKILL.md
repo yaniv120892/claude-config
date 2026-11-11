@@ -11,7 +11,7 @@ One Linear ticket → one cmux workspace with a Claude session named after it. R
 ## Steps
 
 1. **Fetch the title.** Extract the key (`ABC-560`) from the argument or URL and call the
-   Linear `get_issue` tool with `fields: ["title", "url"]`.
+   Linear `get_issue` tool with `fields: ["title", "url", "project"]`.
 2. **Name it** `<KEY> - <2-3 words>`, e.g. `ABC-560 - trip PDF export`. Pick the words that
    tell this ticket apart from its siblings, not a truncated title. Check `cmux list-workspaces`
    first; if a workspace already starts with the key, report it and stop.
@@ -33,5 +33,16 @@ One Linear ticket → one cmux workspace with a Claude session named after it. R
    P=$(cmux list-panes --workspace $WS | grep -oE 'pane:[0-9]+' | head -1)
    cmux new-surface --type browser --pane $P --workspace $WS --url "$URL" --focus false
    ```
-6. **Confirm** with `cmux read-screen --surface $S --lines 15` — the name shows in the prompt
+6. **Color it by Linear project**, so sibling tickets look alike. No project → leave it uncolored.
+   ```bash
+   cmux workspace-action --action set-color --workspace $WS --color <color>
+   ```
+   | Project | Color |
+   |---|---|
+   | PostHog EU Migration | Orange |
+   | Ongoing Infra Improvements | Blue |
+
+   A project missing from the table: pick a named color no row uses and that is clearly distinct in hue from every row (not a dark neighbor) (`cmux workspace-action --help`
+   lists them), apply it, and say so in the report so a row can be added.
+7. **Confirm** with `cmux read-screen --surface $S --lines 15` — the name shows in the prompt
    border. Report the workspace ref and name. Don't focus it unless asked.
