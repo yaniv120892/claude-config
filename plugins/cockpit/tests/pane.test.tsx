@@ -38,11 +38,13 @@ function contextBreakdown({ totalTokens, autoCompactThreshold }: { totalTokens: 
   }
 }
 
-/** A session with two open PRs and one deployed ten minutes ago, and a sidecar that prints `lines`. */
-function fakeWorld(on: On, lines: object[] = [], slackAnswer = '{"ok":true}') {
+type WorldOptions = { lines?: object[]; slackAnswer?: string; workspace?: string }
+
+/** A session with two open PRs and one deployed ten minutes ago, a sidecar that prints `lines`, in the cmux workspace titled `workspace`. */
+function fakeWorld(on: On, { lines = [], slackAnswer = '{"ok":true}', workspace = 'billing' }: WorldOptions = {}) {
   const clock = mock.clock(on, { now: NOW })
   mock.store(on)
-  mock.env(on, { HOME: '/home/me' })
+  mock.env(on, { HOME: '/home/me', CMUX_WORKSPACE_ID: 'ws-mine' })
   const prompts: string[] = []
   const toasts: string[] = []
   const verdicts: string[] = []
@@ -86,8 +88,10 @@ function fakeWorld(on: On, lines: object[] = [], slackAnswer = '{"ok":true}') {
           : [{ id: 'YAN-9', title: 'Done a month ago', url: 'https://linear.app/x/issue/YAN-9', status: 'Done' }]
     return { value: { content: [{ type: 'text', text: JSON.stringify({ issues }) }], isError: false } }
   })
-  on('process.run', () =>
-    ok(
+  on('process.run', ($, e) => {
+    if (e.argv[0] === 'cmux') return ok(workspaceListing(workspace))
+    if (e.argv[0] === 'git') return ok('main\n')
+    return ok(
       boardAnswer(
         [
           row({ number: 1, threads: [thread({ author: 'reviewer' })], checks: [{ __typename: 'CheckRun', name: 'lint', status: 'COMPLETED', conclusion: 'FAILURE', detailsUrl: 'https://ci/2' }] }),
@@ -98,8 +102,8 @@ function fakeWorld(on: On, lines: object[] = [], slackAnswer = '{"ok":true}') {
           row({ number: 6, state: 'MERGED', mergedAt: '2026-10-29T09:00:00Z', deployments: DEPLOYED }),
         ],
       ),
-    ),
-  )
+    )
+  })
   on('model.complete', ($, e) => {
     verdicts.push(String(e.prompt))
     return {
@@ -142,6 +146,15 @@ const ALERT_MESSAGE = {
   isAlertChannel: true,
 }
 
+function workspaceListing(mine: string): string {
+  return JSON.stringify({
+    workspaces: [
+      { id: 'ws-other', title: 'YAN-4 other work' },
+      { id: 'ws-mine', title: mine },
+    ],
+  })
+}
+
 async function start($: Engine, clock: MockClock) {
   await $.session.start({ cwd: '/w', surface: 'terminal', isInteractive: true })
   await clock.advance(1000)
@@ -149,7 +162,7 @@ async function start($: Engine, clock: MockClock) {
 
 describe('the inbox', () => {
   test('a Slack PR message is announced once and offers Claude, Codex and Dismiss', SLACK, async ($, on) => {
-    const { clock, prompts, toasts, spawned } = fakeWorld(on, [{ kind: 'status', state: 'connected', detail: '' }, PR_MESSAGE])
+    const { clock, prompts, toasts, spawned } = fakeWorld(on, { lines: [{ kind: 'status', state: 'connected', detail: '' }, PR_MESSAGE] })
     await start($, clock)
 
     expect(spawned[0]?.env?.SLACK_APP_TOKEN).toBe('xapp-test')
@@ -194,13 +207,13 @@ describe('the inbox', () => {
 describe('what the inbox leaves out', () => {
   test('a PR of my own that someone links is not offered for review', SLACK, async ($, on) => {
     const mine = { ...PR_MESSAGE, text: 'thoughts on https://github.com/acme/app/pull/4 ?' }
-    const { clock, toasts } = fakeWorld(on, [mine])
+    const { clock, toasts } = fakeWorld(on, { lines: [mine] })
     await start($, clock)
     expect(toasts.filter(text => text.includes('sent'))).toEqual([])
   })
 
   test('an alert Slack delivers twice is judged once', SLACK, async ($, on) => {
-    const { clock, verdicts } = fakeWorld(on, [ALERT_MESSAGE, ALERT_MESSAGE])
+    const { clock, verdicts } = fakeWorld(on, { lines: [ALERT_MESSAGE, ALERT_MESSAGE] })
     await start($, clock)
     expect(verdicts.length).toBe(1)
   })
@@ -208,7 +221,7 @@ describe('what the inbox leaves out', () => {
 
 describe('Slack actions', () => {
   test('a message can be reacted to, replied to in the thread it sits in, and opened in Slack', SLACK, async ($, on) => {
-    const { clock, slackCalls } = fakeWorld(on, [{ kind: 'status', state: 'connected', detail: '' }, PR_MESSAGE])
+    const { clock, slackCalls } = fakeWorld(on, { lines: [{ kind: 'status', state: 'connected', detail: '' }, PR_MESSAGE] })
     await start($, clock)
     const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
     expect(await pane.find({ type: 'Link', text: /Open in Slack/ })).toBeDefined()
@@ -225,7 +238,7 @@ describe('Slack actions', () => {
 
   test('a missing scope says how to fix the app', SLACK, async ($, on) => {
     const refusal = '{"ok":false,"error":"missing_scope","needed":"reactions:write"}'
-    const { clock, toasts } = fakeWorld(on, [{ kind: 'status', state: 'connected', detail: '' }, PR_MESSAGE], refusal)
+    const { clock, toasts } = fakeWorld(on, { lines: [{ kind: 'status', state: 'connected', detail: '' }, PR_MESSAGE], slackAnswer: refusal })
     await start($, clock)
     const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
     await pane.press({ key: 'react-eyes-https://github.com/acme/web/pull/77' })
@@ -259,9 +272,61 @@ describe('the PR board', () => {
   })
 })
 
+describe('the ticket this workspace works on', () => {
+  test('a ticket in the workspace name narrows the PRs to it, and one press shows them all', async ($, on) => {
+    const { clock } = fakeWorld(on, { workspace: 'YAN-1 billing' })
+    await start($, clock)
+    await $.command.run(slash('cockpit', 'prs'))
+
+    const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
+    expect(await pane.find({ type: 'Text', text: /Pull requests · YAN-1/ })).toBeDefined()
+    expect(await pane.find({ type: 'Text', text: /From the workspace name/ })).toBeDefined()
+    expect(await pane.find({ key: 'expand-https://github.com/acme/app/pull/1' })).toBeDefined()
+    expect(await pane.find({ key: 'expand-https://github.com/acme/app/pull/4' })).toBeUndefined()
+
+    await pane.press({ key: 'all-prs' })
+    expect(await pane.find({ key: 'expand-https://github.com/acme/app/pull/4' })).toBeDefined()
+    await pane.press({ key: 'all-prs' })
+    expect(await pane.find({ key: 'expand-https://github.com/acme/app/pull/4' })).toBeUndefined()
+    await pane.unmount()
+  })
+
+  test('a workspace name with no ticket in it shows every PR', async ($, on) => {
+    const { clock } = fakeWorld(on, { workspace: 'cockpit-2' })
+    await start($, clock)
+    await $.command.run(slash('cockpit', 'prs'))
+
+    const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
+    expect(await pane.find({ key: 'all-prs' })).toBeUndefined()
+    expect(await pane.find({ key: 'expand-https://github.com/acme/app/pull/4' })).toBeDefined()
+    await pane.unmount()
+  })
+
+  test('a ticket expands to its PRs, and an open PR is polished in one press from either list', async ($, on) => {
+    const { clock, prompts } = fakeWorld(on)
+    await start($, clock)
+    await $.command.run(slash('cockpit', 'prs'))
+
+    const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
+    expect(await pane.find({ key: 'ticket-pr-YAN-1-https://github.com/acme/app/pull/1' })).toBeUndefined()
+    await pane.press({ key: 'ticket-YAN-1' })
+    expect(await pane.find({ key: 'ticket-pr-YAN-1-https://github.com/acme/app/pull/1' })).toBeDefined()
+    expect(await pane.find({ key: 'ticket-pr-YAN-1-https://github.com/acme/app/pull/4' })).toBeUndefined()
+
+    await pane.press({ key: 'ticket-polish-YAN-1-https://github.com/acme/app/pull/1' })
+    await pane.press({ key: 'polish-https://github.com/acme/app/pull/4' })
+    expect(await pane.find({ key: 'polish-https://github.com/acme/app/pull/3' })).toBeUndefined()
+    expect(prompts).toEqual([
+      '/pr-workflows:pr-polish https://github.com/acme/app/pull/1',
+      '/pr-workflows:pr-polish https://github.com/acme/app/pull/4',
+    ])
+    await pane.unmount()
+  })
+})
+
 describe('alerts', () => {
   test('an alert that follows my deploy is compared to that PR and announced', SLACK, async ($, on) => {
-    const { clock, toasts } = fakeWorld(on, [ALERT_MESSAGE])
+    const { clock, toasts } = fakeWorld(on, { lines: [ALERT_MESSAGE] })
     await start($, clock)
     await $.command.run(slash('cockpit', 'alerts'))
 
@@ -275,7 +340,7 @@ describe('alerts', () => {
   })
 
   test('Investigate runs the investigate-alert skill on the alert, with where it fired and the PR it was compared to', SLACK, async ($, on) => {
-    const { clock, prompts } = fakeWorld(on, [ALERT_MESSAGE])
+    const { clock, prompts } = fakeWorld(on, { lines: [ALERT_MESSAGE] })
     await start($, clock)
     await $.command.run(slash('cockpit', 'alerts'))
 
@@ -292,7 +357,7 @@ describe('alerts', () => {
 
 describe('an alert with no deploy to compare', () => {
   test('still offers Investigate', { options: { ...SLACK.options, alertWindowMinutes: 1 } }, async ($, on) => {
-    const { clock, prompts } = fakeWorld(on, [ALERT_MESSAGE])
+    const { clock, prompts } = fakeWorld(on, { lines: [ALERT_MESSAGE] })
     await start($, clock)
     await $.command.run(slash('cockpit', 'alerts'))
 
