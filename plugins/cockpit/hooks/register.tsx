@@ -46,9 +46,10 @@ const dismissed = atom({ plugin: 'cockpit', key: 'dismissed' } as const, [])
 const expanded = atom({ plugin: 'cockpit', key: 'expanded' } as const, null)
 const isShowingDismissed = atom({ plugin: 'cockpit', key: 'isShowingDismissed' } as const, false)
 const slack = atom({ plugin: 'cockpit', key: 'slack' } as const, { state: 'off', detail: '' })
-const usage = atom({ plugin: 'cockpit', key: 'usage' } as const, null, { shape: 'usage-2' })
+const usage = atom({ plugin: 'cockpit', key: 'usage' } as const, null, { shape: 'usage-3' })
 const skills = atom({ plugin: 'cockpit', key: 'skills' } as const, [], { shape: 'skills-1' })
 const replyingTo = atom({ plugin: 'cockpit', key: 'replyingTo' } as const, null)
+const replyDraft = atom({ plugin: 'cockpit', key: 'replyDraft' } as const, '')
 
 const PANE = 'cockpit'
 const PANE_TITLE = 'Cockpit'
@@ -103,6 +104,9 @@ const SLACK_LOOK = {
   connected: 'success',
   error: 'error',
 } as const satisfies Record<SlackLink['state'], ThemeKey>
+
+/** A Slack message a row can act on: `rowKey` tells rows of one message apart (one per PR it links). */
+type SlackTarget = { rowKey: string; messageId: string; threadId: string; permalink: string }
 
 type Config = {
   appToken: string
@@ -365,14 +369,33 @@ async function readBoard($: Engine, config: Config): Promise<void> {
   }
 }
 
-async function refreshUsage($: Engine): Promise<void> {
+let usageInFlight: Promise<void> | null = null
+let isUsageStale = false
+
+/** One usage read at a time, so an older reading never lands last; a call during a read runs one more after it. */
+function refreshUsage($: Engine): Promise<void> {
+  if (usageInFlight !== null) {
+    isUsageStale = true
+    return usageInFlight
+  }
+  usageInFlight = readUsage($).finally(() => {
+    usageInFlight = null
+    if (!isUsageStale) return
+    isUsageStale = false
+    inBackground($, refreshUsage($))
+  })
+  return usageInFlight
+}
+
+async function readUsage($: Engine): Promise<void> {
   // A summary breakdown is estimated locally, with no request, and is what knows the auto-compact threshold.
   const measured = await $.session.usage({ breakdown: 'summary' })
   const { breakdown } = measured.context
   const context = contextGauge({
     percent: measured.context.percent,
     tokens: breakdown?.totalTokens,
-    compactAt: breakdown?.isAutoCompactEnabled ? breakdown.autoCompactThreshold : undefined,
+    compactAt: breakdown?.autoCompactThreshold,
+    isAutoCompactOff: breakdown?.isAutoCompactEnabled === false,
   })
   await update($, usage, () => ({
     context,
@@ -432,21 +455,28 @@ async function callSlack($: Engine, { config, method, body }: { config: Config; 
   }
 }
 
-async function reactTo($: Engine, { config, messageId, name }: { config: Config; messageId: string; name: string }): Promise<void> {
-  const address = slackAddress(messageId)
+async function reactTo($: Engine, { config, target, name }: { config: Config; target: SlackTarget; name: string }): Promise<void> {
+  const address = slackAddress(target.messageId)
   if (address === null) return
   const isSent = await callSlack($, { config, method: 'reactions.add', body: { channel: address.channel, timestamp: address.ts, name } })
   if (isSent) $.ui.toast(`Reacted :${name}: in Slack.`)
 }
 
-async function replyTo($: Engine, { config, messageId, text }: { config: Config; messageId: string; text: string }): Promise<void> {
-  const address = slackAddress(messageId)
-  const isBlank = text.trim() === ''
-  if (address === null || isBlank) return
-  const isSent = await callSlack($, { config, method: 'chat.postMessage', body: { channel: address.channel, thread_ts: address.ts, text } })
+async function replyTo($: Engine, { config, target, text }: { config: Config; target: SlackTarget; text: string }): Promise<void> {
+  const thread = slackAddress(target.threadId)
+  if (thread === null) return
+  if (text.trim() === '') return
+  const isSent = await callSlack($, { config, method: 'chat.postMessage', body: { channel: thread.channel, thread_ts: thread.ts, text } })
   if (!isSent) return
   await update($, replyingTo, () => null)
+  await update($, replyDraft, () => '')
   $.ui.toast('Replied in the Slack thread.')
+}
+
+async function toggleReply($: Engine, rowKey: string): Promise<void> {
+  const open = await read($, replyingTo)
+  await update($, replyDraft, () => '')
+  await update($, replyingTo, () => (open === rowKey ? null : rowKey))
 }
 
 async function handleInboxItem($: Engine, item: InboxItem, handledBy: Reviewer | 'dismissed'): Promise<void> {
@@ -476,13 +506,14 @@ function investigatePrompt(alert: Alert): string {
   ].join('\n')
 }
 
-function resetNote(resetsAt: number | null, now: number): string | null {
+function resetNote({ resetsAt, now }: { resetsAt: number | null; now: number }): string | null {
   return resetsAt === null || resetsAt <= now ? null : `↻${age(now, resetsAt)}`
 }
 
 /** Tokens left before auto-compact, so its coming is plain; or that it is off. */
-function compactNote(context: ContextGauge): string {
-  return context.tokensToCompact === null ? 'no auto-compact' : `⇣${kiloTokens(context.tokensToCompact)} to compact`
+function compactNote(context: ContextGauge): string | null {
+  if (context.tokensToCompact !== null) return `⇣${kiloTokens(context.tokensToCompact)} to compact`
+  return context.isAutoCompactOff ? 'no auto-compact' : null
 }
 
 // A /config change reloads this module, which ends the sidecar and starts it with the new options.
@@ -537,18 +568,20 @@ export const register: Register = (on, options) => {
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const { Box, Text, Button, Link, Input } = $.ui.resolve(e)
-    const [storedTab, items, shownBoard, shownAlerts, hidden, now] = await Promise.all([
+    const [storedTab, items, shownBoard, shownAlerts, hidden, openReply, draft, now] = await Promise.all([
       read($, tab),
       read($, inbox),
       read($, board),
       read($, alerts),
       read($, dismissed),
+      read($, replyingTo),
+      read($, replyDraft),
       $.clock.now(),
     ])
     // A tab an earlier version stored may no longer exist.
     const shownTab: Tab = isTab(storedTab) ? storedTab : 'inbox'
     const unhandled = waiting(items)
-    const openPrs = (shownBoard?.prs ?? []).filter(pr => isOnBoard(pr, now) && !hidden.includes(pr.url))
+    const openPrs = (shownBoard?.prs ?? []).filter(pr => isOnBoard({ pr, now }) && !hidden.includes(pr.url))
     const failing = openPrs.filter(pr => pr.state === 'OPEN' && pr.checks.some(check => check.state === 'fail')).length
     const related = shownAlerts.filter(alert => alert.verdict !== null && isRelated(alert.verdict)).length
     const badges: Record<Tab, { text: string; color: ThemeKey | null }> = {
@@ -568,38 +601,40 @@ export const register: Register = (on, options) => {
     }
 
     /** React, reply in the thread, or open the message: one row under any Slack message. */
-    function slackActions({ messageId, permalink, openReply }: { messageId: string; permalink: string; openReply: string | null }) {
-      const canAct = hasSlack && slackAddress(messageId) !== null
+    function slackActions(target: SlackTarget) {
+      const { rowKey, permalink } = target
+      const openLink = <Link href={permalink} label="↗ Open in Slack" />
+      const canAct = hasSlack && slackAddress(target.messageId) !== null
+      if (!canAct) return <Box key={`slack-${rowKey}`}>{openLink}</Box>
       return (
-        <Box key={`slack-${messageId || permalink}`} flexDirection="column">
+        <Box key={`slack-${rowKey}`} flexDirection="column">
           <Box flexDirection="row" gap={1}>
-            {canAct &&
-              QUICK_REACTIONS.map(reaction => (
-                <Button
-                  key={`react-${reaction.name}-${messageId}`}
-                  plain
-                  label={reaction.glyph}
-                  onPress={() => reactTo($, { config, messageId, name: reaction.name })}
-                />
-              ))}
-            {canAct && (
+            {QUICK_REACTIONS.map(reaction => (
               <Button
-                key={`reply-${messageId}`}
+                key={`react-${reaction.name}-${rowKey}`}
                 plain
-                dimColor={openReply !== messageId}
-                label="↩ Reply"
-                onPress={() => update($, replyingTo, last => (last === messageId ? null : messageId))}
+                label={reaction.glyph}
+                onPress={() => reactTo($, { config, target, name: reaction.name })}
               />
-            )}
-            <Link href={permalink} label="↗ Open in Slack" />
+            ))}
+            <Button
+              key={`reply-${rowKey}`}
+              plain
+              dimColor={openReply !== rowKey}
+              label="↩ Reply"
+              onPress={() => toggleReply($, rowKey)}
+            />
+            {openLink}
           </Box>
-          {canAct && openReply === messageId && (
+          {openReply === rowKey && (
             <Input
-              key={`reply-text-${messageId}`}
+              key={`reply-text-${rowKey}`}
               placeholder="Reply in the thread"
               submitLabel="Send"
               autoFocus
-              onSubmit={text => replyTo($, { config, messageId, text })}
+              value={draft}
+              onInput={text => update($, replyDraft, () => text)}
+              onSubmit={text => replyTo($, { config, target, text })}
             />
           )}
         </Box>
@@ -607,7 +642,7 @@ export const register: Register = (on, options) => {
     }
 
     async function drawInbox() {
-      const [link, openReply] = await Promise.all([read($, slack), read($, replyingTo)])
+      const link = await read($, slack)
       const handled = items.filter(item => item.handledBy !== null).slice(0, 5)
       return (
         <Box flexDirection="column">
@@ -650,7 +685,7 @@ export const register: Register = (on, options) => {
                   onPress={() => handleInboxItem($, item, 'dismissed')}
                 />
               </Box>
-              {slackActions({ messageId: item.messageId, permalink: item.permalink, openReply })}
+              {slackActions({ rowKey: item.prUrl, messageId: item.messageId, threadId: item.threadId, permalink: item.permalink })}
               <Text> </Text>
             </Box>
           ))}
@@ -701,7 +736,7 @@ export const register: Register = (on, options) => {
               label={isHidden ? '↺' : '✕'}
               onPress={() => setDismissed($, pr.url, !isHidden)}
             />
-          <Text wrap="truncate-end">
+            <Text wrap="truncate-end">
               <Link href={pr.url} label={`${pr.repo.split('/')[1] ?? pr.repo}#${pr.number}`} />
               {pr.state === 'MERGED' && pr.deployedAt !== null && (
                 <Text color="success" bold>
@@ -791,7 +826,7 @@ export const register: Register = (on, options) => {
     async function drawPrs() {
       const [openUrl, showsHidden] = await Promise.all([read($, expanded), read($, isShowingDismissed)])
       if (shownBoard === null) return <Text dimColor>Reading your PRs…</Text>
-      const hiddenPrs = shownBoard.prs.filter(pr => isOnBoard(pr, now) && hidden.includes(pr.url))
+      const hiddenPrs = shownBoard.prs.filter(pr => isOnBoard({ pr, now }) && hidden.includes(pr.url))
       return (
         <Box flexDirection="column">
           {heading('Tickets')}
@@ -827,8 +862,7 @@ export const register: Register = (on, options) => {
       )
     }
 
-    async function drawAlerts() {
-      const openReply = await read($, replyingTo)
+    function drawAlerts() {
       const watched = (shownBoard?.prs ?? []).filter(
         pr => pr.deployedAt !== null && now - pr.deployedAt <= config.alertWindowMs,
       )
@@ -868,7 +902,7 @@ export const register: Register = (on, options) => {
               <Text dimColor wrap="wrap">
                 {alert.reason}
               </Text>
-              {slackActions({ messageId: alert.id, permalink: alert.permalink, openReply })}
+              {slackActions({ rowKey: alert.id, messageId: alert.id, threadId: alert.id, permalink: alert.permalink })}
               {alert.verdict !== null && isRelated(alert.verdict) && (
                 <Box flexDirection="row">
                   <Button
@@ -914,7 +948,7 @@ export const register: Register = (on, options) => {
       const shown = await read($, usage)
       if (shown === null) return <Text dimColor>Reading the usage…</Text>
       const gauges = [
-        ...shown.limits.map(limit => ({ label: limit.label, percent: limit.percent, note: resetNote(limit.resetsAt, now) })),
+        ...shown.limits.map(limit => ({ label: limit.label, percent: limit.percent, note: resetNote({ resetsAt: limit.resetsAt, now }) })),
         ...(shown.context === null ? [] : [{ label: 'Ctx', percent: shown.context.percent, note: compactNote(shown.context) }]),
       ]
       const isEmpty = gauges.length === 0 && shown.costUsd === null

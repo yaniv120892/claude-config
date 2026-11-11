@@ -8,7 +8,7 @@ const TICKET_ID = /^[A-Za-z][A-Za-z0-9]*-\d+$/
 export const BOARD_QUERY = `
 query($open: String!, $merged: String!) {
   open: search(query: $open, type: ISSUE, first: 30) { nodes { ...Row } }
-  merged: search(query: $merged, type: ISSUE, first: 15) { nodes { ...Row ... on PullRequest { files(first: 60) { nodes { path } } } } }
+  merged: search(query: $merged, type: ISSUE, first: 30) { nodes { ...Row ... on PullRequest { files(first: 60) { nodes { path } } } } }
 }
 fragment Row on PullRequest {
   number title url isDraft state mergedAt reviewDecision mergeable headRefName
@@ -179,7 +179,7 @@ export function age(since: number, now: number): string {
 }
 
 /** Open PRs, and the ones merged in the last day: a day on, a merged PR is in production. */
-export function isOnBoard(pr: BoardPr, now: number): boolean {
+export function isOnBoard({ pr, now }: { pr: BoardPr; now: number }): boolean {
   return pr.state === 'OPEN' || (pr.mergedAt !== null && now - pr.mergedAt <= DAY_MS)
 }
 

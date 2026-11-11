@@ -5,6 +5,13 @@ const LIMIT_LABELS: Record<string, string> = { five_hour: '5h', seven_day: 'Week
 
 type RateLimit = { kind: string; percentUsed: number; resetsAt?: string }
 
+type ContextReading = {
+  percent: number | undefined
+  tokens: number | undefined
+  compactAt: number | undefined
+  isAutoCompactOff: boolean
+}
+
 export function usageLimits(rateLimits: readonly RateLimit[]): UsageLimit[] {
   return rateLimits.map(limit => ({
     label: LIMIT_LABELS[limit.kind] ?? limit.kind,
@@ -13,15 +20,13 @@ export function usageLimits(rateLimits: readonly RateLimit[]): UsageLimit[] {
   }))
 }
 
-type ContextReading = { percent: number | undefined; tokens: number | undefined; compactAt: number | undefined }
-
 /** The context as a share of the auto-compact threshold, so 100% is the moment it compacts. */
-export function contextGauge({ percent, tokens, compactAt }: ContextReading): ContextGauge | null {
-  const canMeasureToCompact = tokens !== undefined && compactAt !== undefined && compactAt > 0
+export function contextGauge({ percent, tokens, compactAt, isAutoCompactOff }: ContextReading): ContextGauge | null {
+  const canMeasureToCompact = !isAutoCompactOff && tokens !== undefined && compactAt !== undefined && compactAt > 0
   if (canMeasureToCompact) {
-    return { percent: Math.round((tokens / compactAt) * 100), tokensToCompact: Math.max(0, compactAt - tokens) }
+    return { percent: Math.round((tokens / compactAt) * 100), tokensToCompact: Math.max(0, compactAt - tokens), isAutoCompactOff }
   }
-  return percent === undefined ? null : { percent: Math.round(percent), tokensToCompact: null }
+  return percent === undefined ? null : { percent: Math.round(percent), tokensToCompact: null, isAutoCompactOff }
 }
 
 export function kiloTokens(tokens: number): string {

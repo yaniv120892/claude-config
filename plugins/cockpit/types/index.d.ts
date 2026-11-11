@@ -8,6 +8,8 @@ export type InboxItem = {
   prUrl: string
   /** The Slack message: `<channel id>:<ts>`; empty for a row an earlier version stored. */
   messageId: string
+  /** The thread a reply joins: `<channel id>:<ts>` of its first message, the message itself when it is top-level. */
+  threadId: string
   repo: string
   number: number
   from: string
@@ -95,8 +97,9 @@ export type UsageLimit = { label: string; percent: number; resetsAt: number | nu
 /** How full the context is: against the auto-compact threshold when auto-compact is on, else against the window. */
 export type ContextGauge = {
   percent: number
-  /** Tokens left before auto-compact runs; null when it is off. */
+  /** Tokens left before auto-compact runs; null when it is off or its threshold is not known. */
   tokensToCompact: number | null
+  isAutoCompactOff: boolean
 }
 
 export type UsageView = {
@@ -120,8 +123,9 @@ declare module 'claude-code' {
       slack: SlackLink
       usage: Shaped<UsageView | null>
       skills: Shaped<SkillButton[]>
-      /** The Slack message whose reply field is open. */
+      /** The row whose reply field is open, and what has been typed in it. */
       replyingTo: string | null
+      replyDraft: string
     }
   }
 }

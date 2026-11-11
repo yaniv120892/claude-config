@@ -4,6 +4,7 @@ type PullRequestAddress = { url: string; repo: string; number: number }
 
 export type SlackMessage = {
   id: string
+  threadId: string
   channel: string
   from: string
   text: string
@@ -69,6 +70,7 @@ export function parseSidecarLine(line: string): SidecarLine | null {
       kind: 'message',
       message: {
         id: fields.id,
+        threadId: typeof fields.threadId === 'string' ? fields.threadId : fields.id,
         channel: text(fields.channel),
         from: text(fields.from),
         text: text(fields.text),
@@ -90,7 +92,10 @@ export function asInbox(stored: unknown): InboxItem[] {
   if (!Array.isArray(stored)) return []
   return stored
     .filter(item => typeof item?.prUrl === 'string')
-    .map(item => ({ ...item, messageId: typeof item.messageId === 'string' ? item.messageId : '' }))
+    .map(item => {
+      const messageId = typeof item.messageId === 'string' ? item.messageId : ''
+      return { ...item, messageId, threadId: typeof item.threadId === 'string' ? item.threadId : messageId }
+    })
 }
 
 export const QUICK_REACTIONS = [
@@ -112,9 +117,11 @@ export function slackRefusal({ status, text }: { status: number; text: string })
   try {
     answer = JSON.parse(text)
   } catch {
-    return `Slack answered ${status} with no JSON`
+    return status === 429 ? 'Slack is rate limiting; try again in a minute' : `Slack answered ${status} with no JSON`
   }
-  if (answer.ok === true) return null
+  // A reaction already there is the outcome asked for.
+  const isDone = answer.ok === true || answer.error === 'already_reacted'
+  if (isDone) return null
   if (answer.error === 'missing_scope') {
     return `the Slack app lacks the ${String(answer.needed ?? 'needed')} scope: update it from the manifest and reinstall it`
   }
@@ -152,6 +159,7 @@ export function addToInbox({ inbox, message, marks, ownPrUrls }: InboxAddition):
     const item: InboxItem = {
       prUrl: address.url,
       messageId: message.id,
+      threadId: message.threadId,
       repo: address.repo,
       number: address.number,
       from: message.from,

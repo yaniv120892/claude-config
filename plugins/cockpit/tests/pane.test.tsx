@@ -123,6 +123,7 @@ function fakeWorld(on: On, lines: object[] = [], slackAnswer = '{"ok":true}') {
 const PR_MESSAGE = {
   kind: 'message',
   id: 'C1:1.0',
+  threadId: 'C1:0.5',
   channel: '#reviews',
   from: 'Dana',
   text: 'please review https://github.com/acme/web/pull/77',
@@ -206,19 +207,19 @@ describe('what the inbox leaves out', () => {
 })
 
 describe('Slack actions', () => {
-  test('a message can be reacted to, replied to in its thread, and opened in Slack', SLACK, async ($, on) => {
+  test('a message can be reacted to, replied to in the thread it sits in, and opened in Slack', SLACK, async ($, on) => {
     const { clock, slackCalls } = fakeWorld(on, [{ kind: 'status', state: 'connected', detail: '' }, PR_MESSAGE])
     await start($, clock)
     const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
     expect(await pane.find({ type: 'Link', text: /Open in Slack/ })).toBeDefined()
 
-    await pane.press({ key: 'react-eyes-C1:1.0' })
+    await pane.press({ key: 'react-eyes-https://github.com/acme/web/pull/77' })
     expect(slackCalls[0]).toEqual({ method: 'reactions.add', body: { channel: 'C1', timestamp: '1.0', name: 'eyes' }, authorization: 'Bearer xoxp-test' })
 
-    await pane.press({ key: 'reply-C1:1.0' })
-    await pane.input({ key: 'reply-text-C1:1.0', text: 'On it' })
-    expect(slackCalls[1]).toEqual({ method: 'chat.postMessage', body: { channel: 'C1', thread_ts: '1.0', text: 'On it' }, authorization: 'Bearer xoxp-test' })
-    expect(await pane.find({ key: 'reply-text-C1:1.0' })).toBeUndefined()
+    await pane.press({ key: 'reply-https://github.com/acme/web/pull/77' })
+    await pane.input({ key: 'reply-text-https://github.com/acme/web/pull/77', text: 'On it' })
+    expect(slackCalls[1]).toEqual({ method: 'chat.postMessage', body: { channel: 'C1', thread_ts: '0.5', text: 'On it' }, authorization: 'Bearer xoxp-test' })
+    expect(await pane.find({ key: 'reply-text-https://github.com/acme/web/pull/77' })).toBeUndefined()
     await pane.unmount()
   })
 
@@ -227,7 +228,7 @@ describe('Slack actions', () => {
     const { clock, toasts } = fakeWorld(on, [{ kind: 'status', state: 'connected', detail: '' }, PR_MESSAGE], refusal)
     await start($, clock)
     const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
-    await pane.press({ key: 'react-eyes-C1:1.0' })
+    await pane.press({ key: 'react-eyes-https://github.com/acme/web/pull/77' })
     expect(toasts.some(text => text.includes('reactions:write') && text.includes('reinstall'))).toBe(true)
     await pane.unmount()
   })

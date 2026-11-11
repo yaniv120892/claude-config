@@ -66,8 +66,9 @@ describe('the PR board', () => {
       boardAnswer([row({ number: 1 })], [row({ number: 2, state: 'MERGED', mergedAt: '2026-11-09T09:00:00Z' }), row({ number: 3, state: 'MERGED', mergedAt: '2026-11-08T07:00:00Z' })]),
       'production',
     )
-    if (open === undefined || today === undefined || lastWeek === undefined) throw new Error('the board lost a PR')
-    expect([open, today, lastWeek].map(pr => isOnBoard(pr, now))).toEqual([true, true, false])
+    const isAnyMissing = open === undefined || today === undefined || lastWeek === undefined
+    if (isAnyMissing) throw new Error('the board lost a PR')
+    expect([open, today, lastWeek].map(pr => isOnBoard({ pr, now }))).toEqual([true, true, false])
   })
 
   test('links a PR to the ticket its title or branch names', async () => {

@@ -29,13 +29,14 @@ describe('the usage strip', () => {
 
 describe('the context gauge', () => {
   test('measures against the auto-compact threshold, so 100% is when it compacts', async () => {
-    expect(contextGauge({ percent: 30, tokens: 300_000, compactAt: 400_000 })).toEqual({ percent: 75, tokensToCompact: 100_000 })
+    expect(contextGauge({ percent: 30, tokens: 300_000, compactAt: 400_000, isAutoCompactOff: false })).toEqual({ percent: 75, tokensToCompact: 100_000, isAutoCompactOff: false })
     expect(kiloTokens(100_000)).toBe('100k')
   })
 
   test('falls back to the window when auto-compact is off', async () => {
-    expect(contextGauge({ percent: 31.2, tokens: 62_000, compactAt: undefined })).toEqual({ percent: 31, tokensToCompact: null })
-    expect(contextGauge({ percent: undefined, tokens: undefined, compactAt: undefined })).toBe(null)
+    expect(contextGauge({ percent: 31.2, tokens: 62_000, compactAt: 400_000, isAutoCompactOff: true })).toEqual({ percent: 31, tokensToCompact: null, isAutoCompactOff: true })
+    expect(contextGauge({ percent: 31.2, tokens: 62_000, compactAt: undefined, isAutoCompactOff: false })).toEqual({ percent: 31, tokensToCompact: null, isAutoCompactOff: false })
+    expect(contextGauge({ percent: undefined, tokens: undefined, compactAt: undefined, isAutoCompactOff: false })).toBe(null)
   })
 })
 
