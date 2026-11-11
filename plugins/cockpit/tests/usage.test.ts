@@ -28,15 +28,23 @@ describe('the usage strip', () => {
 })
 
 describe('the context gauge', () => {
-  test('measures against the auto-compact threshold, so 100% is when it compacts', async () => {
-    expect(contextGauge({ percent: 30, tokens: 300_000, compactAt: 400_000, isAutoCompactOff: false })).toEqual({ percent: 75, tokensToCompact: 100_000, isAutoCompactOff: false })
-    expect(kiloTokens(100_000)).toBe('100k')
+  const threshold = { autoCompactThreshold: 367_000, isAutoCompactEnabled: true }
+
+  test("counts the last response's tokens against the auto-compact threshold, so 100% is when it compacts", async () => {
+    expect(contextGauge({ tokens: 300_000, percent: 30, breakdown: threshold })).toEqual({ percent: 82, tokensToCompact: 67_000, isAutoCompactOff: false })
+    expect(kiloTokens(67_000)).toBe('67k')
   })
 
-  test('falls back to the window when auto-compact is off', async () => {
-    expect(contextGauge({ percent: 31.2, tokens: 62_000, compactAt: 400_000, isAutoCompactOff: true })).toEqual({ percent: 31, tokensToCompact: null, isAutoCompactOff: true })
-    expect(contextGauge({ percent: 31.2, tokens: 62_000, compactAt: undefined, isAutoCompactOff: false })).toEqual({ percent: 31, tokensToCompact: null, isAutoCompactOff: false })
-    expect(contextGauge({ percent: undefined, tokens: undefined, compactAt: undefined, isAutoCompactOff: false })).toBe(null)
+  test('never reads the summary estimate, which can count a fraction of the window', async () => {
+    const estimated = { ...threshold, totalTokens: 77_000 }
+    expect(contextGauge({ tokens: 300_000, percent: 30, breakdown: estimated })?.percent).toBe(82)
+    expect(contextGauge({ percent: undefined, breakdown: estimated })).toBe(null)
+  })
+
+  test('falls back to the share of the window when auto-compact is off or its threshold is unknown', async () => {
+    expect(contextGauge({ tokens: 62_000, percent: 31.2, breakdown: { ...threshold, isAutoCompactEnabled: false } })).toEqual({ percent: 31, tokensToCompact: null, isAutoCompactOff: true })
+    expect(contextGauge({ tokens: 62_000, percent: 31.2 })).toEqual({ percent: 31, tokensToCompact: null, isAutoCompactOff: false })
+    expect(contextGauge({})).toBe(null)
   })
 })
 

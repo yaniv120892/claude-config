@@ -516,15 +516,8 @@ function refreshUsage($: Engine): Promise<void> {
 async function readUsage($: Engine): Promise<void> {
   // A summary breakdown is estimated locally, with no request, and is what knows the auto-compact threshold.
   const measured = await $.session.usage({ breakdown: 'summary' })
-  const { breakdown } = measured.context
-  const context = contextGauge({
-    percent: measured.context.percent,
-    tokens: breakdown?.totalTokens,
-    compactAt: breakdown?.autoCompactThreshold,
-    isAutoCompactOff: breakdown?.isAutoCompactEnabled === false,
-  })
   await update($, usage, () => ({
-    context,
+    context: contextGauge(measured.context),
     limits: usageLimits(measured.rateLimits),
     costUsd: measured.cost?.usd ?? null,
   }))

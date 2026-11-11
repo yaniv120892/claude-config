@@ -2,7 +2,7 @@ import type { On, RenderElement } from 'claude-code'
 import { describe, expect, mock, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 
-import { fail, ok, PR_VIEW, THREADS } from './fixtures'
+import { contextBreakdown, fail, ok, PR_VIEW, THREADS } from './fixtures'
 import { slash } from './slash'
 
 /** A worktree `mods` of the repo `claude-config`, dirty; the commands gh ran. */
@@ -15,14 +15,18 @@ function fakeRepo(on: On, options: { hasPr: boolean }) {
   on('session.model', () => ({ value: 'claude-opus-5-5' }))
   const usage = {
     startedAt: 0,
-    context: { window: 200_000, percent: 62.4 },
+    context: { window: 1_000_000, tokens: 300_000, percent: 30, breakdown: contextBreakdown({ totalTokens: 77_000, autoCompactThreshold: 367_000 }) },
     rateLimits: [
-      { kind: 'five_hour', percentUsed: 23.4 },
+      { kind: 'five_hour', percentUsed: 23.4, resetsAt: '2026-10-05T11:00:00.000Z' },
       { kind: 'seven_day', percentUsed: 81, resetsAt: '2026-10-08T13:30:00.000Z' },
     ],
     cost: { usd: 0 },
   }
-  on('session.usage', () => ({ value: usage }))
+  // The engine computes the breakdown, and so the auto-compact threshold, only when asked for one.
+  on('session.usage', ($, e) => {
+    const { breakdown, ...context } = usage.context
+    return { value: e.breakdown === undefined ? { ...usage, context } : usage }
+  })
   on('ui.open', () => ({ value: { isPlaced: true } }))
   const pr: { byUrl: Record<string, object>; list: string[] } = { byUrl: {}, list: [] }
   const bash = { stdout: '' }
@@ -88,7 +92,7 @@ describe('the status band', () => {
     for (const surface of ['terminal', 'desktop'] as const) {
       const band = await $.ui.mount({ plugin: 'mods', surface, component: 'AbovePrompt', props: BAND_PROPS })
       const text = (await band.findAll({ type: 'Text' })).map(element => element.text).join('|')
-      for (const shown of ['claude-config/mods', 'feat/mods', '✗', '[claude-opus-5-5]', 'ctx:62%', '5h:23%', 'wk:81%', '↻3d4h', '#51', 'changes requested', '2 open', '1 replied', '1 resolved', 'conflicts']) {
+      for (const shown of ['claude-config/mods', 'feat/mods', '✗', '[claude-opus-5-5]', 'ctx 82%', '⇣67k', '5h 23%', '↻2h', 'wk 81%', '↻3d', '#51', 'changes requested', '2 open', '1 replied', '1 resolved', 'conflicts']) {
         expect(text).toContain(shown)
       }
       await band.unmount()
@@ -123,8 +127,8 @@ describe('the status band', () => {
 
     const band = await $.ui.mount({ plugin: 'mods', surface: 'terminal', component: 'AbovePrompt', props: BAND_PROPS })
     const text = (await band.findAll({ type: 'Text' })).map(element => element.text).join('|')
-    expect(text).toContain('5h:57%')
-    expect(text).not.toContain('wk:')
+    expect(text).toContain('5h 57%')
+    expect(text).not.toContain('81%')
     expect(gitCalls).toEqual([])
     await band.unmount()
   })
@@ -140,7 +144,7 @@ describe('the status band', () => {
 
     const band = await $.ui.mount({ plugin: 'mods', surface: 'terminal', component: 'AbovePrompt', props: BAND_PROPS })
     const text = (await band.findAll({ type: 'Text' })).map(element => element.text).join('|')
-    expect(text).toContain('5h:23%')
+    expect(text).toContain('5h 23%')
     await band.unmount()
   })
 
@@ -153,8 +157,21 @@ describe('the status band', () => {
 
     const band = await $.ui.mount({ plugin: 'mods', surface: 'terminal', component: 'AbovePrompt', props: BAND_PROPS })
     const text = (await band.findAll({ type: 'Text' })).map(element => element.text).join('|')
-    expect(text).toContain('$1.24')
-    expect(text).not.toContain('5h:')
+    expect(text).toContain('82% ⇣67k · $1.24')
+    expect(text).not.toContain('23%')
+    await band.unmount()
+  })
+
+  test('draws the share of the window, with no tokens to compact, when auto-compact is off', async ($, on) => {
+    const { clock, usage } = fakeRepo(on, { hasPr: false })
+    usage.context.breakdown = { ...usage.context.breakdown, isAutoCompactEnabled: false }
+    await $.tool.call({ tool: 'Bash', command: 'git status' })
+    await clock.advance(1000)
+
+    const band = await $.ui.mount({ plugin: 'mods', surface: 'terminal', component: 'AbovePrompt', props: BAND_PROPS })
+    const text = (await band.findAll({ type: 'Text' })).map(element => element.text).join('|')
+    expect(text).toContain('ctx 30%')
+    expect(text).not.toContain('⇣')
     await band.unmount()
   })
 

@@ -34,7 +34,9 @@ import { asTally, countSkill, formatTally } from './tally'
 import {
   alertText,
   asAlertedWindows,
+  contextGauge,
   formatCost,
+  kiloTokens,
   markAlerted,
   notAlertedYet,
   pastAlertLine,
@@ -47,7 +49,7 @@ import {
 // declared beside the hook that passes it. The pure logic sits in the files
 // imported above, which is what the tests cover.
 
-const band = atom({ plugin: 'mods', key: 'band' } as const, null, { shape: 'band-3' })
+const band = atom({ plugin: 'mods', key: 'band' } as const, null, { shape: 'band-4' })
 const prRead = atom({ plugin: 'mods', key: 'prRead' } as const, null, { shape: 'pr-read-2' })
 const sessionPrUrls = atom({ plugin: 'mods', key: 'sessionPrUrls' } as const, [])
 const sessionPrs = atom({ plugin: 'mods', key: 'sessionPrs' } as const, [], { shape: 'session-prs-3' })
@@ -389,12 +391,12 @@ function inBackground($: Engine, work: Promise<void>): void {
 
 /** Rereads the band; a branch switch rereads the PR too. */
 async function refreshBand($: Engine): Promise<void> {
-  const [location, modelName, usage] = await Promise.all([readLocation($), $.session.model(), $.session.usage()])
-  const { percent } = usage.context
+  // A summary breakdown is estimated locally, with no request, and is what knows the auto-compact threshold.
+  const [location, modelName, usage] = await Promise.all([readLocation($), $.session.model(), $.session.usage({ breakdown: 'summary' })])
   const next: Band = {
     location,
     model: modelName,
-    contextPercent: percent === undefined ? null : Math.round(percent),
+    context: contextGauge(usage.context),
     usageLimits: usageLimits(usage.rateLimits),
     costUsd: usage.cost?.usd ?? null,
   }
@@ -606,7 +608,7 @@ export const register: Register = (on, options) => {
       if (e.props.hasSurvey || shown === null) return next(e)
 
       const { Box, Text, Link } = $.ui.resolve(e)
-      const { location: here, model: modelName, contextPercent: percent, usageLimits: limits, costUsd } = shown
+      const { location: here, model: modelName, context, usageLimits: limits, costUsd } = shown
       const now = await $.clock.now()
       const current = (await read($, prRead))?.pr ?? null
       const opened = (await read($, sessionPrs)).filter(pr => pr.url !== current?.url).slice(0, MAX_SESSION_PR_ROWS)
@@ -637,20 +639,27 @@ export const register: Register = (on, options) => {
               </Text>
             )}
             <Text color="magenta"> [{modelName}]</Text>
-            {percent !== null && <Text color={usageColor(percent)}> ctx:{percent}%</Text>}
-            {limits.map(limit => {
+            {context !== null && (
+              <Text>
+                <Text color={usageColor(context.percent)}> ctx {context.percent}%</Text>
+                {context.tokensToCompact !== null && <Text dimColor> ⇣{kiloTokens(context.tokensToCompact)}</Text>}
+              </Text>
+            )}
+            {limits.map((limit, index) => {
               const reset = shownReset(limit, now)
+              const followsAnotherGauge = index > 0 || context !== null
               return (
                 <Text key={limit.label}>
+                  {followsAnotherGauge && <Text dimColor> ·</Text>}
                   <Text color={usageColor(limit.percent)}>
                     {' '}
-                    {limit.label}:{limit.percent}%
+                    {limit.label} {limit.percent}%
                   </Text>
                   {reset !== null && <Text dimColor> ↻{reset}</Text>}
                 </Text>
               )
             })}
-            {limits.length === 0 && costUsd !== null && <Text dimColor> {formatCost(costUsd)}</Text>}
+            {limits.length === 0 && costUsd !== null && <Text dimColor>{context !== null && ' ·'} {formatCost(costUsd)}</Text>}
           </Text>
           {plan !== null && (
             <Text wrap="truncate-end">

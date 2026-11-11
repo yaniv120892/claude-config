@@ -47,11 +47,19 @@ export type PullRequest = {
 export type Band = {
   location: GitLocation
   model: string
-  contextPercent: number | null
+  /** Null until the first response of the live window reports its share of the window. */
+  context: ContextGauge | null
   /** Empty off a subscription, or before the first response reports a window. */
   usageLimits: UsageLimit[]
   /** What the session has cost so far, drawn only where no usage limit is reported. */
   costUsd: number | null
+}
+
+export type ContextGauge = {
+  percent: number
+  /** Tokens left before auto-compact runs; null when it is off or its threshold is not known. */
+  tokensToCompact: number | null
+  isAutoCompactOff: boolean
 }
 
 export type UsageLimit = {

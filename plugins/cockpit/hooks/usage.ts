@@ -5,11 +5,11 @@ const LIMIT_LABELS: Record<string, string> = { five_hour: '5h', seven_day: 'Week
 
 type RateLimit = { kind: string; percentUsed: number; resetsAt?: string }
 
+/** The fields of the session's context usage the gauge reads, as `$.session.usage({ breakdown })` returns them. */
 type ContextReading = {
-  percent: number | undefined
-  tokens: number | undefined
-  compactAt: number | undefined
-  isAutoCompactOff: boolean
+  tokens?: number
+  percent?: number
+  breakdown?: { autoCompactThreshold?: number; isAutoCompactEnabled: boolean }
 }
 
 export function usageLimits(rateLimits: readonly RateLimit[]): UsageLimit[] {
@@ -20,9 +20,18 @@ export function usageLimits(rateLimits: readonly RateLimit[]): UsageLimit[] {
   }))
 }
 
-/** The context as a share of the auto-compact threshold, so 100% is the moment it compacts. */
-export function contextGauge({ percent, tokens, compactAt, isAutoCompactOff }: ContextReading): ContextGauge | null {
-  const canMeasureToCompact = !isAutoCompactOff && tokens !== undefined && compactAt !== undefined && compactAt > 0
+/**
+ * The context as a share of the auto-compact threshold, so 100% is the moment it compacts.
+ *
+ * Counts the tokens the last API response was answered over, not the breakdown's
+ * `totalTokens`: a summary breakdown estimates locally and can read a fraction of the
+ * real window. With auto-compact off, or no threshold known, it is the share of the window.
+ * Kept identical to its twin in the other plugin, as tests/test_context_gauge_twins.py checks: plugins share no code.
+ */
+export function contextGauge({ tokens, percent, breakdown }: ContextReading): ContextGauge | null {
+  const compactAt = breakdown?.isAutoCompactEnabled === true ? breakdown.autoCompactThreshold : undefined
+  const isAutoCompactOff = breakdown?.isAutoCompactEnabled === false
+  const canMeasureToCompact = tokens !== undefined && compactAt !== undefined && compactAt > 0
   if (canMeasureToCompact) {
     return { percent: Math.round((tokens / compactAt) * 100), tokensToCompact: Math.max(0, compactAt - tokens), isAutoCompactOff }
   }
