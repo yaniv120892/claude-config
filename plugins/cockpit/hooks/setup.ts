@@ -1,6 +1,9 @@
-import type { SetupFacts, SlackLink, SlackScopes } from '../types'
+import { record } from './json'
+import type { ScopeVerdict, SetupFacts, SlackLink } from '../types'
 
 const EVENT_FRESH_MS = 7 * 86_400_000
+// A sidecar in standby defers to another session's connection, which is the one up.
+const LINK_UP: ReadonlySet<SlackLink['state']> = new Set(['connected', 'standby'])
 
 export type SetupStep = { id: string; label: string; isDone: boolean; todo: string }
 
@@ -13,15 +16,10 @@ type SetupState = {
   now: number
 }
 
-const SCOPES_TODO = {
-  unknown: 'React to or reply to a Slack message from the Inbox once, to confirm the app may.',
-  missing: 'Update the Slack app from plugins/cockpit/slack-app-manifest.yaml and reinstall it: a reaction or reply was refused for a scope.',
-  ok: '',
-} as const satisfies Record<SlackScopes, string>
-
 /** Each step the cockpit needs, from the options and what Slack has shown: none is a stored checkbox. */
 export function setupSteps({ hasTokens, link, alertChannels, eventChannels, facts, now }: SetupState): SetupStep[] {
-  const isEventFresh = facts.lastEventAt !== null && now - facts.lastEventAt <= EVENT_FRESH_MS
+  const verdicts = Object.values(facts.scopes)
+  const isScopeMissing = verdicts.includes('missing')
   return [
     {
       id: 'tokens',
@@ -29,27 +27,40 @@ export function setupSteps({ hasTokens, link, alertChannels, eventChannels, fact
       isDone: hasTokens,
       todo: 'Save the app-level and user tokens: claude plugin configure cockpit@yaniv-claude-config --values-stdin (README, Cockpit).',
     },
+    { id: 'connected', label: 'Slack connected', isDone: isLinkUp(link), todo: `The Slack link is ${link}: the Inbox tab says why.` },
     {
-      id: 'connected',
-      label: 'Slack connected',
-      isDone: link === 'connected' || link === 'standby',
-      todo: `The Slack link is ${link}: the Inbox tab says why.`,
+      id: 'scopes',
+      label: 'Slack reactions and replies',
+      isDone: verdicts.includes('ok') && !isScopeMissing,
+      todo: isScopeMissing
+        ? 'Update the Slack app from plugins/cockpit/slack-app-manifest.yaml and reinstall it: a reaction or reply was refused for a scope.'
+        : 'React to or reply to a Slack message from the Inbox once, to confirm the app may.',
     },
-    { id: 'scopes', label: 'Slack reactions and replies', isDone: facts.scopes === 'ok', todo: SCOPES_TODO[facts.scopes] },
     { id: 'alerts', label: 'Alert channels', isDone: alertChannels !== '', todo: 'Set alertChannels under cockpit in /config.' },
     { id: 'events', label: 'Event channels', isDone: eventChannels !== '', todo: 'Set eventChannels under cockpit in /config, such as cockpit-events.' },
     {
       id: 'flowing',
       label: 'Events flowing',
-      isDone: isEventFresh,
+      isDone: isEventFlowing({ facts, now }),
       todo: "In the event channel run /github subscribe <owner/repo> pulls reviews comments, and send Linear's Slack notifications to it.",
     },
   ]
 }
 
+export function isLinkUp(link: SlackLink['state']): boolean {
+  return LINK_UP.has(link)
+}
+
+/** An event channel delivered a message in the last week: Slack events are bringing the board's changes. */
+export function isEventFlowing({ facts, now }: { facts: SetupFacts; now: number }): boolean {
+  return facts.lastEventAt !== null && now - facts.lastEventAt <= EVENT_FRESH_MS
+}
+
 export function asSetupFacts(stored: unknown): SetupFacts {
-  const facts = typeof stored === 'object' && stored !== null ? { ...stored } : {}
-  const scopes = 'scopes' in facts && (facts.scopes === 'ok' || facts.scopes === 'missing') ? facts.scopes : 'unknown'
-  const lastEventAt = 'lastEventAt' in facts && typeof facts.lastEventAt === 'number' ? facts.lastEventAt : null
-  return { scopes, lastEventAt }
+  const facts = record(stored)
+  const scopes: Record<string, ScopeVerdict> = {}
+  for (const [method, verdict] of Object.entries(record(facts.scopes))) {
+    if (verdict === 'ok' || verdict === 'missing') scopes[method] = verdict
+  }
+  return { scopes, lastEventAt: typeof facts.lastEventAt === 'number' ? facts.lastEventAt : null }
 }

@@ -190,6 +190,15 @@ describe('what the board acts on', () => {
     expect([needsReview, approved, free, failing].map(pr => pr !== undefined && isReadyToMerge(pr))).toEqual([false, true, true, false])
   })
 
+  test('a failing check past the page the board reads still keeps a PR from ready, through the rollup', async () => {
+    const [failingBeyond, pendingBeyond, green] = board([
+      row({ number: 1, reviewDecision: null, rollupState: 'FAILURE' }),
+      row({ number: 2, reviewDecision: null, rollupState: 'EXPECTED' }),
+      row({ number: 3, reviewDecision: null, rollupState: 'SUCCESS' }),
+    ])
+    expect([failingBeyond, pendingBeyond, green].map(pr => pr !== undefined && isReadyToMerge(pr))).toEqual([false, false, true])
+  })
+
   test('the first read toasts nothing, and a PR that only stayed failing toasts nothing again', async () => {
     const failing = board([row({ number: 1, checks: [{ __typename: 'CheckRun', name: 'lint', status: 'COMPLETED', conclusion: 'FAILURE', detailsUrl: '' }] })])
     expect(prChanges({ last: null, next: failing })).toEqual([])

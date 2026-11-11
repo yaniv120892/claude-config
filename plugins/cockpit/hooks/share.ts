@@ -1,12 +1,7 @@
+import { record } from './json'
 import type { Board, BoardLease, SharedBoard } from '../types'
 
 export const LEASE_MS = 60_000
-
-type Json = Record<string, unknown>
-
-function record(value: unknown): Json {
-  return typeof value === 'object' && value !== null ? { ...value } : {}
-}
 
 /** The board another session stored, or null when nothing usable is stored. */
 export function asSharedBoard(stored: unknown): SharedBoard | null {

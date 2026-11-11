@@ -56,6 +56,8 @@ export type BoardPr = {
   reviewDecision: 'APPROVED' | 'CHANGES_REQUESTED' | 'REVIEW_REQUIRED' | null
   hasConflicts: boolean
   checks: BoardCheck[]
+  /** GitHub's verdict over all the checks, the ones past the page the board reads included; null when it has none. */
+  checksState: CheckState | null
   /** Unresolved review threads only; an open PR's alone. */
   threads: BoardThread[]
   /** An open PR's alone. */
@@ -134,11 +136,12 @@ export type SlackLink = {
 }
 
 /** What Slack's answers showed of the app's scopes: a reaction or reply that went through, or one refused for a scope. */
-export type SlackScopes = 'unknown' | 'ok' | 'missing'
+export type ScopeVerdict = 'ok' | 'missing'
 
 /** What the setup checklist reads beyond the options, kept in the store for every session. */
 export type SetupFacts = {
-  scopes: SlackScopes
+  /** Per Slack method, whether its last call went through or was refused for a scope. */
+  scopes: Record<string, ScopeVerdict>
   /** When the sidecar last forwarded a message from an event channel. */
   lastEventAt: number | null
 }

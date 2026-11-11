@@ -1,3 +1,4 @@
+import { record } from './json'
 import type { BoardCheck, BoardPr, BoardReviewer, BoardThread, CheckState, Quota, ReviewerState, Ticket } from '../types'
 
 const MERGED_DAYS = 7
@@ -28,12 +29,12 @@ fragment Open on PullRequest {
   repository { nameWithOwner }
   reviewRequests(first: 5) { nodes { requestedReviewer { ... on User { login } ... on Team { name } } } }
   latestReviews(first: 5) { nodes { author { login } state } }
-  commits(last: 1) { nodes { commit { statusCheckRollup { contexts(first: 40) { nodes {
+  commits(last: 1) { nodes { commit { statusCheckRollup { state contexts(first: 40) { nodes {
     __typename
     ... on CheckRun { name status conclusion detailsUrl }
     ... on StatusContext { context state targetUrl }
   } } } } } }
-  reviewThreads(first: 20) { nodes {
+  reviewThreads(last: 20) { nodes {
     isResolved path line
     comments(first: 1) { nodes { author { login } body url } }
     latest: comments(last: 1) { nodes { author { login } } }
@@ -60,10 +61,6 @@ export function boardSearches(now: number): { open: string; merged: string } {
 }
 
 type Json = Record<string, unknown>
-
-function record(value: unknown): Json {
-  return typeof value === 'object' && value !== null ? { ...value } : {}
-}
 
 function nodes(value: unknown): Json[] {
   const list = record(value).nodes
@@ -174,6 +171,7 @@ function parseRow(row: Json, prodEnvironment: string): BoardPr | null {
     reviewDecision: decision === 'APPROVED' || decision === 'CHANGES_REQUESTED' || decision === 'REVIEW_REQUIRED' ? decision : null,
     hasConflicts: row.mergeable === 'CONFLICTING',
     checks: nodes(rollup.contexts).map(parseCheck),
+    checksState: typeof rollup.state === 'string' ? checkState(rollup.state === 'EXPECTED' ? 'PENDING' : rollup.state) : null,
     threads: nodes(row.reviewThreads)
       .filter(thread => thread.isResolved !== true)
       .map(thread => parseThread(thread, author)),
@@ -321,7 +319,9 @@ export function isReadyToMerge(pr: BoardPr): boolean {
   const isBlocked = pr.state !== 'OPEN' || pr.isDraft || pr.hasConflicts
   if (isBlocked) return false
   const counts = countChecks(pr.checks)
-  const isGreen = counts.fail === 0 && counts.pending === 0
+  // The rollup counts every check, beyond the page of them the board reads.
+  const isRollupGreen = pr.checksState === null || pr.checksState === 'pass'
+  const isGreen = counts.fail === 0 && counts.pending === 0 && isRollupGreen
   const isReviewed = pr.reviewDecision === 'APPROVED' || pr.reviewDecision === null
   return isGreen && isReviewed
 }

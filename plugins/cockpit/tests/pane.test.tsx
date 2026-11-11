@@ -49,6 +49,10 @@ type WorldOptions = {
   staysConnected?: boolean
   /** How long gh takes to answer the board's query. */
   ghDelayMs?: number
+  /** How long Linear takes to answer. */
+  linearDelayMs?: number
+  /** Lines the sidecar prints this long after its first ones. */
+  later?: { afterMs: number; lines: object[] }
 }
 
 const OPEN_ROWS = [
@@ -61,7 +65,7 @@ const MERGED_ROWS = [
 ]
 
 /** A session with two open PRs and one deployed ten minutes ago, a sidecar that prints `lines`, in the cmux workspace titled `workspace`. */
-function fakeWorld(on: On, { lines = [], slackAnswer = '{"ok":true}', workspace = 'billing', stored = {}, staysConnected = false, ghDelayMs = 0 }: WorldOptions = {}) {
+function fakeWorld(on: On, { lines = [], slackAnswer = '{"ok":true}', workspace = 'billing', stored = {}, staysConnected = false, ghDelayMs = 0, linearDelayMs = 0, later }: WorldOptions = {}) {
   const clock = mock.clock(on, { now: NOW })
   mock.store(on, stored)
   mock.env(on, { HOME: '/home/me', CMUX_WORKSPACE_ID: 'ws-mine' })
@@ -102,7 +106,8 @@ function fakeWorld(on: On, { lines = [], slackAnswer = '{"ok":true}', workspace 
       cost: { usd: 1.5 },
     },
   }))
-  on('mcp.call', ($, e) => {
+  on('mcp.call', async ($, e) => {
+    if (linearDelayMs > 0) await clock.sleep(linearDelayMs)
     if (e.tool === 'save_issue') {
       linearWrites.push(e.args)
       return { value: { content: [{ type: 'text', text: '{}' }], isError: false } }
@@ -140,6 +145,10 @@ function fakeWorld(on: On, { lines = [], slackAnswer = '{"ok":true}', workspace 
     const output = lines.map(line => `${JSON.stringify(line)}\n`).join('')
     yield { stream: 'stdout' as const, text: output.slice(0, 25) }
     yield { stream: 'stdout' as const, text: output.slice(25) }
+    if (later !== undefined) {
+      await clock.sleep(later.afterMs)
+      yield { stream: 'stdout' as const, text: later.lines.map(line => `${JSON.stringify(line)}\n`).join('') }
+    }
     if (staysConnected) await clock.sleep(86_400_000)
     return { value: { code: 0, signal: null } }
   })
@@ -587,6 +596,55 @@ describe('a forced read', () => {
     await clock.advance(6_000)
     expect(boardReads(ran)).toBe(2)
   })
+  test('two asked for during one read share one read after it', async ($, on) => {
+    const fresh = { prs: [], tickets: [], error: null, ticketsError: null, readAt: NOW - 1_000, quota: null }
+    const { clock, ran } = fakeWorld(on, { ghDelayMs: 5_000, stored: { board: { board: fresh, nextReadAt: NOW + 600_000 } } })
+    await start($, clock)
+    await $.command.run(slash('cockpit', 'prs'))
+    await clock.advance(1_000)
+    await $.command.run(slash('cockpit', 'prs'))
+    await $.command.run(slash('cockpit', 'prs'))
+    await clock.advance(12_000)
+    expect(boardReads(ran)).toBe(2)
+  })
+})
+
+describe('what holds a forced read back', () => {
+  const freshBoard = { prs: [], tickets: [], error: null, ticketsError: null, readAt: NOW - 1_000, quota: null }
+
+  test("one that loses to another session's lease tries again once the lease is gone, not at the next due read", async ($, on) => {
+    const { clock, ran } = fakeWorld(on, {
+      stored: { board: { board: freshBoard, nextReadAt: NOW + 600_000 }, boardLease: { owner: 'session-b', until: NOW + 20_000 } },
+    })
+    await start($, clock)
+    await $.command.run(slash('cockpit', 'prs'))
+    await clock.advance(34_000)
+    expect(boardReads(ran)).toBe(0)
+    await clock.advance(10_000)
+    expect(boardReads(ran)).toBe(1)
+  })
+
+  test('none runs while GitHub refuses the query for its rate limit, until the reset', async ($, on) => {
+    const exhausted = { ...freshBoard, quota: { limit: 5000, remaining: 0, resetAt: NOW + 1_800_000, cost: 13, isExhausted: true } }
+    const { clock, ran } = fakeWorld(on, { stored: { board: { board: exhausted, nextReadAt: NOW + 1_800_000 } } })
+    await start($, clock)
+    await $.command.run(slash('cockpit', 'prs'))
+    await clock.advance(60_000)
+    expect(boardReads(ran)).toBe(0)
+    const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
+    expect(await shownText(pane)).toContain('slowed: GitHub quota used up')
+    await pane.unmount()
+  })
+
+  test('a Linear read that hangs gives up before the lease runs out', async ($, on) => {
+    const { clock } = fakeWorld(on, { linearDelayMs: 600_000 })
+    await start($, clock)
+    await clock.advance(21_000)
+    await $.command.run(slash('cockpit', 'prs'))
+    const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
+    expect(await shownText(pane)).toContain('Linear did not answer in 20s')
+    await pane.unmount()
+  })
 })
 
 describe('the GitHub quota', () => {
@@ -623,6 +681,29 @@ describe('Slack events', () => {
     await clock.advance(1_500)
     expect(boardReads(ran)).toBe(2)
     await clock.advance(15_000)
+    expect(boardReads(ran)).toBe(2)
+  })
+
+  test('a second burst soon after the first waits until 30 seconds after the last event read', EVENTS, async ($, on) => {
+    const { clock, ran } = fakeWorld(on, {
+      lines: [{ kind: 'status', state: 'connected', detail: '' }, EVENT],
+      later: { afterMs: 15_000, lines: [EVENT] },
+      staysConnected: true,
+    })
+    await start($, clock)
+    await clock.advance(10_000)
+    expect(boardReads(ran)).toBe(2)
+    await clock.advance(19_000)
+    expect(boardReads(ran)).toBe(2)
+    await clock.advance(11_000)
+    expect(boardReads(ran)).toBe(3)
+  })
+
+  test('with event channels set but no event yet, the board keeps its two-minute pace', EVENTS, async ($, on) => {
+    const { clock, ran } = fakeWorld(on, { lines: [{ kind: 'status', state: 'connected', detail: '' }], staysConnected: true })
+    await start($, clock)
+    expect(boardReads(ran)).toBe(1)
+    await clock.advance(150_000)
     expect(boardReads(ran)).toBe(2)
   })
 })
@@ -689,7 +770,7 @@ describe('the setup checklist', () => {
   test('a finished setup shows no step, and a refused scope brings its step back', { options: { ...SLACK.options, eventChannels: 'cockpit-events' } }, async ($, on) => {
     const { clock } = fakeWorld(on, {
       lines: [{ kind: 'status', state: 'connected', detail: '' }, { kind: 'event', channel: 'C0EVENTS01' }, PR_MESSAGE],
-      stored: { setup: { scopes: 'ok', lastEventAt: null } },
+      stored: { setup: { scopes: { 'reactions.add': 'ok' }, lastEventAt: null } },
       staysConnected: true,
       slackAnswer: '{"ok":false,"error":"missing_scope","needed":"reactions:write"}',
     })

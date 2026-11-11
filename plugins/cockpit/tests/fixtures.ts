@@ -11,6 +11,8 @@ type RowOptions = {
   isFromFork?: boolean
   requested?: string[]
   reviews?: { login: string; state: string }[]
+  /** GitHub's verdict over every check, beyond the page the board reads. */
+  rollupState?: string
 }
 
 /** A search result as the board's query asks for it: an open PR's fragment, or a merged PR's slimmer one. */
@@ -18,7 +20,7 @@ export function row(options: RowOptions) {
   return options.state === 'MERGED' ? mergedRow(options) : openRow(options)
 }
 
-function openRow({ number, checks = [], threads = [], title, reviewDecision = 'REVIEW_REQUIRED', isFromFork = false, requested = [], reviews = [] }: RowOptions) {
+function openRow({ number, checks = [], threads = [], title, reviewDecision = 'REVIEW_REQUIRED', isFromFork = false, requested = [], reviews = [], rollupState }: RowOptions) {
   return {
     number,
     title: title ?? `feat(YAN-${number}): change ${number}`,
@@ -34,7 +36,7 @@ function openRow({ number, checks = [], threads = [], title, reviewDecision = 'R
     repository: { nameWithOwner: 'acme/app' },
     reviewRequests: { nodes: requested.map(login => ({ requestedReviewer: { login } })) },
     latestReviews: { nodes: reviews.map(review => ({ author: { login: review.login }, state: review.state })) },
-    commits: { nodes: [{ commit: { statusCheckRollup: { contexts: { nodes: checks } } } }] },
+    commits: { nodes: [{ commit: { statusCheckRollup: { state: rollupState, contexts: { nodes: checks } } } }] },
     reviewThreads: { nodes: threads },
   }
 }

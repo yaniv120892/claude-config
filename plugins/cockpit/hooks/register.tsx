@@ -47,7 +47,7 @@ import {
   ticketOf,
   workspaceTitle,
 } from './prs'
-import { asSetupFacts, setupSteps } from './setup'
+import { asSetupFacts, isEventFlowing, isLinkUp, setupSteps } from './setup'
 import type { SetupStep } from './setup'
 import { asLease, asSharedBoard, isLeasedToOther, isNewerBoard, LEASE_MS } from './share'
 import {
@@ -91,7 +91,7 @@ const openTicket = atom({ plugin: 'cockpit', key: 'openTicket' } as const, null)
 const confirmingMerge = atom({ plugin: 'cockpit', key: 'confirmingMerge' } as const, null)
 const askingReviewFor = atom({ plugin: 'cockpit', key: 'askingReviewFor' } as const, null)
 const reviewerDraft = atom({ plugin: 'cockpit', key: 'reviewerDraft' } as const, '')
-const setupFacts = atom({ plugin: 'cockpit', key: 'setupFacts' } as const, { scopes: 'unknown', lastEventAt: null }, { shape: 'setup-1' })
+const setupFacts = atom({ plugin: 'cockpit', key: 'setupFacts' } as const, { scopes: {}, lastEventAt: null }, { shape: 'setup-2' })
 
 const PANE = 'cockpit'
 const PANE_TITLE = 'Cockpit'
@@ -124,6 +124,9 @@ const SHARED_POLL_MS = 15_000
 const BOARD_TICK_MS = 30_000
 // Slack events come in bursts (a push, its checks, a review); one read follows them all.
 const EVENT_DEBOUNCE_MS = 10_000
+const FORCED_READ_GAP_MS = 30_000
+// Under the read lease, so a Linear call that hangs cannot outlive it.
+const LINEAR_TIMEOUT_MS = 20_000
 const SIDECAR_RESTART_MS = 30_000
 const NOTICE_TOAST_MS = 15_000
 const LINEAR_SERVER = 'claude.ai Linear'
@@ -164,9 +167,6 @@ const REVIEWER_LOOK = {
   changes: { mark: '✗', color: 'error' },
   commented: { mark: '💬', color: null },
 } as const satisfies Record<ReviewerState, { mark: string; color: ThemeKey | null }>
-
-// A sidecar in standby defers to another session's connection, which delivers the events.
-const EVENT_LINK_STATES: ReadonlySet<SlackLink['state']> = new Set(['connected', 'standby'])
 
 const SLACK_LOOK = {
   off: 'subtle',
@@ -249,8 +249,8 @@ async function syncShared($: Engine): Promise<void> {
 }
 
 /** Records what the setup checklist learns, for every session. */
-async function noteSetup($: Engine, learned: Partial<SetupFacts>): Promise<void> {
-  const facts = { ...asSetupFacts(await $.store.get(SETUP_KEY)), ...learned }
+async function noteSetup($: Engine, learn: (facts: SetupFacts) => SetupFacts): Promise<void> {
+  const facts = learn(asSetupFacts(await $.store.get(SETUP_KEY)))
   await $.store.set(SETUP_KEY, facts)
   await update($, setupFacts, () => facts)
 }
@@ -324,8 +324,10 @@ async function takeSidecarLine($: Engine, config: Config, line: string): Promise
     return
   }
   if (parsed.kind === 'event') {
-    scheduleEventRead($, config)
-    await noteSetup($, { lastEventAt: await $.clock.now() })
+    const isNewBurst = !isForcedReadScheduled
+    inBackground($, scheduleForcedRead($, config))
+    const at = await $.clock.now()
+    if (isNewBurst) await noteSetup($, facts => ({ ...facts, lastEventAt: at }))
     return
   }
   if (parsed.message.isAlertChannel) await takeAlert($, config, parsed.message)
@@ -417,12 +419,14 @@ async function readIssues(
 ): Promise<{ tickets: Board['tickets'] | null; error: string | null }> {
   let text: string
   try {
-    const answer = await $.mcp.call(LINEAR_SERVER, 'list_issues', {
+    const call = $.mcp.call(LINEAR_SERVER, 'list_issues', {
       assignee: 'me',
       ...filter,
       limit: 20,
       fields: ['title', 'url', 'status'],
     })
+    const answer = await Promise.race([call, timedOut($, LINEAR_TIMEOUT_MS)])
+    if (answer === null) return { tickets: null, error: `Linear did not answer in ${LINEAR_TIMEOUT_MS / 1000}s` }
     text = answer.content.find(block => block.type === 'text')?.text ?? ''
     if (answer.isError) return { tickets: null, error: text.split('\n')[0] || 'Linear refused the read' }
   } catch (error) {
@@ -435,48 +439,64 @@ async function readIssues(
   }
 }
 
-type BoardSync = { work: Promise<void>; isForced: boolean }
+/** Resolves null once the wait is over: the losing side of a race against a call with no timeout of its own. */
+async function timedOut($: Engine, ms: number): Promise<null> {
+  await $.clock.sleep(ms)
+  return null
+}
 
-let boardInFlight: BoardSync | null = null
+let boardRunning: Promise<void> | null = null
+let boardQueued: Promise<void> | null = null
 
 /**
- * One board sync at a time in this session. A call waits for the one running, except a forced call during an
- * unforced one, which may have found the board not due: it runs once that one ends, so an event is never lost.
+ * One board sync at a time in this session. An unforced call waits for the one running. A forced call runs after it,
+ * since that one may have found the board not due, or read GitHub before the change that forced this call; the
+ * forced calls made meanwhile share that one queued sync.
  */
 function refreshBoard($: Engine, config: Config, { isForced }: { isForced: boolean }): Promise<void> {
-  const running = boardInFlight
-  const isCovered = running !== null && (running.isForced || !isForced)
-  if (isCovered) return running.work
-  const work = syncAfter($, config, { isForced, previous: running?.work ?? null }).finally(() => {
-    if (boardInFlight?.work === work) boardInFlight = null
+  if (boardRunning === null) return startSync($, config, { isForced })
+  if (!isForced) return boardRunning
+  boardQueued ??= syncAfter($, config, boardRunning)
+  return boardQueued
+}
+
+function startSync($: Engine, config: Config, { isForced }: { isForced: boolean }): Promise<void> {
+  const work = syncBoard($, config, { isForced }).finally(() => {
+    if (boardRunning === work) boardRunning = null
   })
-  boardInFlight = { work, isForced }
+  boardRunning = work
   return work
 }
 
-async function syncAfter($: Engine, config: Config, { isForced, previous }: { isForced: boolean; previous: Promise<void> | null }): Promise<void> {
+async function syncAfter($: Engine, config: Config, running: Promise<void>): Promise<void> {
   try {
-    await previous
+    await running
   } catch {
-    // The earlier sync's own caller logs its failure.
+    // The running sync's own caller logs its failure.
   }
-  await syncBoard($, config, { isForced })
+  boardQueued = null
+  await startSync($, config, { isForced: true })
 }
 
 /**
  * Shows the board the machine's sessions share, and reads it from GitHub and Linear only when it is due, or forced,
- * and no other session holds the read: however many sessions poll, one of them reads. A forced read still yields to
- * another session's lease, whose board arrives on the next tick.
+ * and no other session holds the read: however many sessions poll, normally one of them reads. A forced read yields
+ * to another session's lease and tries again shortly, since that session may have read before the change, and
+ * waits out a rate-limit refusal, which GitHub would repeat.
  */
 async function syncBoard($: Engine, config: Config, { isForced }: { isForced: boolean }): Promise<void> {
   const [stored, now] = await Promise.all([$.store.get(BOARD_KEY), $.clock.now()])
   const shared = asSharedBoard(stored)
   if (shared !== null) await adoptBoard($, config, shared.board)
-  const isDue = isForced || shared === null || now >= shared.nextReadAt
+  const isRefusedUntilReset = shared?.board.quota?.isExhausted === true && now < shared.nextReadAt
+  const isDue = !isRefusedUntilReset && (isForced || shared === null || now >= shared.nextReadAt)
   if (!isDue) return
   const owner = await $.session.id()
   const isLeased = await takeLease($, { owner, now })
-  if (!isLeased) return
+  if (!isLeased) {
+    if (isForced) inBackground($, scheduleForcedRead($, config))
+    return
+  }
   try {
     await readBoard($, config, { now, last: shared?.board ?? null })
   } finally {
@@ -500,7 +520,7 @@ async function releaseLease($: Engine, owner: string): Promise<void> {
 
 async function readBoard($: Engine, config: Config, { now, last }: { now: number; last: Board | null }): Promise<void> {
   const shown = last ?? (await read($, board))
-  const [prs, tickets, link] = await Promise.all([readPrs($, config, now), readTickets($), read($, slack)])
+  const [prs, tickets, link, facts] = await Promise.all([readPrs($, config, now), readTickets($), read($, slack), read($, setupFacts)])
   const quota = prs.isRateLimited ? exhaustedQuota(shown?.quota ?? null) : prs.quota
   const next: Board = {
     prs: prs.prs ?? shown?.prs ?? [],
@@ -510,7 +530,7 @@ async function readBoard($: Engine, config: Config, { now, last }: { now: number
     readAt: now,
     quota,
   }
-  const hasEvents = config.eventChannels !== '' && EVENT_LINK_STATES.has(link.state)
+  const hasEvents = config.eventChannels !== '' && isLinkUp(link.state) && isEventFlowing({ facts, now })
   await $.store.set(BOARD_KEY, { board: next, nextReadAt: nextReadAt({ quota, now, hasEvents }) } satisfies SharedBoard)
   await adoptBoard($, config, next)
 }
@@ -534,18 +554,25 @@ async function adoptBoard($: Engine, config: Config, next: Board): Promise<void>
   }
 }
 
-let isEventReadScheduled = false
+let isForcedReadScheduled = false
+let lastScheduledReadAt = 0
 
-/** A Slack event in an event channel: one forced read once the burst it belongs to has passed. */
-function scheduleEventRead($: Engine, config: Config): void {
-  if (isEventReadScheduled) return
-  isEventReadScheduled = true
-  $.clock.after(EVENT_DEBOUNCE_MS, () => readAfterEvents($, config))
+/**
+ * One forced read once a burst of Slack events has passed, or once another session's lease is gone; at most one
+ * every FORCED_READ_GAP_MS, so a busy event channel cannot spend the quota the back-off saves.
+ */
+async function scheduleForcedRead($: Engine, config: Config): Promise<void> {
+  if (isForcedReadScheduled) return
+  isForcedReadScheduled = true
+  const now = await $.clock.now()
+  const wait = Math.max(EVENT_DEBOUNCE_MS, lastScheduledReadAt + FORCED_READ_GAP_MS - now)
+  $.clock.after(wait, () => inBackground($, readScheduled($, config)))
 }
 
-function readAfterEvents($: Engine, config: Config): void {
-  isEventReadScheduled = false
-  inBackground($, refreshBoard($, config, { isForced: true }))
+async function readScheduled($: Engine, config: Config): Promise<void> {
+  isForcedReadScheduled = false
+  lastScheduledReadAt = await $.clock.now()
+  await refreshBoard($, config, { isForced: true })
 }
 
 async function refreshFocus($: Engine, tickets: readonly Ticket[]): Promise<void> {
@@ -717,21 +744,28 @@ async function compact($: Engine): Promise<void> {
 
 /** Calls one Slack Web API method as the person, through their user token, and toasts what went wrong. */
 async function callSlack($: Engine, { config, method, body }: { config: Config; method: string; body: Record<string, string> }): Promise<boolean> {
+  let answer: { status: number; text: string }
   try {
-    const answer = await $.http.fetch(`${SLACK_API}/${method}`, {
+    answer = await $.http.fetch(`${SLACK_API}/${method}`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${config.userToken}`, 'Content-Type': 'application/json; charset=utf-8' },
       body: JSON.stringify(body),
     })
-    const refusal = slackRefusal({ status: answer.status, text: answer.text })
-    const scopes = scopesShown(answer.text)
-    if (scopes !== null) await noteSetup($, { scopes })
-    if (refusal !== null) $.ui.toast(`Slack ${method} failed: ${refusal}.`, { timeoutMs: NOTICE_TOAST_MS })
-    return refusal === null
   } catch (error) {
     $.ui.toast(`Slack ${method} failed: ${String(error)}`, { timeoutMs: NOTICE_TOAST_MS })
     return false
   }
+  inBackground($, noteScopes($, { method, text: answer.text }))
+  const refusal = slackRefusal({ status: answer.status, text: answer.text })
+  if (refusal !== null) $.ui.toast(`Slack ${method} failed: ${refusal}.`, { timeoutMs: NOTICE_TOAST_MS })
+  return refusal === null
+}
+
+/** What this Slack method's answer showed of the app's scopes, kept per method: one method's success says nothing of another's. */
+async function noteScopes($: Engine, { method, text }: { method: string; text: string }): Promise<void> {
+  const verdict = scopesShown(text)
+  if (verdict === null) return
+  await noteSetup($, facts => ({ ...facts, scopes: { ...facts.scopes, [method]: verdict } }))
 }
 
 async function reactTo($: Engine, { config, target, name }: { config: Config; target: SlackTarget; name: string }): Promise<void> {

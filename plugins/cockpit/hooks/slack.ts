@@ -114,7 +114,6 @@ export function slackAddress(messageId: string): { channel: string; ts: string }
   return isAddress ? { channel, ts } : null
 }
 
-/** What a Slack Web API answer says went wrong, in words the person can act on; null when it went through. */
 /** What a Slack answer shows of the app's scopes: enough, missing one, or nothing either way. */
 export function scopesShown(text: string): 'ok' | 'missing' | null {
   let answer: { ok?: unknown; error?: unknown } = {}
@@ -127,6 +126,7 @@ export function scopesShown(text: string): 'ok' | 'missing' | null {
   return answer.error === 'missing_scope' ? 'missing' : null
 }
 
+/** What a Slack Web API answer says went wrong, in words the person can act on; null when it went through. */
 export function slackRefusal({ status, text }: { status: number; text: string }): string | null {
   let answer: { ok?: unknown; error?: unknown; needed?: unknown } = {}
   try {

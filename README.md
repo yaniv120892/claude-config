@@ -140,7 +140,7 @@ it says how many steps are left (`⚠ Setup: 2 steps left · press 3`):
 | Tab | What it shows |
 | --- | --- |
 | Inbox | Every Slack message a person other than you posted that links a GitHub PR which is not your own (a bot's "PR opened" notice is left out): who, where, and **Claude**, **Codex** and **Dismiss** buttons, then 👀 ✅ 👍 reactions, **Reply** (a field that posts in the message's thread) and **Open in Slack**, each as you. Claude runs `/pr-workflows:pr-review <url>`, Codex runs `/pr-workflows:codex-pr-review <url>`. A new one raises a toast and a native notification once, and opens the pane (`openOnMessage`) |
-| PRs | Your in-progress Linear tickets and the ones done in the last day, then every open PR you authored in any repository and the ones merged in the last day (a day on, a merged PR is in production): failing, pending and passing checks, review threads waiting on you and ones you answered, conflicts, the ticket its title or branch names, and `in prod 12m` once the merge commit's GitHub deployment to production succeeded. `▸` on a ticket lists its PRs. When the cmux workspace title names a ticket (`YAN-172 cockpit`), or else the branch does, only that ticket's PRs are listed, and **All PRs** shows the rest. Each open PR shows who is on it besides you: `👀 dana` asked to review, `✓alex` approved, `✗sam` requested changes, `💬kim` commented. Every open PR has **✦ Polish**, which runs `/pr-workflows:pr-polish` on it, **📣 Ask review**, a field for a name that runs `/pr-workflows:ask-pr-review-slack <url> <name>` (in the PR list and under an expanded ticket alike), and a PR that is green, free of conflicts, and approved or needing no review has **⇪ Merge** (a second press within 10 seconds confirms; it squash-merges through the API the head the board showed, so a later push makes it refuse, then deletes the branch unless it lives in a fork). A ticket whose PR merged while it stayed open shows `⚑ PR merged` and **✓ Move to Done**; an expanded ticket offers **⧉ Open a workspace for it** (`/cmux:ticket-workspace`). A toast says when one of your PRs fails CI, gets a new review thread, or turns ready to merge. A repo with no deployments shows a merged PR as merged, not as waiting for production. `▸` expands a PR to its failing checks and threads, each a link, with **Address feedback** and **Fix CI**; `✕` dismisses it on every session |
+| PRs | Your in-progress Linear tickets and the ones done in the last day, then every open PR you authored in any repository and the ones merged in the last day (a day on, a merged PR is in production): failing, pending and passing checks, review threads waiting on you and ones you answered, conflicts, the ticket its title or branch names, and `in prod 12m` once the merge commit's GitHub deployment to production succeeded. `▸` on a ticket lists its PRs. When the cmux workspace title names a ticket (`YAN-172 cockpit`), or else the branch does, only that ticket's PRs are listed, and **All PRs** shows the rest. Each open PR shows who is on it besides you: `👀 dana` asked to review, `✓alex` approved, `✗sam` requested changes, `💬kim` commented. A PR counts as green from GitHub's rollup over all its checks, so a failing check past the 40 the row lists still holds it back. Every open PR has **✦ Polish**, which runs `/pr-workflows:pr-polish` on it, **📣 Ask review**, a field for a name that runs `/pr-workflows:ask-pr-review-slack <url> <name>` (in the PR list and under an expanded ticket alike), and a PR that is green, free of conflicts, and approved or needing no review has **⇪ Merge** (a second press within 10 seconds confirms; it squash-merges through the API the head the board showed, so a later push makes it refuse, then deletes the branch unless it lives in a fork). A ticket whose PR merged while it stayed open shows `⚑ PR merged` and **✓ Move to Done**; an expanded ticket offers **⧉ Open a workspace for it** (`/cmux:ticket-workspace`). A toast says when one of your PRs fails CI, gets a new review thread, or turns ready to merge. A repo with no deployments shows a merged PR as merged, not as waiting for production. `▸` expands a PR to its failing checks and threads, each a link, with **Address feedback** and **Fix CI**; `✕` dismisses it on every session |
 | Alerts | First, while any is left, the setup steps, each read from the options and from what Slack has shown, with what to do: the Slack tokens, the Slack link, reactions and replies allowed (done once one goes through; a `missing_scope` refusal asks for a reinstall), `alertChannels`, `eventChannels`, and an event in the last week. Then each message of the monitoring channels (`alertChannels`), with the same reactions, Reply and Open in Slack. One that arrives within `alertWindowMinutes` of a PR of yours reaching production is compared to that PR's title and files by a small model call and marked likely related, unclear or unlikely, with the reason; the first two notify you. Every alert has **🔎 Investigate**, which runs `dev-workflows:investigate-alert` on it |
 | Skills | A button for each prompt in `pinnedSkills`, then the skills that load most |
 
@@ -151,19 +151,22 @@ so neither needs a token here. Slack does.
 through the plugin's store. Each session looks at the stored board every 30
 seconds and shows it when it is newer than its own; only when the board is due
 does one session take a 60-second lease, read GitHub and Linear, store the
-result and let the lease go. **Refresh**, `/cockpit`, a Merge, a Move to Done
-and a Slack event read at once, unless another session holds the lease, whose
-board then arrives on the next tick. The board is due every 2 minutes; every
-10 when less than a fifth of the hour's GitHub GraphQL points are left (the PRs
-footer says `slowed: GitHub quota 742/5000`) or when Slack events bring the
-changes; and once GitHub refuses the query for its rate limit, at the reset.
+result and let the lease go. The store has no compare-and-set, so two sessions
+that claim the lease in the same instant both read; that is rare and costs one
+extra read. **Refresh**, `/cockpit`, a Merge, a Move to Done and a Slack event
+read at once; when another session holds the lease, the read is tried again
+once it is gone, since that session may have read before the change. The board
+is due every 2 minutes; every 10 when less than a fifth of the hour's GitHub
+GraphQL points are left (the PRs footer says `slowed: GitHub quota 742/5000`)
+or when Slack events have arrived in the last week; and once GitHub refuses
+the query for its rate limit, no read runs, forced or not, until the reset.
 Each session still toasts PR changes in its own terminal, from the board it
 showed before.
 
 **Slack events.** With `eventChannels` set, any message in those channels,
 from a person or a bot, rereads the board 10 seconds after the burst it belongs
-to, and the regular read slows to every 10 minutes as a fallback for missed
-events. To feed one:
+to, and at most once every 30 seconds. Once an event has arrived, the regular
+read slows to every 10 minutes, a fallback for missed events. To feed one:
 
 1. Create a private channel, such as `#cockpit-events`, and join it.
 2. Add the GitHub Slack app to it and run
