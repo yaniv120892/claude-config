@@ -1,5 +1,6 @@
 import type { BoardCheck, BoardPr, BoardThread, CheckState, Ticket } from '../types'
 
+const MERGED_DAYS = 7
 const DAY_MS = 86_400_000
 // Also what makes an id safe to build a pattern from.
 const TICKET_ID = /^[A-Za-z][A-Za-z0-9]*-\d+$/
@@ -26,9 +27,12 @@ fragment Row on PullRequest {
   } }
 }`
 
-/** The two searches the board runs: my open PRs, and mine merged in the last day. A day on, a merged PR is in production. */
+/**
+ * The two searches the board runs: my open PRs, and mine merged in the last week. The week keeps my own PRs out of
+ * the inbox and a late deploy matched to its alerts; the board shows only the last day of them (`isOnBoard`).
+ */
 export function boardSearches(now: number): { open: string; merged: string } {
-  const since = `${new Date(now - DAY_MS).toISOString().slice(0, 19)}Z`
+  const since = new Date(now - MERGED_DAYS * DAY_MS).toISOString().slice(0, 10)
   return {
     open: 'is:pr is:open author:@me archived:false sort:updated-desc',
     merged: `is:pr is:merged author:@me merged:>=${since} sort:updated-desc`,
@@ -172,6 +176,11 @@ export function age(since: number, now: number): string {
   if (minutes < 60) return `${minutes}m`
   const hours = Math.round(minutes / 60)
   return hours < 48 ? `${hours}h` : `${Math.round(hours / 24)}d`
+}
+
+/** Open PRs, and the ones merged in the last day: a day on, a merged PR is in production. */
+export function isOnBoard(pr: BoardPr, now: number): boolean {
+  return pr.state === 'OPEN' || (pr.mergedAt !== null && now - pr.mergedAt <= DAY_MS)
 }
 
 /** PRs that reached production since the last read: the ones to announce. */

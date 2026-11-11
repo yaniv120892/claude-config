@@ -129,16 +129,17 @@ calls on its own events. Each mod has a switch in `/config`, and all start on.
 ### Cockpit
 
 `cockpit` is a second plugin of function hooks. `/cockpit` opens one pane with
-four tabs, each on a digit key, and a **Compact** button on `5` that compacts
-the conversation. Under the tabs, on every tab, one line shows the 5-hour and
-weekly limits with the time to their reset, the context window and the
-session's cost:
+four tabs, each on a digit key, and a **Compact** button (no hotkey, so no
+stray key compacts) that compacts the conversation. Under the tabs, on every
+tab, one line shows the 5-hour and weekly limits with the time to their reset,
+the context as a share of the auto-compact threshold with the tokens left before
+it runs (`⇣98k to compact`), and the session's cost:
 
 | Tab | What it shows |
 | --- | --- |
-| Inbox | Every Slack message a person other than you posted that links a GitHub PR which is not your own (a bot's "PR opened" notice is left out): who, where, and **Claude**, **Codex** and **Dismiss** buttons. Claude runs `/pr-workflows:pr-review <url>`, Codex runs `/pr-workflows:codex-pr-review <url>`. A new one raises a toast and a native notification once, and opens the pane (`openOnMessage`) |
+| Inbox | Every Slack message a person other than you posted that links a GitHub PR which is not your own (a bot's "PR opened" notice is left out): who, where, and **Claude**, **Codex** and **Dismiss** buttons, then 👀 ✅ 👍 reactions, **Reply** (a field that posts in the message's thread) and **Open in Slack**, each as you. Claude runs `/pr-workflows:pr-review <url>`, Codex runs `/pr-workflows:codex-pr-review <url>`. A new one raises a toast and a native notification once, and opens the pane (`openOnMessage`) |
 | PRs | Your in-progress Linear tickets and the ones done in the last day, then every open PR you authored in any repository and the ones merged in the last day (a day on, a merged PR is in production): failing, pending and passing checks, review threads waiting on you and ones you answered, conflicts, the ticket its title or branch names, and `in prod 12m` once the merge commit's GitHub deployment to production succeeded. `▸` expands a PR to its failing checks and threads, each a link, with **Address feedback**, **Fix CI** and **Polish**; `✕` dismisses it on every session |
-| Alerts | Each message of the monitoring channels (`alertChannels`). One that arrives within `alertWindowMinutes` of a PR of yours reaching production is compared to that PR's title and files by a small model call and marked likely related, unclear or unlikely, with the reason; the first two notify you and offer **Investigate** |
+| Alerts | Each message of the monitoring channels (`alertChannels`), with the same reactions, Reply and Open in Slack. One that arrives within `alertWindowMinutes` of a PR of yours reaching production is compared to that PR's title and files by a small model call and marked likely related, unclear or unlikely, with the reason; the first two notify you and offer **Investigate** |
 | Skills | A button for each prompt in `pinnedSkills`, then the skills that load most |
 
 GitHub is read through `gh` and Linear through the claude.ai Linear connector,
@@ -153,7 +154,10 @@ each event to a single connection, and another takes over when it exits. All
 sessions share the inbox, the alerts and the dismissals.
 
 1. <https://api.slack.com/apps> → *Create New App* → *From a manifest* → paste
-   `plugins/cockpit/slack-app-manifest.yaml`.
+   `plugins/cockpit/slack-app-manifest.yaml`. When the manifest gains a scope
+   (reactions and replies need `reactions:write` and `chat:write`), paste it
+   again under *App Manifest* and reinstall the app; save the `xoxp-` token
+   again if Slack issues a new one.
 2. *Basic Information* → *App-Level Tokens* → generate one with
    `connections:write`. That is the `xapp-` token.
 3. *Install App* → install to the workspace. The *User OAuth Token* is the

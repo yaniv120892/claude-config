@@ -6,6 +6,8 @@ export type Reviewer = 'claude' | 'codex'
 export type InboxItem = {
   /** The PR's URL: one row per PR, however often it is posted. */
   prUrl: string
+  /** The Slack message: `<channel id>:<ts>`; empty for a row an earlier version stored. */
+  messageId: string
   repo: string
   number: number
   from: string
@@ -118,6 +120,8 @@ declare module 'claude-code' {
       slack: SlackLink
       usage: Shaped<UsageView | null>
       skills: Shaped<SkillButton[]>
+      /** The Slack message whose reply field is open. */
+      replyingTo: string | null
     }
   }
 }

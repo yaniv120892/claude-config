@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
-import type { Color, CommandSpec, EngineInterface as Engine, PluginOptions, Register } from 'claude-code'
+import type { CommandSpec, EngineInterface as Engine, PluginOptions, Register, ThemeKey } from 'claude-code'
 
-import type { Alert, AlertVerdict, Board, BoardPr, ContextGauge, InboxItem, Reviewer, SlackLink, Tab } from '../types'
+import type { Alert, AlertVerdict, Board, BoardPr, CheckState, ContextGauge, InboxItem, Reviewer, SlackLink, Tab } from '../types'
 import { addAlert, asAlerts, fenceAlert, isRelated, parseVerdict, verdictPrompt, watchedDeploys } from './alerts'
 import type { Verdict } from './alerts'
 import {
@@ -10,12 +10,27 @@ import {
   BOARD_QUERY,
   boardSearches,
   countChecks,
+  isOnBoard,
   newlyDeployed,
   parseBoard,
   parseTickets,
   ticketOf,
 } from './prs'
-import { addToInbox, applyMarks, asInbox, asMarks, excerptOf, markHandled, parseSidecarLine, REVIEW_SKILL, takeLines, waiting } from './slack'
+import {
+  addToInbox,
+  applyMarks,
+  asInbox,
+  asMarks,
+  excerptOf,
+  markHandled,
+  parseSidecarLine,
+  QUICK_REACTIONS,
+  REVIEW_SKILL,
+  slackAddress,
+  slackRefusal,
+  takeLines,
+  waiting,
+} from './slack'
 import type { SlackMessage } from './slack'
 import { asCounts, bar, contextGauge, kiloTokens, parsePinned, skillButtons, stripBarWidth, usageColor, usageLimits } from './usage'
 
@@ -24,7 +39,7 @@ import { asCounts, bar, contextGauge, kiloTokens, parsePinned, skillButtons, str
 // imported above, which is what the tests cover.
 
 const tab = atom({ plugin: 'cockpit', key: 'tab' } as const, 'inbox')
-const inbox = atom({ plugin: 'cockpit', key: 'inbox' } as const, [], { shape: 'inbox-1' })
+const inbox = atom({ plugin: 'cockpit', key: 'inbox' } as const, [], { shape: 'inbox-2' })
 const board = atom({ plugin: 'cockpit', key: 'board' } as const, null, { shape: 'board-2' })
 const alerts = atom({ plugin: 'cockpit', key: 'alerts' } as const, [], { shape: 'alerts-1' })
 const dismissed = atom({ plugin: 'cockpit', key: 'dismissed' } as const, [])
@@ -33,6 +48,7 @@ const isShowingDismissed = atom({ plugin: 'cockpit', key: 'isShowingDismissed' }
 const slack = atom({ plugin: 'cockpit', key: 'slack' } as const, { state: 'off', detail: '' })
 const usage = atom({ plugin: 'cockpit', key: 'usage' } as const, null, { shape: 'usage-2' })
 const skills = atom({ plugin: 'cockpit', key: 'skills' } as const, [], { shape: 'skills-1' })
+const replyingTo = atom({ plugin: 'cockpit', key: 'replyingTo' } as const, null)
 
 const PANE = 'cockpit'
 const PANE_TITLE = 'Cockpit'
@@ -60,6 +76,7 @@ const BOARD_POLL_MS = 120_000
 const SIDECAR_RESTART_MS = 30_000
 const NOTICE_TOAST_MS = 15_000
 const LINEAR_SERVER = 'claude.ai Linear'
+const SLACK_API = 'https://slack.com/api'
 // An ISO 8601 duration, as Linear's completedAt filter reads it.
 const DONE_SHOWN_FOR = '-P1D'
 const VERDICT_MODEL = 'haiku'
@@ -71,13 +88,13 @@ const VERDICT_LOOK = {
   likely: { label: 'LIKELY RELATED', color: 'error' },
   unclear: { label: 'UNCLEAR', color: 'warning' },
   unlikely: { label: 'unlikely related', color: 'success' },
-} as const satisfies Record<AlertVerdict, { label: string; color: string }>
+} as const satisfies Record<AlertVerdict, { label: string; color: ThemeKey }>
 
 const CHECK_LOOK = {
   fail: { mark: '✗', color: 'error' },
   pending: { mark: '◌', color: 'warning' },
   pass: { mark: '✓', color: 'success' },
-} as const
+} as const satisfies Record<CheckState, { mark: string; color: ThemeKey }>
 
 const SLACK_LOOK = {
   off: 'subtle',
@@ -85,7 +102,7 @@ const SLACK_LOOK = {
   standby: 'subtle',
   connected: 'success',
   error: 'error',
-} as const satisfies Record<SlackLink['state'], string>
+} as const satisfies Record<SlackLink['state'], ThemeKey>
 
 type Config = {
   appToken: string
@@ -398,6 +415,40 @@ async function compact($: Engine): Promise<void> {
   await refreshUsage($)
 }
 
+/** Calls one Slack Web API method as the person, through their user token, and toasts what went wrong. */
+async function callSlack($: Engine, { config, method, body }: { config: Config; method: string; body: Record<string, string> }): Promise<boolean> {
+  try {
+    const answer = await $.http.fetch(`${SLACK_API}/${method}`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${config.userToken}`, 'Content-Type': 'application/json; charset=utf-8' },
+      body: JSON.stringify(body),
+    })
+    const refusal = slackRefusal({ status: answer.status, text: answer.text })
+    if (refusal !== null) $.ui.toast(`Slack ${method} failed: ${refusal}.`, { timeoutMs: NOTICE_TOAST_MS })
+    return refusal === null
+  } catch (error) {
+    $.ui.toast(`Slack ${method} failed: ${String(error)}`, { timeoutMs: NOTICE_TOAST_MS })
+    return false
+  }
+}
+
+async function reactTo($: Engine, { config, messageId, name }: { config: Config; messageId: string; name: string }): Promise<void> {
+  const address = slackAddress(messageId)
+  if (address === null) return
+  const isSent = await callSlack($, { config, method: 'reactions.add', body: { channel: address.channel, timestamp: address.ts, name } })
+  if (isSent) $.ui.toast(`Reacted :${name}: in Slack.`)
+}
+
+async function replyTo($: Engine, { config, messageId, text }: { config: Config; messageId: string; text: string }): Promise<void> {
+  const address = slackAddress(messageId)
+  const isBlank = text.trim() === ''
+  if (address === null || isBlank) return
+  const isSent = await callSlack($, { config, method: 'chat.postMessage', body: { channel: address.channel, thread_ts: address.ts, text } })
+  if (!isSent) return
+  await update($, replyingTo, () => null)
+  $.ui.toast('Replied in the Slack thread.')
+}
+
 async function handleInboxItem($: Engine, item: InboxItem, handledBy: Reviewer | 'dismissed'): Promise<void> {
   // Stamped with the message's own Slack time, not this machine's clock: a later post reopens it, whatever the skew.
   const marks = markHandled(asMarks(await $.store.get(HANDLED_KEY)), { prUrl: item.prUrl, by: handledBy, at: item.at })
@@ -485,7 +536,7 @@ export const register: Register = (on, options) => {
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
-    const { Box, Text, Button, Link } = $.ui.resolve(e)
+    const { Box, Text, Button, Link, Input } = $.ui.resolve(e)
     const [storedTab, items, shownBoard, shownAlerts, hidden, now] = await Promise.all([
       read($, tab),
       read($, inbox),
@@ -497,10 +548,10 @@ export const register: Register = (on, options) => {
     // A tab an earlier version stored may no longer exist.
     const shownTab: Tab = isTab(storedTab) ? storedTab : 'inbox'
     const unhandled = waiting(items)
-    const openPrs = (shownBoard?.prs ?? []).filter(pr => !hidden.includes(pr.url))
+    const openPrs = (shownBoard?.prs ?? []).filter(pr => isOnBoard(pr, now) && !hidden.includes(pr.url))
     const failing = openPrs.filter(pr => pr.state === 'OPEN' && pr.checks.some(check => check.state === 'fail')).length
     const related = shownAlerts.filter(alert => alert.verdict !== null && isRelated(alert.verdict)).length
-    const badges: Record<Tab, { text: string; color: Color | null }> = {
+    const badges: Record<Tab, { text: string; color: ThemeKey | null }> = {
       inbox: { text: unhandled.length > 0 ? ` ${unhandled.length}` : '', color: 'claude' },
       prs: failing > 0 ? { text: ` ${openPrs.length} ✗${failing}`, color: 'error' } : { text: ` ${openPrs.length}`, color: null },
       alerts: { text: related > 0 ? ` ${related}` : '', color: 'error' },
@@ -516,8 +567,47 @@ export const register: Register = (on, options) => {
       )
     }
 
+    /** React, reply in the thread, or open the message: one row under any Slack message. */
+    function slackActions({ messageId, permalink, openReply }: { messageId: string; permalink: string; openReply: string | null }) {
+      const canAct = hasSlack && slackAddress(messageId) !== null
+      return (
+        <Box key={`slack-${messageId || permalink}`} flexDirection="column">
+          <Box flexDirection="row" gap={1}>
+            {canAct &&
+              QUICK_REACTIONS.map(reaction => (
+                <Button
+                  key={`react-${reaction.name}-${messageId}`}
+                  plain
+                  label={reaction.glyph}
+                  onPress={() => reactTo($, { config, messageId, name: reaction.name })}
+                />
+              ))}
+            {canAct && (
+              <Button
+                key={`reply-${messageId}`}
+                plain
+                dimColor={openReply !== messageId}
+                label="↩ Reply"
+                onPress={() => update($, replyingTo, last => (last === messageId ? null : messageId))}
+              />
+            )}
+            <Link href={permalink} label="↗ Open in Slack" />
+          </Box>
+          {canAct && openReply === messageId && (
+            <Input
+              key={`reply-text-${messageId}`}
+              placeholder="Reply in the thread"
+              submitLabel="Send"
+              autoFocus
+              onSubmit={text => replyTo($, { config, messageId, text })}
+            />
+          )}
+        </Box>
+      )
+    }
+
     async function drawInbox() {
-      const link = await read($, slack)
+      const [link, openReply] = await Promise.all([read($, slack), read($, replyingTo)])
       const handled = items.filter(item => item.handledBy !== null).slice(0, 5)
       return (
         <Box flexDirection="column">
@@ -532,10 +622,9 @@ export const register: Register = (on, options) => {
             <Box key={item.prUrl} flexDirection="column">
               <Text wrap="truncate-end">
                 <Link href={item.prUrl} label={`${item.repo}#${item.number}`} />
-                <Text dimColor>
-                  {' '}
-                  {item.from} in {item.channel} · {age(item.at, now)} ago
-                </Text>
+                <Text dimColor> · </Text>
+                <Link href={item.permalink} label={`${item.from} in ${item.channel}`} />
+                <Text dimColor> · {age(item.at, now)} ago</Text>
               </Text>
               <Text dimColor wrap="truncate-end">
                 {item.excerpt}
@@ -560,8 +649,8 @@ export const register: Register = (on, options) => {
                   label="Dismiss"
                   onPress={() => handleInboxItem($, item, 'dismissed')}
                 />
-                <Link href={item.permalink} label="in Slack" />
               </Box>
+              {slackActions({ messageId: item.messageId, permalink: item.permalink, openReply })}
               <Text> </Text>
             </Box>
           ))}
@@ -702,7 +791,7 @@ export const register: Register = (on, options) => {
     async function drawPrs() {
       const [openUrl, showsHidden] = await Promise.all([read($, expanded), read($, isShowingDismissed)])
       if (shownBoard === null) return <Text dimColor>Reading your PRs…</Text>
-      const hiddenPrs = shownBoard.prs.filter(pr => hidden.includes(pr.url))
+      const hiddenPrs = shownBoard.prs.filter(pr => isOnBoard(pr, now) && hidden.includes(pr.url))
       return (
         <Box flexDirection="column">
           {heading('Tickets')}
@@ -738,7 +827,8 @@ export const register: Register = (on, options) => {
       )
     }
 
-    function drawAlerts() {
+    async function drawAlerts() {
+      const openReply = await read($, replyingTo)
       const watched = (shownBoard?.prs ?? []).filter(
         pr => pr.deployedAt !== null && now - pr.deployedAt <= config.alertWindowMs,
       )
@@ -778,6 +868,7 @@ export const register: Register = (on, options) => {
               <Text dimColor wrap="wrap">
                 {alert.reason}
               </Text>
+              {slackActions({ messageId: alert.id, permalink: alert.permalink, openReply })}
               {alert.verdict !== null && isRelated(alert.verdict) && (
                 <Box flexDirection="row">
                   <Button
@@ -826,6 +917,8 @@ export const register: Register = (on, options) => {
         ...shown.limits.map(limit => ({ label: limit.label, percent: limit.percent, note: resetNote(limit.resetsAt, now) })),
         ...(shown.context === null ? [] : [{ label: 'Ctx', percent: shown.context.percent, note: compactNote(shown.context) }]),
       ]
+      const isEmpty = gauges.length === 0 && shown.costUsd === null
+      if (isEmpty) return null
       const width = stripBarWidth({ columns: e.props.bodyColumns, gauges: gauges.length })
       return (
         <Box borderStyle="round" borderColor="subtle" paddingX={1}>
@@ -883,7 +976,7 @@ export const register: Register = (on, options) => {
       <Box flexDirection="column">
         <Box flexDirection="row" gap={2} flexWrap="wrap">
           {TABS.map(entry => drawTabChip(entry))}
-          <Button key="compact" plain dimColor hotkey="5" label="⇣ Compact" onPress={() => compact($)} />
+          <Button key="compact" plain dimColor label="⇣ Compact" onPress={() => compact($)} />
         </Box>
         {await drawUsageStrip()}
         {await drawTab()}

@@ -1,6 +1,6 @@
 display_information:
   name: Claude Cockpit
-  description: Delivers the messages you can see to the cockpit mod of Claude Code.
+  description: Delivers the messages you can see to the cockpit mod of Claude Code, and reacts and replies as you from it.
 features: {}
 oauth_config:
   scopes:
@@ -14,6 +14,8 @@ oauth_config:
       - im:read
       - mpim:read
       - users:read
+      - reactions:write
+      - chat:write
 settings:
   event_subscriptions:
     user_events:

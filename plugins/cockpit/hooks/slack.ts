@@ -87,7 +87,38 @@ export function excerptOf(body: string): string {
 }
 
 export function asInbox(stored: unknown): InboxItem[] {
-  return Array.isArray(stored) ? stored.filter(item => typeof item?.prUrl === 'string') : []
+  if (!Array.isArray(stored)) return []
+  return stored
+    .filter(item => typeof item?.prUrl === 'string')
+    .map(item => ({ ...item, messageId: typeof item.messageId === 'string' ? item.messageId : '' }))
+}
+
+export const QUICK_REACTIONS = [
+  { name: 'eyes', glyph: '👀' },
+  { name: 'white_check_mark', glyph: '✅' },
+  { name: '+1', glyph: '👍' },
+] as const
+
+/** Where a Slack message lives, from its `<channel id>:<ts>` id; null for an id that names none. */
+export function slackAddress(messageId: string): { channel: string; ts: string } | null {
+  const [channel = '', ts = ''] = messageId.split(':')
+  const isAddress = channel !== '' && /^\d+\.\d+$/.test(ts)
+  return isAddress ? { channel, ts } : null
+}
+
+/** What a Slack Web API answer says went wrong, in words the person can act on; null when it went through. */
+export function slackRefusal({ status, text }: { status: number; text: string }): string | null {
+  let answer: { ok?: unknown; error?: unknown; needed?: unknown } = {}
+  try {
+    answer = JSON.parse(text)
+  } catch {
+    return `Slack answered ${status} with no JSON`
+  }
+  if (answer.ok === true) return null
+  if (answer.error === 'missing_scope') {
+    return `the Slack app lacks the ${String(answer.needed ?? 'needed')} scope: update it from the manifest and reinstall it`
+  }
+  return `Slack said ${String(answer.error ?? status)}`
 }
 
 /** Who handled each PR, and the Slack time of the message they handled; kept apart from the inbox so a new message never undoes a dismissal. */
@@ -120,6 +151,7 @@ export function addToInbox({ inbox, message, marks, ownPrUrls }: InboxAddition):
     if (known !== undefined && known.at >= message.at) continue
     const item: InboxItem = {
       prUrl: address.url,
+      messageId: message.id,
       repo: address.repo,
       number: address.number,
       from: message.from,

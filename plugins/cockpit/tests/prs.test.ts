@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { boardSearches, countChecks, newlyDeployed, parseBoard, parseTickets, ticketOf } from '../hooks/prs'
+import { boardSearches, countChecks, isOnBoard, newlyDeployed, parseBoard, parseTickets, ticketOf } from '../hooks/prs'
 import { boardAnswer, row, thread } from './fixtures'
 
 const CHECKS = [
@@ -57,10 +57,17 @@ describe('the PR board', () => {
     expect(newlyDeployed(null, [deployed])).toEqual([])
   })
 
-  test('searches my open PRs and the ones merged in the last day', async () => {
-    const searches = boardSearches(Date.parse('2026-11-10T08:00:00Z'))
+  test('searches my open PRs and the ones merged in the last week, and shows a merged one for a day', async () => {
+    const now = Date.parse('2026-11-10T08:00:00Z')
+    const searches = boardSearches(now)
     expect(searches.open).toContain('is:open author:@me')
-    expect(searches.merged).toContain('merged:>=2026-11-09T08:00:00Z')
+    expect(searches.merged).toContain('merged:>=2026-11-03')
+    const [open, today, lastWeek] = parseBoard(
+      boardAnswer([row({ number: 1 })], [row({ number: 2, state: 'MERGED', mergedAt: '2026-11-09T09:00:00Z' }), row({ number: 3, state: 'MERGED', mergedAt: '2026-11-08T07:00:00Z' })]),
+      'production',
+    )
+    if (open === undefined || today === undefined || lastWeek === undefined) throw new Error('the board lost a PR')
+    expect([open, today, lastWeek].map(pr => isOnBoard(pr, now))).toEqual([true, true, false])
   })
 
   test('links a PR to the ticket its title or branch names', async () => {

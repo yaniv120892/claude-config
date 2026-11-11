@@ -39,7 +39,7 @@ function contextBreakdown({ totalTokens, autoCompactThreshold }: { totalTokens: 
 }
 
 /** A session with two open PRs and one deployed ten minutes ago, and a sidecar that prints `lines`. */
-function fakeWorld(on: On, lines: object[] = []) {
+function fakeWorld(on: On, lines: object[] = [], slackAnswer = '{"ok":true}') {
   const clock = mock.clock(on, { now: NOW })
   mock.store(on)
   mock.env(on, { HOME: '/home/me' })
@@ -47,6 +47,15 @@ function fakeWorld(on: On, lines: object[] = []) {
   const toasts: string[] = []
   const verdicts: string[] = []
   const spawned: { argv: readonly string[]; env?: Record<string, string> }[] = []
+  const slackCalls: { method: string; body: Record<string, unknown>; authorization: string | undefined }[] = []
+  on('http.fetch', ($, e) => {
+    slackCalls.push({
+      method: e.url.replace('https://slack.com/api/', ''),
+      body: JSON.parse(String(e.init?.body ?? '{}')),
+      authorization: e.init?.headers?.Authorization,
+    })
+    return { value: { status: 200, ok: true, headers: {}, text: slackAnswer } }
+  })
   on('session.start', ($, e) => ({ cwd: e.cwd }))
   on('command.register', () => ({ value: { command: 'cockpit' } }))
   on('ui.open', () => ({ value: { isPlaced: true } }))
@@ -70,9 +79,11 @@ function fakeWorld(on: On, lines: object[] = []) {
   }))
   on('mcp.call', ($, e) => {
     const issues =
-      e.args.state === 'completed'
+      e.args.state === 'completed' && e.args.completedAt === '-P1D'
         ? [{ id: 'YAN-2', title: 'Refund flow', url: 'https://linear.app/x/issue/YAN-2', status: 'Done' }]
-        : [{ id: 'YAN-1', title: 'Charge twice', url: 'https://linear.app/x/issue/YAN-1', status: 'In Progress' }]
+        : e.args.state === 'started'
+          ? [{ id: 'YAN-1', title: 'Charge twice', url: 'https://linear.app/x/issue/YAN-1', status: 'In Progress' }]
+          : [{ id: 'YAN-9', title: 'Done a month ago', url: 'https://linear.app/x/issue/YAN-9', status: 'Done' }]
     return { value: { content: [{ type: 'text', text: JSON.stringify({ issues }) }], isError: false } }
   })
   on('process.run', () =>
@@ -82,7 +93,10 @@ function fakeWorld(on: On, lines: object[] = []) {
           row({ number: 1, threads: [thread({ author: 'reviewer' })], checks: [{ __typename: 'CheckRun', name: 'lint', status: 'COMPLETED', conclusion: 'FAILURE', detailsUrl: 'https://ci/2' }] }),
           row({ number: 4 }),
         ],
-        [row({ number: 3, state: 'MERGED', mergedAt: '2026-11-01T10:20:00Z', deployments: DEPLOYED })],
+        [
+          row({ number: 3, state: 'MERGED', mergedAt: '2026-11-01T10:20:00Z', deployments: DEPLOYED }),
+          row({ number: 6, state: 'MERGED', mergedAt: '2026-10-29T09:00:00Z', deployments: DEPLOYED }),
+        ],
       ),
     ),
   )
@@ -103,7 +117,7 @@ function fakeWorld(on: On, lines: object[] = []) {
     yield { stream: 'stdout' as const, text: output.slice(25) }
     return { value: { code: 0, signal: null } }
   })
-  return { clock, prompts, toasts, spawned, verdicts }
+  return { clock, prompts, toasts, spawned, verdicts, slackCalls }
 }
 
 const PR_MESSAGE = {
@@ -191,6 +205,34 @@ describe('what the inbox leaves out', () => {
   })
 })
 
+describe('Slack actions', () => {
+  test('a message can be reacted to, replied to in its thread, and opened in Slack', SLACK, async ($, on) => {
+    const { clock, slackCalls } = fakeWorld(on, [{ kind: 'status', state: 'connected', detail: '' }, PR_MESSAGE])
+    await start($, clock)
+    const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
+    expect(await pane.find({ type: 'Link', text: /Open in Slack/ })).toBeDefined()
+
+    await pane.press({ key: 'react-eyes-C1:1.0' })
+    expect(slackCalls[0]).toEqual({ method: 'reactions.add', body: { channel: 'C1', timestamp: '1.0', name: 'eyes' }, authorization: 'Bearer xoxp-test' })
+
+    await pane.press({ key: 'reply-C1:1.0' })
+    await pane.input({ key: 'reply-text-C1:1.0', text: 'On it' })
+    expect(slackCalls[1]).toEqual({ method: 'chat.postMessage', body: { channel: 'C1', thread_ts: '1.0', text: 'On it' }, authorization: 'Bearer xoxp-test' })
+    expect(await pane.find({ key: 'reply-text-C1:1.0' })).toBeUndefined()
+    await pane.unmount()
+  })
+
+  test('a missing scope says how to fix the app', SLACK, async ($, on) => {
+    const refusal = '{"ok":false,"error":"missing_scope","needed":"reactions:write"}'
+    const { clock, toasts } = fakeWorld(on, [{ kind: 'status', state: 'connected', detail: '' }, PR_MESSAGE], refusal)
+    await start($, clock)
+    const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
+    await pane.press({ key: 'react-eyes-C1:1.0' })
+    expect(toasts.some(text => text.includes('reactions:write') && text.includes('reinstall'))).toBe(true)
+    await pane.unmount()
+  })
+})
+
 describe('the PR board', () => {
   test('shows my PRs with CI, threads, the ticket and the deploy, and hides a dismissed one', async ($, on) => {
     const { clock, prompts } = fakeWorld(on)
@@ -200,6 +242,8 @@ describe('the PR board', () => {
     const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
     const shown = (await pane.findAll({ type: 'Text' })).map(element => element.text).join('|')
     for (const expected of ['YAN-1', 'Charge twice', 'YAN-2', 'Refund flow', '✗1', '1 open', 'in prod 10m']) expect(shown).toContain(expected)
+    expect(shown).not.toContain('YAN-9')
+    expect(await pane.find({ key: 'expand-https://github.com/acme/app/pull/6' })).toBeUndefined()
 
     await pane.press({ key: 'expand-https://github.com/acme/app/pull/1' })
     expect(await pane.find({ type: 'Text', text: /reviewer:/ })).toBeDefined()
