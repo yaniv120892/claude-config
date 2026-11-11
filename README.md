@@ -156,7 +156,16 @@ sessions share the inbox, the alerts and the dismissals.
    `connections:write`. That is the `xapp-` token.
 3. *Install App* → install to the workspace. The *User OAuth Token* is the
    `xoxp-` token.
-4. `/config` → cockpit → paste both, and name the alert channels.
+4. Save both in a terminal. The tokens are secret options, which `/config`
+   does not list, and `read -s` keeps them off the screen and out of any chat:
+
+   ```zsh
+   read -s "XAPP?xapp token: "; echo; read -s "XOXP?xoxp token: "; echo
+   XAPP=$XAPP XOXP=$XOXP node -e 'console.log(JSON.stringify({slackAppToken:process.env.XAPP,slackUserToken:process.env.XOXP}))' \
+     | claude plugin configure cockpit@yaniv-claude-config --values-stdin
+   ```
+
+5. `/config` → cockpit → name the alert channels.
 
 The Inbox tab's last line says where the connection stands.
 

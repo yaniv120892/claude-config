@@ -491,8 +491,8 @@ export const register: Register = (on, options) => {
         <Box flexDirection="column">
           {!hasSlack && (
             <Text dimColor wrap="wrap">
-              Slack is off. Add the app-level token and the user token under cockpit in /config; the README has the app
-              manifest.
+              Slack is off. Save the app-level token and the user token with claude plugin configure
+              cockpit@yaniv-claude-config --values-stdin; the README has the steps and the app manifest.
             </Text>
           )}
           {hasSlack && unhandled.length === 0 && <Text dimColor>No PR is waiting.</Text>}
