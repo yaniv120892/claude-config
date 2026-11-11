@@ -140,9 +140,12 @@ analytics call must not turn a successful DB write into a 500
 > Pattern: Wrap in try/catch, log a warning, emit a metric, continue.
 > Avoid: A bare unguarded `await` on a side effect after the primary operation succeeded.
 
-**Extract Compound Boolean Guards to Named Variables** — double negations obscure intent
-> Pattern: `const shouldSkipAcquire = !isCredits && !unlimitedPackage; if (shouldSkipAcquire)`.
-> Avoid: `if (!isCredits && !unlimitedPackage)`.
+**Extract Compound Boolean Guards to Named Variables** — a condition that needs decoding makes the
+reader evaluate each clause to learn what is being guarded
+> Pattern: Any `if` condition with more than one expression (`&&`, `||`, a negation beside another
+> clause, a nested `a && (b || c)`) becomes a `const` named for the decision before the `if`:
+> `const shouldSkipAcquire = !isCredits && !unlimitedPackage; if (shouldSkipAcquire)`.
+> Avoid: `if (!isCredits && !unlimitedPackage)`, `if (openStop && (!openStop.signature || openStop.signature === signature))`.
 
 **Name an Awaited Result Before Branching On It** — `if (!(await claim(...)))` hides what the
 boolean means and buries the side effect inside the condition

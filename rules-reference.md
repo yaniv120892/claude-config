@@ -423,9 +423,9 @@ within weeks, and every fix then has to land in each one
 > Pattern: In `@tool`-decorated functions, catch exceptions and return `{"error": "..."}` dicts so the agent can reason about failures.
 > Avoid: Letting exceptions propagate from tool functions — the agent framework may not handle them gracefully.
 
-**Extract Compound Boolean Guards to Named Variables** — Double negations and multi-condition guards obscure intent; names make them readable at the call site
-> Pattern: When a guard condition involves two or more negations, or combines unrelated predicates, extract it to a named boolean before the `if`. The name should express the decision, not the mechanics.
-> Avoid: Inline compound negations like `if (!isCredits && !unlimitedPackage)` or `if (!a && !b && c)` that force the reader to mentally evaluate each clause to understand what is being guarded.
+**Extract Compound Boolean Guards to Named Variables** — A condition that needs decoding makes the reader evaluate each clause to learn what is being guarded; the name states the decision at the call site
+> Pattern: Any `if` condition with more than one expression (`&&`, `||`, a negation beside another clause, a nested `a && (b || c)`) is extracted to a named boolean before the `if`. The name should express the decision, not the mechanics.
+> Avoid: Inline compound conditions like `if (!isCredits && !unlimitedPackage)`, `if (!a && !b && c)` or `if (openStop && (!openStop.signature || openStop.signature === signature))`.
 > Example: `const shouldSkipAcquire = !isCredits && !unlimitedPackage; if (shouldSkipAcquire) { ... }` — not `if (!isCredits && !unlimitedPackage) { ... }`
 
 **Name an Awaited Result Before Branching On It** — An `await` inside an `if` condition hides two things at once: that the line performs I/O (often a side effect, like a Redis `SET NX` claim), and what the returned boolean means. Negated, it adds the `!(await ...)` parenthesis dance on top.
