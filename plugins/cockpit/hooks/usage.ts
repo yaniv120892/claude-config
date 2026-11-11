@@ -1,4 +1,4 @@
-import type { SkillButton, UsageLimit } from '../types'
+import type { ContextGauge, SkillButton, UsageLimit } from '../types'
 
 const MAX_SKILL_BUTTONS = 12
 const LIMIT_LABELS: Record<string, string> = { five_hour: '5h', seven_day: 'Week', spend_limit: 'Spend' }
@@ -13,6 +13,21 @@ export function usageLimits(rateLimits: readonly RateLimit[]): UsageLimit[] {
   }))
 }
 
+type ContextReading = { percent: number | undefined; tokens: number | undefined; compactAt: number | undefined }
+
+/** The context as a share of the auto-compact threshold, so 100% is the moment it compacts. */
+export function contextGauge({ percent, tokens, compactAt }: ContextReading): ContextGauge | null {
+  const canMeasureToCompact = tokens !== undefined && compactAt !== undefined && compactAt > 0
+  if (canMeasureToCompact) {
+    return { percent: Math.round((tokens / compactAt) * 100), tokensToCompact: Math.max(0, compactAt - tokens) }
+  }
+  return percent === undefined ? null : { percent: Math.round(percent), tokensToCompact: null }
+}
+
+export function kiloTokens(tokens: number): string {
+  return tokens >= 1000 ? `${Math.round(tokens / 1000)}k` : String(tokens)
+}
+
 function asRecord<T>(stored: unknown): Record<string, T> {
   return typeof stored === 'object' && stored !== null && !Array.isArray(stored) ? { ...stored } : {}
 }
@@ -22,9 +37,16 @@ export function bar(percent: number, width: number): string {
   return `${'▰'.repeat(filled)}${'▱'.repeat(width - filled)}`
 }
 
-/** How wide each bar in the usage strip is: none on a narrow pane, so the numbers stay. */
-export function stripBarWidth(columns: number): number {
-  return Math.max(0, Math.min(8, Math.floor((columns - 56) / 4)))
+const STRIP_CHROME = 4
+const GAUGE_TEXT = 18
+const COST_TEXT = 9
+const MAX_BAR = 8
+
+/** How wide each bar in the usage strip is: what the pane has left once every gauge's text fits, none on a narrow pane. */
+export function stripBarWidth({ columns, gauges }: { columns: number; gauges: number }): number {
+  if (gauges === 0) return 0
+  const spare = columns - STRIP_CHROME - COST_TEXT - gauges * GAUGE_TEXT
+  return Math.max(0, Math.min(MAX_BAR, Math.floor(spare / gauges)))
 }
 
 export function usageColor(percent: number): 'success' | 'warning' | 'error' {

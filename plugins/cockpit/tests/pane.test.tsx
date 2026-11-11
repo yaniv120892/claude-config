@@ -18,6 +18,26 @@ function slash(command: string, args = '') {
   return { command, args, origin: { kind: 'composer' as const }, presentation: { isFullscreen: true, columns: 120 } }
 }
 
+/** The /context breakdown, as a summary estimate with auto-compact on. */
+function contextBreakdown({ totalTokens, autoCompactThreshold }: { totalTokens: number; autoCompactThreshold: number }) {
+  return {
+    categories: [],
+    totalTokens,
+    maxTokens: 400_000,
+    rawMaxTokens: 400_000,
+    autocompactSource: 'settings' as const,
+    percentage: Math.round((totalTokens / 400_000) * 100),
+    gridRows: [],
+    model: 'claude-opus-5-5',
+    memoryFiles: [],
+    mcpTools: [],
+    agents: [],
+    autoCompactThreshold,
+    isAutoCompactEnabled: true,
+    apiUsage: null,
+  }
+}
+
 /** A session with two open PRs and one deployed ten minutes ago, and a sidecar that prints `lines`. */
 function fakeWorld(on: On, lines: object[] = []) {
   const clock = mock.clock(on, { now: NOW })
@@ -43,7 +63,7 @@ function fakeWorld(on: On, lines: object[] = []) {
   on('session.usage', () => ({
     value: {
       startedAt: 0,
-      context: { window: 200_000, percent: 31.2 },
+      context: { window: 200_000, percent: 31.2, breakdown: contextBreakdown({ totalTokens: 62_000, autoCompactThreshold: 160_000 }) },
       rateLimits: [{ kind: 'five_hour', percentUsed: 42, resetsAt: '2026-11-01T12:00:00Z' }],
       cost: { usd: 1.5 },
     },
@@ -228,7 +248,7 @@ describe('skills, usage and compact', () => {
       await $.command.run(slash('cockpit', shownTab))
       const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
       const shown = (await pane.findAll({ type: 'Text' })).map(element => element.text).join('|')
-      for (const expected of ['5h', '42%', '↻1h', 'Ctx', '31%', '$1.50']) expect(shown).toContain(expected)
+      for (const expected of ['5h', '42%', '↻1h', 'Ctx', '39%', '⇣98k to compact', '$1.50']) expect(shown).toContain(expected)
       await pane.unmount()
     }
   })

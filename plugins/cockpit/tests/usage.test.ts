@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { bar, parsePinned, skillButtons, stripBarWidth, usageLimits } from '../hooks/usage'
+import { bar, contextGauge, kiloTokens, parsePinned, skillButtons, stripBarWidth, usageLimits } from '../hooks/usage'
 
 describe('the usage strip', () => {
   test('labels each limit briefly', async () => {
@@ -19,10 +19,23 @@ describe('the usage strip', () => {
     expect(bar(140, 4)).toBe('▰▰▰▰')
   })
 
-  test('drops the bars on a narrow pane and caps them on a wide one', async () => {
-    expect(stripBarWidth(50)).toBe(0)
-    expect(stripBarWidth(80)).toBe(6)
-    expect(stripBarWidth(200)).toBe(8)
+  test('drops the bars on a narrow pane, caps them on a wide one, and shrinks them as gauges are added', async () => {
+    expect(stripBarWidth({ columns: 50, gauges: 3 })).toBe(0)
+    expect(stripBarWidth({ columns: 80, gauges: 3 })).toBe(4)
+    expect(stripBarWidth({ columns: 80, gauges: 4 })).toBe(0)
+    expect(stripBarWidth({ columns: 200, gauges: 3 })).toBe(8)
+  })
+})
+
+describe('the context gauge', () => {
+  test('measures against the auto-compact threshold, so 100% is when it compacts', async () => {
+    expect(contextGauge({ percent: 30, tokens: 300_000, compactAt: 400_000 })).toEqual({ percent: 75, tokensToCompact: 100_000 })
+    expect(kiloTokens(100_000)).toBe('100k')
+  })
+
+  test('falls back to the window when auto-compact is off', async () => {
+    expect(contextGauge({ percent: 31.2, tokens: 62_000, compactAt: undefined })).toEqual({ percent: 31, tokensToCompact: null })
+    expect(contextGauge({ percent: undefined, tokens: undefined, compactAt: undefined })).toBe(null)
   })
 })
 

@@ -90,8 +90,15 @@ export type SlackLink = {
 
 export type UsageLimit = { label: string; percent: number; resetsAt: number | null }
 
+/** How full the context is: against the auto-compact threshold when auto-compact is on, else against the window. */
+export type ContextGauge = {
+  percent: number
+  /** Tokens left before auto-compact runs; null when it is off. */
+  tokensToCompact: number | null
+}
+
 export type UsageView = {
-  contextPercent: number | null
+  context: ContextGauge | null
   limits: UsageLimit[]
   costUsd: number | null
 }

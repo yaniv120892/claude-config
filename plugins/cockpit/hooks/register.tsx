@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { Color, CommandSpec, EngineInterface as Engine, PluginOptions, Register } from 'claude-code'
 
-import type { Alert, AlertVerdict, Board, BoardPr, InboxItem, Reviewer, SlackLink, Tab } from '../types'
+import type { Alert, AlertVerdict, Board, BoardPr, ContextGauge, InboxItem, Reviewer, SlackLink, Tab } from '../types'
 import { addAlert, asAlerts, fenceAlert, isRelated, parseVerdict, verdictPrompt, watchedDeploys } from './alerts'
 import type { Verdict } from './alerts'
 import {
@@ -17,7 +17,7 @@ import {
 } from './prs'
 import { addToInbox, applyMarks, asInbox, asMarks, excerptOf, markHandled, parseSidecarLine, REVIEW_SKILL, takeLines, waiting } from './slack'
 import type { SlackMessage } from './slack'
-import { asCounts, bar, parsePinned, skillButtons, stripBarWidth, usageColor, usageLimits } from './usage'
+import { asCounts, bar, contextGauge, kiloTokens, parsePinned, skillButtons, stripBarWidth, usageColor, usageLimits } from './usage'
 
 // Every hook lives in this file: the engine follows `$` only into functions
 // declared beside the hook that passes it. The pure logic sits in the files
@@ -285,15 +285,15 @@ async function readPrs($: Engine, config: Config, now: number): Promise<{ prs: B
   }
 }
 
-/** My tickets in progress, then the ones done in the last day: a day on, a done ticket leaves the board. */
+/** My tickets in progress, then the ones done in the last day: a day on, a done ticket leaves the board. A read that fails keeps the other's tickets. */
 async function readTickets($: Engine): Promise<{ tickets: Board['tickets'] | null; error: string | null }> {
   const [started, done] = await Promise.all([
     readIssues($, { filter: { state: 'started' }, isDone: false }),
     readIssues($, { filter: { state: 'completed', completedAt: DONE_SHOWN_FOR }, isDone: true }),
   ])
-  if (started.tickets === null) return started
-  if (done.tickets === null) return done
-  return { tickets: [...started.tickets, ...done.tickets], error: null }
+  const loaded = [...(started.tickets ?? []), ...(done.tickets ?? [])]
+  const isNoneLoaded = started.tickets === null && done.tickets === null
+  return { tickets: isNoneLoaded ? null : loaded, error: started.error ?? done.error }
 }
 
 async function readIssues(
@@ -349,10 +349,16 @@ async function readBoard($: Engine, config: Config): Promise<void> {
 }
 
 async function refreshUsage($: Engine): Promise<void> {
-  const measured = await $.session.usage()
-  const percent = measured.context.percent
+  // A summary breakdown is estimated locally, with no request, and is what knows the auto-compact threshold.
+  const measured = await $.session.usage({ breakdown: 'summary' })
+  const { breakdown } = measured.context
+  const context = contextGauge({
+    percent: measured.context.percent,
+    tokens: breakdown?.totalTokens,
+    compactAt: breakdown?.isAutoCompactEnabled ? breakdown.autoCompactThreshold : undefined,
+  })
   await update($, usage, () => ({
-    contextPercent: percent === undefined ? null : Math.round(percent),
+    context,
     limits: usageLimits(measured.rateLimits),
     costUsd: measured.cost?.usd ?? null,
   }))
@@ -387,7 +393,7 @@ async function compact($: Engine): Promise<void> {
     const result = await $.session.compact()
     if ('skip' in result) $.ui.toast(`The compaction was stopped: ${result.skip}`)
   } catch (error) {
-    $.ui.toast(`Compact runs between turns; wait for this one to end. (${String(error)})`)
+    $.ui.toast(`Compact did not run: ${String(error)}`)
   }
   await refreshUsage($)
 }
@@ -419,8 +425,13 @@ function investigatePrompt(alert: Alert): string {
   ].join('\n')
 }
 
-function resetIn(resetsAt: number | null, now: number): string | null {
-  return resetsAt === null || resetsAt <= now ? null : age(now, resetsAt)
+function resetNote(resetsAt: number | null, now: number): string | null {
+  return resetsAt === null || resetsAt <= now ? null : `↻${age(now, resetsAt)}`
+}
+
+/** Tokens left before auto-compact, so its coming is plain; or that it is off. */
+function compactNote(context: ContextGauge): string {
+  return context.tokensToCompact === null ? 'no auto-compact' : `⇣${kiloTokens(context.tokensToCompact)} to compact`
 }
 
 // A /config change reloads this module, which ends the sidecar and starts it with the new options.
@@ -475,7 +486,7 @@ export const register: Register = (on, options) => {
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const { Box, Text, Button, Link } = $.ui.resolve(e)
-    const [shownTab, items, shownBoard, shownAlerts, hidden, now] = await Promise.all([
+    const [storedTab, items, shownBoard, shownAlerts, hidden, now] = await Promise.all([
       read($, tab),
       read($, inbox),
       read($, board),
@@ -483,6 +494,8 @@ export const register: Register = (on, options) => {
       read($, dismissed),
       $.clock.now(),
     ])
+    // A tab an earlier version stored may no longer exist.
+    const shownTab: Tab = isTab(storedTab) ? storedTab : 'inbox'
     const unhandled = waiting(items)
     const openPrs = (shownBoard?.prs ?? []).filter(pr => !hidden.includes(pr.url))
     const failing = openPrs.filter(pr => pr.state === 'OPEN' && pr.checks.some(check => check.state === 'fail')).length
@@ -599,7 +612,7 @@ export const register: Register = (on, options) => {
               label={isHidden ? '↺' : '✕'}
               onPress={() => setDismissed($, pr.url, !isHidden)}
             />
-            <Text wrap="truncate-end">
+          <Text wrap="truncate-end">
               <Link href={pr.url} label={`${pr.repo.split('/')[1] ?? pr.repo}#${pr.number}`} />
               {pr.state === 'MERGED' && pr.deployedAt !== null && (
                 <Text color="success" bold>
@@ -809,25 +822,25 @@ export const register: Register = (on, options) => {
     async function drawUsageStrip() {
       const shown = await read($, usage)
       if (shown === null) return <Text dimColor>Reading the usage…</Text>
-      const width = stripBarWidth(e.props.bodyColumns)
       const gauges = [
-        ...shown.limits.map(limit => ({ label: limit.label, percent: limit.percent, reset: resetIn(limit.resetsAt, now) })),
-        ...(shown.contextPercent === null ? [] : [{ label: 'Ctx', percent: shown.contextPercent, reset: null }]),
+        ...shown.limits.map(limit => ({ label: limit.label, percent: limit.percent, note: resetNote(limit.resetsAt, now) })),
+        ...(shown.context === null ? [] : [{ label: 'Ctx', percent: shown.context.percent, note: compactNote(shown.context) }]),
       ]
+      const width = stripBarWidth({ columns: e.props.bodyColumns, gauges: gauges.length })
       return (
         <Box borderStyle="round" borderColor="subtle" paddingX={1}>
           <Text wrap="truncate-end">
-          {gauges.map((gauge, index) => (
-            <Text key={gauge.label}>
-              {index > 0 && <Text dimColor> · </Text>}
-              <Text dimColor>{gauge.label} </Text>
-              {width > 0 && <Text color={usageColor(gauge.percent)}>{bar(gauge.percent, width)} </Text>}
-              <Text color={usageColor(gauge.percent)}>{gauge.percent}%</Text>
-              {gauge.reset !== null && <Text dimColor> ↻{gauge.reset}</Text>}
-            </Text>
-          ))}
-          {shown.costUsd !== null && <Text dimColor> · ${shown.costUsd.toFixed(2)}</Text>}
-        </Text>
+            {gauges.map((gauge, index) => (
+              <Text key={gauge.label}>
+                {index > 0 && <Text dimColor> · </Text>}
+                <Text dimColor>{gauge.label} </Text>
+                {width > 0 && <Text color={usageColor(gauge.percent)}>{bar(gauge.percent, width)} </Text>}
+                <Text color={usageColor(gauge.percent)}>{gauge.percent}%</Text>
+                {gauge.note !== null && <Text dimColor> {gauge.note}</Text>}
+              </Text>
+            ))}
+            {shown.costUsd !== null && <Text dimColor> · ${shown.costUsd.toFixed(2)}</Text>}
+          </Text>
         </Box>
       )
     }
