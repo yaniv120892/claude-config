@@ -39,10 +39,10 @@ One Linear ticket → one cmux workspace with a Claude session named after it. R
    ```
    | Project | Color |
    |---|---|
-   | PostHog EU Migration | Purple |
-   | Ongoing Infra Improvements | Teal |
+   | PostHog EU Migration | Orange |
+   | Ongoing Infra Improvements | Blue |
 
-   A project missing from the table: pick a named color no row uses (`cmux workspace-action --help`
+   A project missing from the table: pick a named color no row uses and that is clearly distinct in hue from every row (not a dark neighbor) (`cmux workspace-action --help`
    lists them), apply it, and say so in the report so a row can be added.
 7. **Confirm** with `cmux read-screen --surface $S --lines 15` — the name shows in the prompt
    border. Report the workspace ref and name. Don't focus it unless asked.
