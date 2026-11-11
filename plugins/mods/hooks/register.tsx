@@ -161,8 +161,6 @@ const ALERT_TOAST_MS = 10_000
 
 // The module's own, so a reload starts them over; that only drops a queued refresh.
 let isBandQueued = false
-// Set by register, which a /config change reruns.
-let isAlerting = true
 // Task calls in one turn can run in parallel; each change lands after the one before.
 let planWrites: Promise<void> = Promise.resolve()
 // The session the plan atom was loaded for; null until the first load.
@@ -292,7 +290,7 @@ export const register: Register = (on, options) => {
   const isOn = (name: string): boolean => options[name] !== false
   const hasBranchGuard = isOn('branchGuard')
   const hasStatusBand = isOn('statusBand')
-  isAlerting = isOn('alerts')
+  const isAlerting = isOn('alerts')
   const hasPlanProgress = isOn('planProgress') && hasStatusBand
   const hasTimeAwareness = isOn('timeAwareness')
   const blockedTerms = termPattern(parseTerms(options.blockedTerms))

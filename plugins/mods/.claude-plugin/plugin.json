@@ -1,6 +1,6 @@
 {
   "name": "mods",
-  "description": "Function-hook mods for the Claude Code harness: a guard that refuses commits and pushes on the default branch; a status band with the location, branch and model; a plan line with the main agent's declared task progress and the active task; a toast when a usage limit nears its cap; a guard that refuses credentials in tracked files; the reply-style rule as a system-prompt section; a /skill-tally of which skills actually fire; and time awareness: the local time, time away and slow tool calls, told to the model. Usage and PRs live in the cockpit plugin. Each one has a switch in /config.",
+  "description": "Function-hook mods for the Claude Code harness: a guard that refuses commits and pushes on the default branch; a status band with the location, branch and model; a plan line with the main agent's declared task progress and the active task; a toast when a usage limit nears its cap; a guard that refuses credentials in tracked files; the reply-style rule as a system-prompt section; a /skill-tally of which skills actually fire; and time awareness: the local time, time away and slow tool calls, told to the model. The usage figures and the PRs are shown in the cockpit plugin. Each one has a switch in /config.",
   "version": "0.13.0",
   "author": { "name": "Yaniv Daye" },
   "homepage": "https://github.com/yaniv120892/claude-config",
