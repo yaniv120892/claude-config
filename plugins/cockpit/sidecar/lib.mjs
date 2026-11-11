@@ -80,6 +80,16 @@ export function relevantMessage({ event, selfUserId, alertChannelIds }) {
   return { channel: event.channel, user: event.user ?? null, botName: event.username ?? null, ts: event.ts, threadTs, text, isAlertChannel }
 }
 
+/**
+ * Whether a message tells the mod its board may have changed: anything posted in an
+ * event channel, top-level or threaded, by a bot as much as a person, since the
+ * GitHub and Linear Slack apps post as bots.
+ */
+export function isBoardEvent({ event, eventChannelIds }) {
+  if (event?.type !== 'message' || !MESSAGE_SUBTYPES.has(event.subtype)) return false
+  return typeof event.channel === 'string' && eventChannelIds.has(event.channel)
+}
+
 /** Whether the lock's holder is gone: its file names no process, or one that is not a sidecar (a reused pid). */
 export function isLockStale({ holder, commandOf }) {
   if (!Number.isInteger(holder) || holder <= 0) return true

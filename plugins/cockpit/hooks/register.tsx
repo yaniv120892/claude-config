@@ -1,7 +1,27 @@
 import { atom, read, update } from 'claude-code'
 import type { CommandSpec, EngineInterface as Engine, PluginOptions, Register, ThemeKey } from 'claude-code'
 
-import type { Alert, AlertVerdict, Board, BoardPr, CheckState, ContextGauge, Focus, InboxItem, PendingMerge, Reviewer, SlackLink, Tab, Ticket } from '../types'
+import type {
+  Alert,
+  AlertVerdict,
+  Board,
+  BoardLease,
+  BoardPr,
+  BoardReviewer,
+  CheckState,
+  ContextGauge,
+  Focus,
+  InboxItem,
+  PendingMerge,
+  Reviewer,
+  ReviewerState,
+  SetupFacts,
+  SetupStep,
+  SharedBoard,
+  SlackLink,
+  Tab,
+  Ticket,
+} from '../types'
 import { addAlert, asAlerts, investigateArgs, isRelated, parseVerdict, verdictPrompt, watchedDeploys } from './alerts'
 import type { Verdict } from './alerts'
 import {
@@ -10,19 +30,26 @@ import {
   BOARD_QUERY,
   boardSearches,
   countChecks,
+  exhaustedQuota,
   isMergedButOpen,
   isOnBoard,
+  isRateLimited,
   isReadyToMerge,
   namesTicket,
   newlyDeployed,
+  nextReadAt,
   parseBoard,
+  parseQuota,
   parseTickets,
   prChanges,
+  quotaNote,
   teamKeysOf,
   ticketIdIn,
   ticketOf,
   workspaceTitle,
 } from './prs'
+import { asSetupFacts, isEventFlowing, isLinkUp, setupSteps } from './setup'
+import { asLease, asSharedBoard, isLeasedToOther, isNewerBoard, LEASE_MS } from './share'
 import {
   addToInbox,
   applyMarks,
@@ -33,6 +60,7 @@ import {
   parseSidecarLine,
   QUICK_REACTIONS,
   REVIEW_SKILL,
+  scopesShown,
   slackAddress,
   slackRefusal,
   takeLines,
@@ -47,7 +75,9 @@ import { asCounts, bar, contextGauge, kiloTokens, parsePinned, skillButtons, str
 
 const tab = atom({ plugin: 'cockpit', key: 'tab' } as const, 'inbox')
 const inbox = atom({ plugin: 'cockpit', key: 'inbox' } as const, [], { shape: 'inbox-2' })
-const board = atom({ plugin: 'cockpit', key: 'board' } as const, null, { shape: 'board-2' })
+// The stored board's key carries the same shape, so a session of another version never adopts a board it cannot read.
+const BOARD_SHAPE = 'board-3'
+const board = atom({ plugin: 'cockpit', key: 'board' } as const, null, { shape: BOARD_SHAPE })
 const alerts = atom({ plugin: 'cockpit', key: 'alerts' } as const, [], { shape: 'alerts-1' })
 const dismissed = atom({ plugin: 'cockpit', key: 'dismissed' } as const, [])
 const expanded = atom({ plugin: 'cockpit', key: 'expanded' } as const, null)
@@ -61,6 +91,9 @@ const focus = atom({ plugin: 'cockpit', key: 'focus' } as const, null, { shape: 
 const isShowingAllPrs = atom({ plugin: 'cockpit', key: 'isShowingAllPrs' } as const, false)
 const openTicket = atom({ plugin: 'cockpit', key: 'openTicket' } as const, null)
 const confirmingMerge = atom({ plugin: 'cockpit', key: 'confirmingMerge' } as const, null)
+const askingReviewFor = atom({ plugin: 'cockpit', key: 'askingReviewFor' } as const, null)
+const reviewerDraft = atom({ plugin: 'cockpit', key: 'reviewerDraft' } as const, '')
+const setupFacts = atom({ plugin: 'cockpit', key: 'setupFacts' } as const, { scopes: {}, lastEventAt: null }, { shape: 'setup-2' })
 
 const PANE = 'cockpit'
 const PANE_TITLE = 'Cockpit'
@@ -69,6 +102,7 @@ const COMMAND: CommandSpec = {
   description: 'Open the cockpit: the Slack PR inbox, your PRs and tickets, deploy alerts, skill buttons and usage',
   argumentHint: '[inbox|prs|alerts|skills]',
 }
+const SETUP_TAB = 'alerts' satisfies Tab
 const TABS = [
   { id: 'inbox', label: 'Inbox', hotkey: '1' },
   { id: 'prs', label: 'PRs', hotkey: '2' },
@@ -82,9 +116,19 @@ const HANDLED_KEY = 'inboxHandled'
 const ALERTS_KEY = 'alerts'
 const DISMISSED_KEY = 'dismissedPrs'
 const SKILL_COUNTS_KEY = 'skillCounts'
+// One session reads the board for the machine and stores it here; the lease names which one is reading.
+const BOARD_KEY = BOARD_SHAPE
+const LEASE_KEY = 'boardLease'
+const SETUP_KEY = 'setup'
 
 const SHARED_POLL_MS = 15_000
-const BOARD_POLL_MS = 120_000
+// How often a session looks at the stored board: a store read, not a GitHub one.
+const BOARD_TICK_MS = 30_000
+// Slack events come in bursts (a push, its checks, a review); one read follows them all.
+const EVENT_DEBOUNCE_MS = 10_000
+const FORCED_READ_GAP_MS = 30_000
+// Under the read lease, so a Linear call that hangs cannot outlive it.
+const LINEAR_TIMEOUT_MS = 20_000
 const SIDECAR_RESTART_MS = 30_000
 const NOTICE_TOAST_MS = 15_000
 const LINEAR_SERVER = 'claude.ai Linear'
@@ -95,6 +139,7 @@ const VERDICT_MODEL = 'haiku'
 const ALERT_EXCERPT_LENGTH = 400
 const SKILL_HOTKEYS = 'abcdefghijkl'
 const POLISH_SKILL = '/pr-workflows:pr-polish'
+const ASK_REVIEW_SKILL = '/pr-workflows:ask-pr-review-slack'
 const WORKSPACE_SKILL = '/cmux:ticket-workspace'
 const DONE_STATE = 'Done'
 const MERGE_CONFIRM_MS = 10_000
@@ -118,6 +163,13 @@ const CHECK_LOOK = {
   pass: { mark: '✓', color: 'success' },
 } as const satisfies Record<CheckState, { mark: string; color: ThemeKey }>
 
+const REVIEWER_LOOK = {
+  requested: { mark: '👀 ', color: null },
+  approved: { mark: '✓', color: 'success' },
+  changes: { mark: '✗', color: 'error' },
+  commented: { mark: '💬', color: null },
+} as const satisfies Record<ReviewerState, { mark: string; color: ThemeKey | null }>
+
 const SLACK_LOOK = {
   off: 'subtle',
   starting: 'warning',
@@ -133,6 +185,7 @@ type Config = {
   appToken: string
   userToken: string
   alertChannels: string
+  eventChannels: string
   alertWindowMinutes: number
   alertWindowMs: number
   prodEnvironment: string
@@ -151,6 +204,7 @@ function readConfig(options: PluginOptions): Config {
     appToken: optionText(options.slackAppToken, ''),
     userToken: optionText(options.slackUserToken, ''),
     alertChannels: optionText(options.alertChannels, ''),
+    eventChannels: optionText(options.eventChannels, ''),
     alertWindowMinutes: Math.round(minutes),
     alertWindowMs: minutes * MINUTE_MS,
     prodEnvironment: optionText(options.prodEnvironment, 'production'),
@@ -180,17 +234,40 @@ async function announce($: Engine, text: string): Promise<void> {
 
 /** Takes what other sessions stored: the inbox, the alerts and the dismissed PRs. */
 async function syncShared($: Engine): Promise<void> {
-  const [storedInbox, storedMarks, storedAlerts, storedDismissed] = await Promise.all([
+  const [storedInbox, storedMarks, storedAlerts, storedDismissed, storedSetup] = await Promise.all([
     $.store.get(INBOX_KEY),
     $.store.get(HANDLED_KEY),
     $.store.get(ALERTS_KEY),
     $.store.get(DISMISSED_KEY),
+    $.store.get(SETUP_KEY),
   ])
   const next = { inbox: applyMarks(asInbox(storedInbox), asMarks(storedMarks)), alerts: asAlerts(storedAlerts), dismissed: asDismissed(storedDismissed) }
   const [shownInbox, shownAlerts, shownDismissed] = await Promise.all([read($, inbox), read($, alerts), read($, dismissed)])
   if (!isSame(shownInbox, next.inbox)) await update($, inbox, () => next.inbox)
   if (!isSame(shownAlerts, next.alerts)) await update($, alerts, () => next.alerts)
   if (!isSame(shownDismissed, next.dismissed)) await update($, dismissed, () => next.dismissed)
+  const facts = asSetupFacts(storedSetup)
+  const shownFacts = await read($, setupFacts)
+  if (!isSame(shownFacts, facts)) await update($, setupFacts, () => facts)
+}
+
+let setupWrite: Promise<void> = Promise.resolve()
+
+/** Records what the setup checklist learns, for every session; one write at a time, so none overwrites another. */
+function noteSetup($: Engine, learn: (facts: SetupFacts) => SetupFacts): Promise<void> {
+  setupWrite = writeSetup($, { learn, previous: setupWrite })
+  return setupWrite
+}
+
+async function writeSetup($: Engine, { learn, previous }: { learn: (facts: SetupFacts) => SetupFacts; previous: Promise<void> }): Promise<void> {
+  try {
+    await previous
+  } catch {
+    // The earlier write's own caller logs its failure.
+  }
+  const facts = learn(asSetupFacts(await $.store.get(SETUP_KEY)))
+  await $.store.set(SETUP_KEY, facts)
+  await update($, setupFacts, () => facts)
 }
 
 async function showTab($: Engine, shown: Tab): Promise<void> {
@@ -201,7 +278,7 @@ async function showTab($: Engine, shown: Tab): Promise<void> {
 async function takePullRequestMessage($: Engine, config: Config, message: SlackMessage): Promise<void> {
   // A message can arrive before the session's first board read; my own PRs must be known to leave them out.
   const boardBefore = await read($, board)
-  if (boardBefore === null) await refreshBoard($, config)
+  if (boardBefore === null) await refreshBoard($, config, { isForced: false })
   const [storedInbox, storedMarks, shownBoard] = await Promise.all([$.store.get(INBOX_KEY), $.store.get(HANDLED_KEY), read($, board)])
   const marks = asMarks(storedMarks)
   const stored = applyMarks(asInbox(storedInbox), marks)
@@ -231,7 +308,7 @@ async function takeAlert($: Engine, config: Config, message: SlackMessage): Prom
   const isKnown = asAlerts(await $.store.get(ALERTS_KEY)).some(alert => alert.id === message.id)
   if (isKnown) return
   // The deploy this alert follows may be newer than the last poll.
-  await refreshBoard($, config)
+  await refreshBoard($, config, { isForced: true })
   const prs = (await read($, board))?.prs ?? []
   const deployed = watchedDeploys(prs, message.at, config.alertWindowMs)
   const verdict = deployed.length === 0 ? null : await askVerdict($, message.text, deployed)
@@ -261,6 +338,15 @@ async function takeSidecarLine($: Engine, config: Config, line: string): Promise
     await update($, slack, () => parsed.link)
     return
   }
+  if (parsed.kind === 'event') {
+    inBackground($, scheduleForcedRead($, config))
+    const at = await $.clock.now()
+    const isNewBurst = at - lastEventNotedAt >= EVENT_DEBOUNCE_MS
+    if (!isNewBurst) return
+    lastEventNotedAt = at
+    await noteSetup($, facts => ({ ...facts, lastEventAt: at }))
+    return
+  }
   if (parsed.message.isAlertChannel) await takeAlert($, config, parsed.message)
   else await takePullRequestMessage($, config, parsed.message)
 }
@@ -280,6 +366,7 @@ async function runSidecar($: Engine, config: Config): Promise<void> {
         SLACK_APP_TOKEN: config.appToken,
         SLACK_USER_TOKEN: config.userToken,
         COCKPIT_ALERT_CHANNELS: config.alertChannels,
+        COCKPIT_EVENT_CHANNELS: config.eventChannels,
         COCKPIT_LOCK: `${home}/.claude/cockpit-slack.lock`,
       },
     })
@@ -307,7 +394,9 @@ async function runSidecar($: Engine, config: Config): Promise<void> {
   $.clock.after(SIDECAR_RESTART_MS, () => inBackground($, runSidecar($, config)))
 }
 
-async function readPrs($: Engine, config: Config, now: number): Promise<{ prs: BoardPr[] | null; error: string | null }> {
+type PrsRead = { prs: BoardPr[] | null; error: string | null; quota: Board['quota']; isRateLimited: boolean }
+
+async function readPrs($: Engine, config: Config, now: number): Promise<PrsRead> {
   const searches = boardSearches(now)
   let stdout: string
   try {
@@ -315,15 +404,18 @@ async function readPrs($: Engine, config: Config, now: number): Promise<{ prs: B
       ['gh', 'api', 'graphql', '-f', `query=${BOARD_QUERY}`, '-f', `open=${searches.open}`, '-f', `merged=${searches.merged}`],
       { timeoutMs: 30_000 },
     )
-    if (ran.exitCode !== 0) return { prs: null, error: ran.stderr.trim().split('\n')[0] || 'gh could not read your PRs' }
+    if (ran.exitCode !== 0) {
+      const error = ran.stderr.trim().split('\n')[0] || 'gh could not read your PRs'
+      return { prs: null, error, quota: null, isRateLimited: isRateLimited(ran) }
+    }
     stdout = ran.stdout
   } catch (error) {
-    return { prs: null, error: `gh did not run: ${String(error)}` }
+    return { prs: null, error: `gh did not run: ${String(error)}`, quota: null, isRateLimited: false }
   }
   try {
-    return { prs: parseBoard(stdout, config.prodEnvironment), error: null }
+    return { prs: parseBoard(stdout, config.prodEnvironment), error: null, quota: parseQuota(stdout), isRateLimited: false }
   } catch (error) {
-    return { prs: null, error: `GitHub's answer could not be read: ${String(error)}` }
+    return { prs: null, error: `GitHub's answer could not be read: ${String(error)}`, quota: null, isRateLimited: false }
   }
 }
 
@@ -344,12 +436,14 @@ async function readIssues(
 ): Promise<{ tickets: Board['tickets'] | null; error: string | null }> {
   let text: string
   try {
-    const answer = await $.mcp.call(LINEAR_SERVER, 'list_issues', {
+    const call = $.mcp.call(LINEAR_SERVER, 'list_issues', {
       assignee: 'me',
       ...filter,
       limit: 20,
       fields: ['title', 'url', 'status'],
     })
+    const answer = await Promise.race([call, timedOut($, LINEAR_TIMEOUT_MS)])
+    if (answer === null) return { tickets: null, error: `Linear did not answer in ${LINEAR_TIMEOUT_MS / 1000}s` }
     text = answer.content.find(block => block.type === 'text')?.text ?? ''
     if (answer.isError) return { tickets: null, error: text.split('\n')[0] || 'Linear refused the read' }
   } catch (error) {
@@ -362,37 +456,161 @@ async function readIssues(
   }
 }
 
-let boardInFlight: Promise<void> | null = null
-
-/** One board read at a time; a call during a read waits for that read. */
-function refreshBoard($: Engine, config: Config): Promise<void> {
-  boardInFlight ??= readBoard($, config).finally(() => {
-    boardInFlight = null
-  })
-  return boardInFlight
+/** Resolves null once the wait is over: the losing side of a race against a call with no timeout of its own. */
+async function timedOut($: Engine, ms: number): Promise<null> {
+  await $.clock.sleep(ms)
+  return null
 }
 
-async function readBoard($: Engine, config: Config): Promise<void> {
-  const now = await $.clock.now()
-  const [last, prs, tickets] = await Promise.all([read($, board), readPrs($, config, now), readTickets($)])
+let boardRunning: Promise<void> | null = null
+let boardQueued: Promise<void> | null = null
+
+/**
+ * One board sync at a time in this session. An unforced call waits for the one running. A forced call runs after it,
+ * since that one may have found the board not due, or read GitHub before the change that forced this call; the
+ * forced calls made meanwhile share that one queued sync.
+ */
+function refreshBoard($: Engine, config: Config, { isForced }: { isForced: boolean }): Promise<void> {
+  if (boardRunning === null) return startSync($, config, { isForced })
+  if (!isForced) return boardRunning
+  boardQueued ??= syncAfter($, config, boardRunning)
+  return boardQueued
+}
+
+function startSync($: Engine, config: Config, { isForced }: { isForced: boolean }): Promise<void> {
+  const work = syncBoard($, config, { isForced }).finally(() => {
+    if (boardRunning === work) boardRunning = null
+  })
+  boardRunning = work
+  return work
+}
+
+async function syncAfter($: Engine, config: Config, running: Promise<void>): Promise<void> {
+  try {
+    await running
+  } catch {
+    // The running sync's own caller logs its failure.
+  }
+  boardQueued = null
+  await startSync($, config, { isForced: true })
+}
+
+/**
+ * Shows the board the machine's sessions share, and reads it from GitHub and Linear only when it is due, or forced,
+ * and no other session holds the read: however many sessions poll, normally one of them reads. A forced read yields
+ * to another session's lease and tries again shortly, since that session may have read before the change, and
+ * waits out a rate-limit refusal, which GitHub would repeat.
+ */
+async function syncBoard($: Engine, config: Config, { isForced }: { isForced: boolean }): Promise<void> {
+  const [stored, now] = await Promise.all([$.store.get(BOARD_KEY), $.clock.now()])
+  const shared = asSharedBoard(stored)
+  if (shared !== null) await adoptBoard($, config, shared.board)
+  const isDue = isForced || shared === null || now >= shared.nextReadAt
+  if (!isDue) return
+  const owner = await $.session.id()
+  const isLeased = await takeLease($, { owner, now })
+  if (!isLeased) {
+    if (isForced) inBackground($, scheduleForcedRead($, config))
+    return
+  }
+  // GitHub would refuse a forced read before its reset too: that one reads Linear alone.
+  const isGitHubRefused = shared?.board.quota?.isExhausted === true && now < shared.nextReadAt
+  try {
+    if (isGitHubRefused) await readTicketsOnly($, config, { now, shared })
+    else await readBoard($, config, { now, last: shared?.board ?? null })
+  } finally {
+    await releaseLease($, owner)
+  }
+}
+
+/** Claims the read: writes the lease and reads it back, going on only if this session's claim is the one that stuck. */
+async function takeLease($: Engine, { owner, now }: { owner: string; now: number }): Promise<boolean> {
+  const held = asLease(await $.store.get(LEASE_KEY))
+  if (isLeasedToOther({ lease: held, owner, now })) return false
+  await $.store.set(LEASE_KEY, { owner, until: now + LEASE_MS } satisfies BoardLease)
+  const claimed = asLease(await $.store.get(LEASE_KEY))
+  return claimed?.owner === owner
+}
+
+async function releaseLease($: Engine, owner: string): Promise<void> {
+  const held = asLease(await $.store.get(LEASE_KEY))
+  if (held?.owner === owner) await $.store.delete(LEASE_KEY)
+}
+
+async function readBoard($: Engine, config: Config, { now, last }: { now: number; last: Board | null }): Promise<void> {
+  const shown = last ?? (await read($, board))
+  const [prs, tickets, link, facts] = await Promise.all([readPrs($, config, now), readTickets($), read($, slack), read($, setupFacts)])
+  const quota = prs.isRateLimited ? exhaustedQuota(shown?.quota ?? null) : prs.quota
   const next: Board = {
-    prs: prs.prs ?? last?.prs ?? [],
-    tickets: tickets.tickets ?? last?.tickets ?? [],
+    prs: prs.prs ?? shown?.prs ?? [],
+    tickets: tickets.tickets ?? shown?.tickets ?? [],
     error: prs.error,
     ticketsError: tickets.error,
     readAt: now,
+    quota,
   }
+  const hasEvents = config.eventChannels !== '' && isLinkUp(link.state) && isEventFlowing({ facts, now })
+  await $.store.set(BOARD_KEY, { board: next, nextReadAt: nextReadAt({ quota, now, hasEvents }) } satisfies SharedBoard)
+  await adoptBoard($, config, next)
+}
+
+/** Rereads the tickets of a board GitHub refuses for now, keeping its PRs and when it is next due. */
+async function readTicketsOnly($: Engine, config: Config, { now, shared }: { now: number; shared: SharedBoard }): Promise<void> {
+  const tickets = await readTickets($)
+  const next: Board = { ...shared.board, tickets: tickets.tickets ?? shared.board.tickets, ticketsError: tickets.error, readAt: now }
+  await $.store.set(BOARD_KEY, { board: next, nextReadAt: shared.nextReadAt } satisfies SharedBoard)
+  await adoptBoard($, config, next)
+}
+
+/**
+ * Shows a board newer than this session's, toasting what changed since the one it showed. Each session toasts
+ * in its own terminal, as it did when each read its own board.
+ */
+async function adoptBoard($: Engine, config: Config, next: Board): Promise<void> {
+  const shown = await read($, board)
+  if (!isNewerBoard({ shown, shared: next })) return
   await update($, board, () => next)
-  const found = await readFocus($, next.tickets)
-  await update($, focus, () => found)
-  for (const change of prChanges({ last: prs.prs === null ? null : (last?.prs ?? null), next: next.prs })) {
+  await refreshFocus($, next.tickets)
+  for (const change of prChanges({ last: shown?.prs ?? null, next: next.prs })) {
     $.ui.toast(change, { timeoutMs: NOTICE_TOAST_MS })
   }
-  for (const pr of newlyDeployed(last?.prs ?? null, next.prs)) {
+  for (const pr of newlyDeployed(shown?.prs ?? null, next.prs)) {
     $.ui.toast(`${pr.repo}#${pr.number} reached production. Alerts are compared to it for ${config.alertWindowMinutes}m.`, {
       timeoutMs: NOTICE_TOAST_MS,
     })
   }
+}
+
+let isForcedReadScheduled = false
+let lastScheduledReadAt = 0
+let lastEventNotedAt = 0
+
+/**
+ * One forced read once a burst of Slack events has passed, or once another session's lease is gone; at most one
+ * every FORCED_READ_GAP_MS, so a busy event channel cannot spend the quota the back-off saves.
+ */
+async function scheduleForcedRead($: Engine, config: Config): Promise<void> {
+  if (isForcedReadScheduled) return
+  isForcedReadScheduled = true
+  try {
+    const now = await $.clock.now()
+    const wait = Math.max(EVENT_DEBOUNCE_MS, lastScheduledReadAt + FORCED_READ_GAP_MS - now)
+    $.clock.after(wait, () => inBackground($, readScheduled($, config)))
+  } catch (error) {
+    isForcedReadScheduled = false
+    throw error
+  }
+}
+
+async function readScheduled($: Engine, config: Config): Promise<void> {
+  isForcedReadScheduled = false
+  lastScheduledReadAt = await $.clock.now()
+  await refreshBoard($, config, { isForced: true })
+}
+
+async function refreshFocus($: Engine, tickets: readonly Ticket[]): Promise<void> {
+  const found = await readFocus($, tickets)
+  await update($, focus, () => found)
 }
 
 /** The ticket this session works on: the one the cmux workspace title names, else the one its branch names. */
@@ -456,7 +674,7 @@ async function mergePr($: Engine, { config, pr }: { config: Config; pr: BoardPr 
   }
   $.ui.toast(`${label} merged.`, { timeoutMs: NOTICE_TOAST_MS })
   if (!pr.isFromFork) await deleteBranch($, pr)
-  await refreshBoard($, config)
+  await refreshBoard($, config, { isForced: true })
 }
 
 async function deleteBranch($: Engine, pr: BoardPr): Promise<void> {
@@ -492,7 +710,7 @@ async function moveToDone($: Engine, { config, ticket }: { config: Config; ticke
     return
   }
   $.ui.toast(`${ticket.id} moved to Done.`, { timeoutMs: NOTICE_TOAST_MS })
-  await refreshBoard($, config)
+  await refreshBoard($, config, { isForced: true })
 }
 
 let usageInFlight: Promise<void> | null = null
@@ -559,19 +777,28 @@ async function compact($: Engine): Promise<void> {
 
 /** Calls one Slack Web API method as the person, through their user token, and toasts what went wrong. */
 async function callSlack($: Engine, { config, method, body }: { config: Config; method: string; body: Record<string, string> }): Promise<boolean> {
+  let answer: { status: number; text: string }
   try {
-    const answer = await $.http.fetch(`${SLACK_API}/${method}`, {
+    answer = await $.http.fetch(`${SLACK_API}/${method}`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${config.userToken}`, 'Content-Type': 'application/json; charset=utf-8' },
       body: JSON.stringify(body),
     })
-    const refusal = slackRefusal({ status: answer.status, text: answer.text })
-    if (refusal !== null) $.ui.toast(`Slack ${method} failed: ${refusal}.`, { timeoutMs: NOTICE_TOAST_MS })
-    return refusal === null
   } catch (error) {
     $.ui.toast(`Slack ${method} failed: ${String(error)}`, { timeoutMs: NOTICE_TOAST_MS })
     return false
   }
+  inBackground($, noteScopes($, { method, text: answer.text }))
+  const refusal = slackRefusal({ status: answer.status, text: answer.text })
+  if (refusal !== null) $.ui.toast(`Slack ${method} failed: ${refusal}.`, { timeoutMs: NOTICE_TOAST_MS })
+  return refusal === null
+}
+
+/** What this Slack method's answer showed of the app's scopes, kept per method: one method's success says nothing of another's. */
+async function noteScopes($: Engine, { method, text }: { method: string; text: string }): Promise<void> {
+  const verdict = scopesShown(text)
+  if (verdict === null) return
+  await noteSetup($, facts => ({ ...facts, scopes: { ...facts.scopes, [method]: verdict } }))
 }
 
 async function reactTo($: Engine, { config, target, name }: { config: Config; target: SlackTarget; name: string }): Promise<void> {
@@ -604,6 +831,21 @@ async function handleInboxItem($: Engine, item: InboxItem, handledBy: Reviewer |
   await $.store.set(HANDLED_KEY, marks)
   await update($, inbox, shown => applyMarks(shown, marks))
   if (handledBy !== 'dismissed') runSlash($, `${REVIEW_SKILL[handledBy]} ${item.prUrl}`)
+}
+
+async function toggleAskReview($: Engine, rowKey: string): Promise<void> {
+  const open = await read($, askingReviewFor)
+  await update($, reviewerDraft, () => '')
+  await update($, askingReviewFor, () => (open === rowKey ? null : rowKey))
+}
+
+/** Asks the named teammate on Slack to review the PR, through the skill that checks it is ready first. */
+async function askForReview($: Engine, { pr, name }: { pr: BoardPr; name: string }): Promise<void> {
+  const reviewer = name.trim()
+  if (reviewer === '') return
+  runSlash($, `${ASK_REVIEW_SKILL} ${pr.url} ${reviewer}`)
+  await update($, askingReviewFor, () => null)
+  await update($, reviewerDraft, () => '')
 }
 
 async function setDismissed($: Engine, url: string, isDismissed: boolean): Promise<void> {
@@ -651,12 +893,12 @@ export const register: Register = (on, options) => {
     // On timers, not in this dispatch, so the first prompt does not wait on gh, Linear or the store.
     $.clock.after(0, () => {
       inBackground($, syncShared($))
-      inBackground($, refreshBoard($, config))
+      inBackground($, refreshBoard($, config, { isForced: false }))
       inBackground($, refreshUsage($))
       inBackground($, loadSkills($, config))
     })
     $.clock.every(SHARED_POLL_MS, () => inBackground($, syncShared($)))
-    $.clock.every(BOARD_POLL_MS, () => inBackground($, refreshBoard($, config)))
+    $.clock.every(BOARD_TICK_MS, () => inBackground($, refreshBoard($, config, { isForced: false })))
     if (hasSlack) inBackground($, runSidecar($, config))
     return started
   })
@@ -665,7 +907,9 @@ export const register: Register = (on, options) => {
     const asked = e.args.trim().toLowerCase()
     if (isTab(asked)) await update($, tab, () => asked)
     await $.ui.open({ id: PANE, title: PANE_TITLE, focus: true })
-    inBackground($, refreshBoard($, config))
+    inBackground($, refreshBoard($, config, { isForced: true }))
+    const shown = await read($, board)
+    inBackground($, refreshFocus($, shown?.tickets ?? []))
     return { text: 'The cockpit is in the pane.' }
   })
 
@@ -692,7 +936,7 @@ export const register: Register = (on, options) => {
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const { Box, Text, Button, Link, Input } = $.ui.resolve(e)
-    const [storedTab, items, shownBoard, shownAlerts, hidden, openReply, draft, confirming, now] = await Promise.all([
+    const [storedTab, items, shownBoard, shownAlerts, hidden, openReply, draft, confirming, askingFor, reviewerName, facts, link, now] = await Promise.all([
       read($, tab),
       read($, inbox),
       read($, board),
@@ -701,11 +945,23 @@ export const register: Register = (on, options) => {
       read($, replyingTo),
       read($, replyDraft),
       read($, confirmingMerge),
+      read($, askingReviewFor),
+      read($, reviewerDraft),
+      read($, setupFacts),
+      read($, slack),
       $.clock.now(),
     ])
     // A tab an earlier version stored may no longer exist.
     const shownTab: Tab = isTab(storedTab) ? storedTab : 'inbox'
     const unhandled = waiting(items)
+    const stepsLeft = setupSteps({
+      hasTokens: hasSlack,
+      link: link.state,
+      alertChannels: config.alertChannels,
+      eventChannels: config.eventChannels,
+      facts,
+      now,
+    }).filter(step => !step.isDone)
     const openPrs = (shownBoard?.prs ?? []).filter(pr => isOnBoard({ pr, now }) && !hidden.includes(pr.url))
     const failing = openPrs.filter(pr => pr.state === 'OPEN' && pr.checks.some(check => check.state === 'fail')).length
     const related = shownAlerts.filter(alert => alert.verdict !== null && isRelated(alert.verdict)).length
@@ -766,8 +1022,7 @@ export const register: Register = (on, options) => {
       )
     }
 
-    async function drawInbox() {
-      const link = await read($, slack)
+    function drawInbox() {
       const handled = items.filter(item => item.handledBy !== null).slice(0, 5)
       return (
         <Box flexDirection="column">
@@ -836,6 +1091,33 @@ export const register: Register = (on, options) => {
       )
     }
 
+    function drawAskReview({ key, rowKey }: { key: string; rowKey: string }) {
+      return <Button key={key} plain dimColor={askingFor !== rowKey} label="📣 Ask review" onPress={() => toggleAskReview($, rowKey)} />
+    }
+
+    /** The field a reviewer's name is typed in, under the row whose Ask review was pressed. */
+    function drawReviewerField({ rowKey, pr }: { rowKey: string; pr: BoardPr }) {
+      if (askingFor !== rowKey) return null
+      return (
+        <Input
+          key={`ask-review-name-${rowKey}`}
+          placeholder="Who should review it? (a name)"
+          submitLabel="Ask"
+          autoFocus
+          value={reviewerName}
+          onInput={text => update($, reviewerDraft, () => text)}
+          onSubmit={name => askForReview($, { pr, name })}
+        />
+      )
+    }
+
+    function drawReviewer(reviewer: BoardReviewer) {
+      const look = REVIEWER_LOOK[reviewer.state]
+      const label = ` ${look.mark}${reviewer.name}`
+      if (look.color === null) return <Text key={`reviewer-${reviewer.name}`} dimColor>{label}</Text>
+      return <Text key={`reviewer-${reviewer.name}`} color={look.color}>{label}</Text>
+    }
+
     function drawPolish({ key, pr }: { key: string; pr: BoardPr }) {
       return <Button key={key} plain label="✦ Polish" onPress={() => runSlash($, `${POLISH_SKILL} ${pr.url}`)} />
     }
@@ -866,6 +1148,7 @@ export const register: Register = (on, options) => {
               onPress={() => setDismissed($, pr.url, !isHidden)}
             />
             {pr.state === 'OPEN' && drawPolish({ key: `polish-${pr.url}`, pr })}
+            {pr.state === 'OPEN' && drawAskReview({ key: `ask-review-${pr.url}`, rowKey: pr.url })}
             {isReadyToMerge(pr) && (
               <Button
                 key={`merge-${pr.url}`}
@@ -904,6 +1187,8 @@ export const register: Register = (on, options) => {
                       </Text>
                     ),
                 )}
+              {pr.state === 'OPEN' && pr.reviewers.length > 0 && <Text dimColor> ·</Text>}
+              {pr.state === 'OPEN' && pr.reviewers.map(drawReviewer)}
               {waitingThreads > 0 && <Text color="warning"> · {waitingThreads} open</Text>}
               {repliedThreads > 0 && <Text dimColor> · {repliedThreads} replied</Text>}
               {ticket !== null && (
@@ -915,6 +1200,7 @@ export const register: Register = (on, options) => {
               <Text dimColor> · {pr.title}</Text>
             </Text>
           </Box>
+          {drawReviewerField({ rowKey: pr.url, pr })}
           {isOpen && (
             <Box flexDirection="column" paddingLeft={4}>
               {pr.checks
@@ -965,14 +1251,19 @@ export const register: Register = (on, options) => {
     }
 
     function drawTicketPr({ ticketId, pr }: { ticketId: string; pr: BoardPr }) {
+      const rowKey = `${ticketId} ${pr.url}`
       return (
-        <Box key={`ticket-pr-${ticketId}-${pr.url}`} flexDirection="row" gap={1}>
-          {pr.state === 'OPEN' && drawPolish({ key: `ticket-polish-${ticketId}-${pr.url}`, pr })}
-          <Text wrap="truncate-end">
-            <Link href={pr.url} label={prLabel(pr)} />
-            <Text color={pr.state === 'OPEN' ? 'warning' : 'merged'}> {stateWord(pr)}</Text>
-            <Text dimColor> · {pr.title}</Text>
-          </Text>
+        <Box key={`ticket-pr-${ticketId}-${pr.url}`} flexDirection="column">
+          <Box flexDirection="row" gap={1}>
+            {pr.state === 'OPEN' && drawPolish({ key: `ticket-polish-${ticketId}-${pr.url}`, pr })}
+            {pr.state === 'OPEN' && drawAskReview({ key: `ticket-ask-review-${ticketId}-${pr.url}`, rowKey })}
+            <Text wrap="truncate-end">
+              <Link href={pr.url} label={prLabel(pr)} />
+              <Text color={pr.state === 'OPEN' ? 'warning' : 'merged'}> {stateWord(pr)}</Text>
+              <Text dimColor> · {pr.title}</Text>
+            </Text>
+          </Box>
+          {drawReviewerField({ rowKey, pr })}
         </Box>
       )
     }
@@ -1044,6 +1335,7 @@ export const register: Register = (on, options) => {
       const focusId = focused?.ticketId ?? null
       const isFiltered = focusId !== null && !showsAll
       const listed = isFiltered ? openPrs.filter(pr => namesTicket({ pr, ticketId: focusId })) : openPrs
+      const slowedNote = quotaNote(shownBoard.quota)
       return (
         <Box flexDirection="column">
           {heading('Tickets')}
@@ -1062,7 +1354,7 @@ export const register: Register = (on, options) => {
           {showsHidden && hiddenPrs.map(pr => drawPr(pr, false))}
           <Text> </Text>
           <Box flexDirection="row" gap={1}>
-            <Button key="refresh" hotkey="r" label="Refresh" onPress={() => inBackground($, refreshBoard($, config))} />
+            <Button key="refresh" hotkey="r" label="Refresh" onPress={() => inBackground($, refreshBoard($, config, { isForced: true }))} />
             {hiddenPrs.length > 0 && (
               <Button
                 key="dismissed"
@@ -1071,8 +1363,37 @@ export const register: Register = (on, options) => {
               />
             )}
             <Text dimColor>read {age(shownBoard.readAt, now)} ago</Text>
+            {slowedNote !== null && <Text color="warning">· {slowedNote}</Text>}
           </Box>
         </Box>
+      )
+    }
+
+    /** What the cockpit still needs set up, each with what to do; nothing once all is done. */
+    function drawSetup(steps: readonly SetupStep[]) {
+      if (steps.length === 0) return null
+      return (
+        <Box key="setup" flexDirection="column">
+          {heading('Setup')}
+          {steps.map(step => (
+            <Text key={`setup-${step.id}`} wrap="wrap">
+              <Text color="warning">○ {step.label}</Text>
+              <Text dimColor> · {step.todo}</Text>
+            </Text>
+          ))}
+          <Text> </Text>
+        </Box>
+      )
+    }
+
+    function drawSetupHint(steps: readonly SetupStep[]) {
+      const isHidden = steps.length === 0 || shownTab === SETUP_TAB
+      if (isHidden) return null
+      const hotkey = TABS.find(entry => entry.id === SETUP_TAB)?.hotkey ?? ''
+      return (
+        <Text key="setup-hint" color="warning" wrap="truncate-end">
+          ⚠ Setup: {steps.length} step{steps.length === 1 ? '' : 's'} left · press {hotkey}
+        </Text>
       )
     }
 
@@ -1082,11 +1403,7 @@ export const register: Register = (on, options) => {
       )
       return (
         <Box flexDirection="column">
-          {config.alertChannels === '' && (
-            <Text dimColor wrap="wrap">
-              No alert channel is set. Name the monitoring channels under cockpit in /config.
-            </Text>
-          )}
+          {drawSetup(stepsLeft)}
           {watched.map(pr => (
             <Text key={`watch-${pr.url}`} color="warning" wrap="truncate-end">
               Watching {pr.repo}#{pr.number} for {age(now, (pr.deployedAt ?? now) + config.alertWindowMs)} more
@@ -1221,6 +1538,7 @@ export const register: Register = (on, options) => {
           <Button key="compact" plain dimColor label="⇣ Compact" onPress={() => compact($)} />
         </Box>
         {await drawUsageStrip()}
+        {drawSetupHint(stepsLeft)}
         {await drawTab()}
       </Box>
     )

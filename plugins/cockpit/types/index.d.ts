@@ -36,6 +36,11 @@ export type BoardThread = {
   isReplied: boolean
 }
 
+export type ReviewerState = 'requested' | 'approved' | 'changes' | 'commented'
+
+/** Someone on an open PR other than its author: asked for a review, or the last review they left. */
+export type BoardReviewer = { name: string; state: ReviewerState }
+
 export type BoardPr = {
   url: string
   repo: string
@@ -51,8 +56,13 @@ export type BoardPr = {
   reviewDecision: 'APPROVED' | 'CHANGES_REQUESTED' | 'REVIEW_REQUIRED' | null
   hasConflicts: boolean
   checks: BoardCheck[]
-  /** Unresolved review threads only. */
+  /** GitHub's verdict over all the checks, the ones past the page the board reads included; null when it has none. */
+  checksState: CheckState | null
+  /** Unresolved review threads only; an open PR's alone. */
   threads: BoardThread[]
+  /** An open PR's alone. */
+  reviewers: BoardReviewer[]
+  /** A merged PR's alone: what an alert is compared to. */
   files: string[]
   mergedAt: number | null
   /** When the merge commit's deployment to production succeeded. */
@@ -79,13 +89,31 @@ export type Focus = {
   source: 'workspace' | 'branch'
 }
 
+/** GitHub's GraphQL points for the hour, as the board's last read left them. */
+export type Quota = {
+  limit: number
+  remaining: number
+  resetAt: number | null
+  /** What the board's query cost. */
+  cost: number
+  /** GitHub refused the read for its rate limit. */
+  isExhausted: boolean
+}
+
 export type Board = {
   prs: BoardPr[]
   tickets: Ticket[]
   error: string | null
   ticketsError: string | null
   readAt: number
+  quota: Quota | null
 }
+
+/** The board one session read for every session on the machine, and when the next read is due. */
+export type SharedBoard = { board: Board; nextReadAt: number }
+
+/** Which session reads the board now, and until when its claim holds. */
+export type BoardLease = { owner: string; until: number }
 
 export type AlertVerdict = 'likely' | 'unlikely' | 'unclear'
 
@@ -106,6 +134,20 @@ export type SlackLink = {
   state: 'off' | 'starting' | 'standby' | 'connected' | 'error'
   detail: string
 }
+
+/** What Slack's answers showed of the app's scopes: a reaction or reply that went through, or one refused for a scope. */
+export type ScopeVerdict = 'ok' | 'missing'
+
+/** What the setup checklist reads beyond the options, kept in the store for every session. */
+export type SetupFacts = {
+  /** Per Slack method, whether its last call went through or was refused for a scope. */
+  scopes: Record<string, ScopeVerdict>
+  /** When the sidecar last forwarded a message from an event channel. */
+  lastEventAt: number | null
+}
+
+/** One thing the cockpit needs set up: whether it is, and what to do when it is not. */
+export type SetupStep = { id: string; label: string; isDone: boolean; todo: string }
 
 export type UsageLimit = { label: string; percent: number; resetsAt: number | null }
 
@@ -148,6 +190,10 @@ declare module 'claude-code' {
       openTicket: string | null
       /** The PR whose Merge was pressed once, and when: a second press soon after merges it. */
       confirmingMerge: PendingMerge | null
+      /** The row whose ask-for-review field is open, and the reviewer typed in it. */
+      askingReviewFor: string | null
+      reviewerDraft: string
+      setupFacts: Shaped<SetupFacts>
     }
   }
 }
