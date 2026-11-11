@@ -8,14 +8,6 @@ const GIT_VALUE_OPTIONS = new Set(['-C', '-c', '--git-dir', '--work-tree', '--na
 const GH_VALUE_OPTIONS = new Set(['-R', '--repo'])
 const GIT_WRITES = new Set(['commit', 'push'])
 const GH_PR_WRITES = new Set(['create', 'merge'])
-// What else a command does to a PR, so the status band rereads it.
-const GH_PR_CHANGES = new Set(['create', 'merge', 'ready', 'edit', 'close', 'reopen', 'review', 'comment'])
-const GH_API_VALUE_OPTIONS = new Set([
-  '-X', '--method', '-f', '--raw-field', '-F', '--field', '-H', '--header', '--input',
-  '-q', '--jq', '-t', '--template', '--hostname', '--cache', '-p', '--preview',
-])
-const GH_API_SENDS = new Set(['-f', '--raw-field', '-F', '--field', '--input'])
-const PR_ENDPOINT = /(^|\/)(pulls|issues)\/\d+(\/|$)/
 
 type Word = { text: string; isQuoted: boolean }
 
@@ -84,7 +76,7 @@ function positionals(args: readonly string[], valueOptions: ReadonlySet<string>,
 
 type Call =
   | { program: 'git'; subcommand: string | undefined }
-  | { program: 'gh'; group: string | undefined; action: string | undefined; args: string[] }
+  | { program: 'gh'; group: string | undefined; action: string | undefined }
 
 /** Quoted inner commands (`bash -c "git push"`) included. */
 function calls(command: string): Call[] {
@@ -97,9 +89,8 @@ function calls(command: string): Call[] {
         found.push({ program: 'git', subcommand: positionals(texts.slice(index + 1), GIT_VALUE_OPTIONS, 'leading')[0] })
       } else if (name === 'gh') {
         // gh takes its flags anywhere: `gh pr -R owner/repo merge 3`.
-        const args = texts.slice(index + 1)
-        const [group, action] = positionals(args, GH_VALUE_OPTIONS, 'all')
-        found.push({ program: 'gh', group, action, args })
+        const [group, action] = positionals(texts.slice(index + 1), GH_VALUE_OPTIONS, 'all')
+        found.push({ program: 'gh', group, action })
       }
     })
     for (const word of words) {
@@ -115,27 +106,6 @@ export function isGitWrite(command: string): boolean {
       ? GIT_WRITES.has(call.subcommand ?? '')
       : call.group === 'pr' && GH_PR_WRITES.has(call.action ?? ''),
   )
-}
-
-export function changesPr(command: string): boolean {
-  return calls(command).some(call => {
-    if (call.program === 'git') return call.subcommand === 'push'
-    if (call.group === 'api') return isPrApiWrite(call.args.slice(call.args.indexOf('api') + 1))
-    return call.group === 'pr' && GH_PR_CHANGES.has(call.action ?? '')
-  })
-}
-
-/** A `gh api` call that sends something to a PR or issue endpoint, or a GraphQL mutation. */
-function isPrApiWrite(args: readonly string[]): boolean {
-  const endpoint = positionals(args, GH_API_VALUE_OPTIONS, 'all')[0] ?? ''
-  if (endpoint === 'graphql') return args.some(arg => /\bmutation\b/.test(arg))
-  if (!PR_ENDPOINT.test(endpoint)) return false
-  const method = args.find((arg, index) => index > 0 && (args[index - 1] === '-X' || args[index - 1] === '--method'))
-  return method === undefined ? args.some(arg => GH_API_SENDS.has(arg)) : method.toUpperCase() !== 'GET'
-}
-
-export function createsPr(command: string): boolean {
-  return calls(command).some(call => call.program === 'gh' && call.group === 'pr' && call.action === 'create')
 }
 
 export function runsGit(command: string): boolean {
