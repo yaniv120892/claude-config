@@ -47,6 +47,8 @@ type WorldOptions = {
   stored?: Record<string, unknown>
   /** The sidecar stays up after printing its lines, as a live connection does. */
   staysConnected?: boolean
+  /** How long gh takes to answer the board's query. */
+  ghDelayMs?: number
 }
 
 const OPEN_ROWS = [
@@ -59,7 +61,7 @@ const MERGED_ROWS = [
 ]
 
 /** A session with two open PRs and one deployed ten minutes ago, a sidecar that prints `lines`, in the cmux workspace titled `workspace`. */
-function fakeWorld(on: On, { lines = [], slackAnswer = '{"ok":true}', workspace = 'billing', stored = {}, staysConnected = false }: WorldOptions = {}) {
+function fakeWorld(on: On, { lines = [], slackAnswer = '{"ok":true}', workspace = 'billing', stored = {}, staysConnected = false, ghDelayMs = 0 }: WorldOptions = {}) {
   const clock = mock.clock(on, { now: NOW })
   mock.store(on, stored)
   mock.env(on, { HOME: '/home/me', CMUX_WORKSPACE_ID: 'ws-mine' })
@@ -116,10 +118,11 @@ function fakeWorld(on: On, { lines = [], slackAnswer = '{"ok":true}', workspace 
           : [{ id: 'YAN-9', title: 'Done a month ago', url: 'https://linear.app/x/issue/YAN-9', status: 'Done' }]
     return { value: { content: [{ type: 'text', text: JSON.stringify({ issues }) }], isError: false } }
   })
-  on('process.run', ($, e) => {
+  on('process.run', async ($, e) => {
     ran.push(e.argv.join(' '))
     if (e.argv[0] === 'cmux') return ok(workspaceListing(workspace))
     if (e.argv[0] === 'git') return ok('main\n')
+    if (ghDelayMs > 0) await clock.sleep(ghDelayMs)
     return ok(boardAnswer(board.open, board.merged, board.rateLimit))
   })
   on('model.complete', ($, e) => {
@@ -571,6 +574,18 @@ describe('one board reader per machine', () => {
 
     await clock.advance(30_000)
     expect(boardReads(ran)).toBe(1)
+  })
+})
+
+describe('a forced read', () => {
+  test('asked for while an unforced read runs, it runs once that one ends rather than riding on it', async ($, on) => {
+    const { clock, ran } = fakeWorld(on, { ghDelayMs: 5_000 })
+    await start($, clock)
+    expect(boardReads(ran)).toBe(1)
+    await clock.advance(1_000)
+    await $.command.run(slash('cockpit', 'prs'))
+    await clock.advance(6_000)
+    expect(boardReads(ran)).toBe(2)
   })
 })
 

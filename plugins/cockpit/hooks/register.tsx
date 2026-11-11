@@ -435,14 +435,32 @@ async function readIssues(
   }
 }
 
-let boardInFlight: Promise<void> | null = null
+type BoardSync = { work: Promise<void>; isForced: boolean }
 
-/** One board sync at a time in this session; a call during one waits for it. */
+let boardInFlight: BoardSync | null = null
+
+/**
+ * One board sync at a time in this session. A call waits for the one running, except a forced call during an
+ * unforced one, which may have found the board not due: it runs once that one ends, so an event is never lost.
+ */
 function refreshBoard($: Engine, config: Config, { isForced }: { isForced: boolean }): Promise<void> {
-  boardInFlight ??= syncBoard($, config, { isForced }).finally(() => {
-    boardInFlight = null
+  const running = boardInFlight
+  const isCovered = running !== null && (running.isForced || !isForced)
+  if (isCovered) return running.work
+  const work = syncAfter($, config, { isForced, previous: running?.work ?? null }).finally(() => {
+    if (boardInFlight?.work === work) boardInFlight = null
   })
-  return boardInFlight
+  boardInFlight = { work, isForced }
+  return work
+}
+
+async function syncAfter($: Engine, config: Config, { isForced, previous }: { isForced: boolean; previous: Promise<void> | null }): Promise<void> {
+  try {
+    await previous
+  } catch {
+    // The earlier sync's own caller logs its failure.
+  }
+  await syncBoard($, config, { isForced })
 }
 
 /**
