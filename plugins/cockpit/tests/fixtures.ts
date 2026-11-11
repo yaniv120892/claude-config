@@ -6,9 +6,12 @@ type RowOptions = {
   checks?: object[]
   threads?: object[]
   title?: string
+  hasDeploys?: boolean
+  reviewDecision?: string | null
+  isFromFork?: boolean
 }
 
-export function row({ number, state = 'OPEN', mergedAt = null, deployments = [], checks = [], threads = [], title }: RowOptions) {
+export function row({ number, state = 'OPEN', mergedAt = null, deployments = [], checks = [], threads = [], title, hasDeploys = true, reviewDecision = 'REVIEW_REQUIRED', isFromFork = false }: RowOptions) {
   return {
     number,
     title: title ?? `feat(YAN-${number}): change ${number}`,
@@ -16,11 +19,13 @@ export function row({ number, state = 'OPEN', mergedAt = null, deployments = [],
     isDraft: false,
     state,
     mergedAt,
-    reviewDecision: 'REVIEW_REQUIRED',
+    reviewDecision,
     mergeable: 'MERGEABLE',
     headRefName: `yan-${number}-change`,
+    headRefOid: `sha${number}`,
+    isCrossRepository: isFromFork,
     author: { login: 'me' },
-    repository: { nameWithOwner: 'acme/app' },
+    repository: { nameWithOwner: 'acme/app', deployments: { totalCount: hasDeploys ? 3 : 0 } },
     mergeCommit: state === 'MERGED' ? { deployments: { nodes: deployments.map(d => ({ ...d, statuses: { nodes: d.statuses } })) } } : null,
     commits: { nodes: [{ commit: { statusCheckRollup: { contexts: { nodes: checks } } } }] },
     reviewThreads: { nodes: threads },

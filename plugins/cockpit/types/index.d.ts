@@ -42,6 +42,10 @@ export type BoardPr = {
   number: number
   title: string
   branch: string
+  /** The head commit the board read; a merge names it, so a later push makes the merge refuse. */
+  headSha: string
+  /** The head branch lives in a fork, so the base repo holds no branch of it to delete. */
+  isFromFork: boolean
   state: 'OPEN' | 'MERGED'
   isDraft: boolean
   reviewDecision: 'APPROVED' | 'CHANGES_REQUESTED' | 'REVIEW_REQUIRED' | null
@@ -53,6 +57,8 @@ export type BoardPr = {
   mergedAt: number | null
   /** When the merge commit's deployment to production succeeded. */
   deployedAt: number | null
+  /** Whether the repo has any deployment at all; a repo with none is finished at merge. */
+  hasDeploys: boolean
 }
 
 export type Ticket = {
@@ -63,6 +69,9 @@ export type Ticket = {
   /** Done within the last day; a day on, it leaves the board. */
   isDone: boolean
 }
+
+/** A Merge pressed once: which PR, and when. */
+export type PendingMerge = { url: string; at: number }
 
 /** The ticket this session works on, and where its id was found. */
 export type Focus = {
@@ -137,6 +146,8 @@ declare module 'claude-code' {
       isShowingAllPrs: boolean
       /** The ticket row expanded to list its PRs. */
       openTicket: string | null
+      /** The PR whose Merge was pressed once, and when: a second press soon after merges it. */
+      confirmingMerge: PendingMerge | null
     }
   }
 }

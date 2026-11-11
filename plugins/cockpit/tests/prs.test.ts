@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { boardSearches, countChecks, isOnBoard, newlyDeployed, parseBoard, parseTickets, ticketIdIn, ticketOf, workspaceTitle } from '../hooks/prs'
+import { boardSearches, countChecks, isMergedButOpen, isOnBoard, isReadyToMerge, newlyDeployed, parseBoard, parseTickets, prChanges, ticketIdIn, ticketOf, workspaceTitle } from '../hooks/prs'
 import { boardAnswer, row, thread } from './fixtures'
 
 const CHECKS = [
@@ -100,5 +100,39 @@ describe('the ticket a workspace works on', () => {
     const listing = JSON.stringify({ workspaces: [{ id: 'a', title: 'Hermes' }, { id: 'b', title: 'YAN-9 work' }] })
     expect(workspaceTitle({ listing, workspaceId: 'b' })).toBe('YAN-9 work')
     expect(workspaceTitle({ listing, workspaceId: 'c' })).toBe(null)
+  })
+})
+
+describe('what the board acts on', () => {
+  const board = (open: object[], merged: object[] = []) => parseBoard(boardAnswer(open, merged), 'production')
+  const ticket = { id: 'YAN-3', title: 'Receipts', url: '', status: 'In Progress', isDone: false }
+
+  test('a PR is ready to merge when green, free of conflicts, and approved or needing no review', async () => {
+    const [needsReview, approved, free, failing] = board([
+      row({ number: 1 }),
+      row({ number: 2, reviewDecision: 'APPROVED' }),
+      row({ number: 3, reviewDecision: null }),
+      row({ number: 4, reviewDecision: null, checks: [{ __typename: 'CheckRun', name: 'lint', status: 'COMPLETED', conclusion: 'FAILURE', detailsUrl: '' }] }),
+    ])
+    expect([needsReview, approved, free, failing].map(pr => pr !== undefined && isReadyToMerge(pr))).toEqual([false, true, true, false])
+  })
+
+  test('the first read toasts nothing, and a PR that only stayed failing toasts nothing again', async () => {
+    const failing = board([row({ number: 1, checks: [{ __typename: 'CheckRun', name: 'lint', status: 'COMPLETED', conclusion: 'FAILURE', detailsUrl: '' }] })])
+    expect(prChanges({ last: null, next: failing })).toEqual([])
+    expect(prChanges({ last: failing, next: failing })).toEqual([])
+  })
+
+  test('a ticket is left open when a PR naming it merged and none naming it is open', async () => {
+    const merged = board([], [row({ number: 3, state: 'MERGED', mergedAt: '2026-11-01T10:20:00Z' })])
+    const stillOpen = board([row({ number: 3 })], [row({ number: 3, state: 'MERGED', mergedAt: '2026-11-01T10:20:00Z' })])
+    expect(isMergedButOpen({ ticket, prs: merged })).toBe(true)
+    expect(isMergedButOpen({ ticket, prs: stillOpen })).toBe(false)
+    expect(isMergedButOpen({ ticket: { ...ticket, isDone: true }, prs: merged })).toBe(false)
+  })
+
+  test('reads whether the repo deploys at all', async () => {
+    const [deploys, never] = board([row({ number: 1 }), row({ number: 2, hasDeploys: false })])
+    expect([deploys?.hasDeploys, never?.hasDeploys]).toEqual([true, false])
   })
 })

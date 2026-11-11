@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { CommandSpec, EngineInterface as Engine, PluginOptions, Register, ThemeKey } from 'claude-code'
 
-import type { Alert, AlertVerdict, Board, BoardPr, CheckState, ContextGauge, Focus, InboxItem, Reviewer, SlackLink, Tab, Ticket } from '../types'
+import type { Alert, AlertVerdict, Board, BoardPr, CheckState, ContextGauge, Focus, InboxItem, PendingMerge, Reviewer, SlackLink, Tab, Ticket } from '../types'
 import { addAlert, asAlerts, investigateArgs, isRelated, parseVerdict, verdictPrompt, watchedDeploys } from './alerts'
 import type { Verdict } from './alerts'
 import {
@@ -10,11 +10,14 @@ import {
   BOARD_QUERY,
   boardSearches,
   countChecks,
+  isMergedButOpen,
   isOnBoard,
+  isReadyToMerge,
   namesTicket,
   newlyDeployed,
   parseBoard,
   parseTickets,
+  prChanges,
   teamKeysOf,
   ticketIdIn,
   ticketOf,
@@ -57,6 +60,7 @@ const replyDraft = atom({ plugin: 'cockpit', key: 'replyDraft' } as const, '')
 const focus = atom({ plugin: 'cockpit', key: 'focus' } as const, null, { shape: 'focus-1' })
 const isShowingAllPrs = atom({ plugin: 'cockpit', key: 'isShowingAllPrs' } as const, false)
 const openTicket = atom({ plugin: 'cockpit', key: 'openTicket' } as const, null)
+const confirmingMerge = atom({ plugin: 'cockpit', key: 'confirmingMerge' } as const, null)
 
 const PANE = 'cockpit'
 const PANE_TITLE = 'Cockpit'
@@ -91,6 +95,9 @@ const VERDICT_MODEL = 'haiku'
 const ALERT_EXCERPT_LENGTH = 400
 const SKILL_HOTKEYS = 'abcdefghijkl'
 const POLISH_SKILL = '/pr-workflows:pr-polish'
+const WORKSPACE_SKILL = '/cmux:ticket-workspace'
+const DONE_STATE = 'Done'
+const MERGE_CONFIRM_MS = 10_000
 const INVESTIGATE_SKILL = 'dev-workflows:investigate-alert'
 const MINUTE_MS = 60_000
 
@@ -378,6 +385,9 @@ async function readBoard($: Engine, config: Config): Promise<void> {
   await update($, board, () => next)
   const found = await readFocus($, next.tickets)
   await update($, focus, () => found)
+  for (const change of prChanges({ last: prs.prs === null ? null : (last?.prs ?? null), next: next.prs })) {
+    $.ui.toast(change, { timeoutMs: NOTICE_TOAST_MS })
+  }
   for (const pr of newlyDeployed(last?.prs ?? null, next.prs)) {
     $.ui.toast(`${pr.repo}#${pr.number} reached production. Alerts are compared to it for ${config.alertWindowMinutes}m.`, {
       timeoutMs: NOTICE_TOAST_MS,
@@ -423,6 +433,66 @@ async function readBranch($: Engine): Promise<string | null> {
     $.ui.log(`cockpit: the branch could not be read: ${String(error)}`, { to: 'debug' })
     return null
   }
+}
+
+/**
+ * Squash-merges the PR through the API, so no local checkout is touched, then deletes its branch.
+ * It names the head the board showed: a push since then makes GitHub refuse the merge.
+ */
+async function mergePr($: Engine, { config, pr }: { config: Config; pr: BoardPr }): Promise<void> {
+  await update($, confirmingMerge, () => null)
+  const label = `${pr.repo}#${pr.number}`
+  try {
+    const merged = await $.process.run([
+      'gh', 'api', '-X', 'PUT', `repos/${pr.repo}/pulls/${pr.number}/merge`, '-f', 'merge_method=squash', '-f', `sha=${pr.headSha}`,
+    ])
+    if (merged.exitCode !== 0) {
+      $.ui.toast(`${label} did not merge: ${merged.stderr.trim().split('\n')[0] || 'gh refused'}`, { timeoutMs: NOTICE_TOAST_MS })
+      return
+    }
+  } catch (error) {
+    $.ui.toast(`${label} did not merge: ${String(error)}`, { timeoutMs: NOTICE_TOAST_MS })
+    return
+  }
+  $.ui.toast(`${label} merged.`, { timeoutMs: NOTICE_TOAST_MS })
+  if (!pr.isFromFork) await deleteBranch($, pr)
+  await refreshBoard($, config)
+}
+
+async function deleteBranch($: Engine, pr: BoardPr): Promise<void> {
+  try {
+    const deleted = await $.process.run(['gh', 'api', '-X', 'DELETE', `repos/${pr.repo}/git/refs/heads/${pr.branch}`])
+    if (deleted.exitCode !== 0) $.ui.log(`cockpit: the branch of ${pr.repo}#${pr.number} was not deleted: ${deleted.stderr.trim()}`, { to: 'debug' })
+  } catch (error) {
+    $.ui.log(`cockpit: the branch of ${pr.repo}#${pr.number} was not deleted: ${String(error)}`, { to: 'debug' })
+  }
+}
+
+/** The first press arms Merge; a second press within the confirm window merges. */
+async function pressMerge($: Engine, { config, pr }: { config: Config; pr: BoardPr }): Promise<void> {
+  const [confirming, now] = await Promise.all([read($, confirmingMerge), $.clock.now()])
+  if (isConfirming({ confirming, url: pr.url, now })) return mergePr($, { config, pr })
+  await update($, confirmingMerge, () => ({ url: pr.url, at: now }))
+}
+
+function isConfirming({ confirming, url, now }: { confirming: PendingMerge | null; url: string; now: number }): boolean {
+  return confirming !== null && confirming.url === url && now - confirming.at <= MERGE_CONFIRM_MS
+}
+
+async function moveToDone($: Engine, { config, ticket }: { config: Config; ticket: Ticket }): Promise<void> {
+  try {
+    const answer = await $.mcp.call(LINEAR_SERVER, 'save_issue', { id: ticket.id, state: DONE_STATE })
+    if (answer.isError) {
+      const reason = answer.content.find(block => block.type === 'text')?.text ?? 'Linear refused it'
+      $.ui.toast(`${ticket.id} did not move to Done: ${reason.split('\n')[0]}`, { timeoutMs: NOTICE_TOAST_MS })
+      return
+    }
+  } catch (error) {
+    $.ui.toast(`${ticket.id} did not move to Done: ${String(error)}`, { timeoutMs: NOTICE_TOAST_MS })
+    return
+  }
+  $.ui.toast(`${ticket.id} moved to Done.`, { timeoutMs: NOTICE_TOAST_MS })
+  await refreshBoard($, config)
 }
 
 let usageInFlight: Promise<void> | null = null
@@ -622,7 +692,7 @@ export const register: Register = (on, options) => {
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const { Box, Text, Button, Link, Input } = $.ui.resolve(e)
-    const [storedTab, items, shownBoard, shownAlerts, hidden, openReply, draft, now] = await Promise.all([
+    const [storedTab, items, shownBoard, shownAlerts, hidden, openReply, draft, confirming, now] = await Promise.all([
       read($, tab),
       read($, inbox),
       read($, board),
@@ -630,6 +700,7 @@ export const register: Register = (on, options) => {
       read($, dismissed),
       read($, replyingTo),
       read($, replyDraft),
+      read($, confirmingMerge),
       $.clock.now(),
     ])
     // A tab an earlier version stored may no longer exist.
@@ -795,6 +866,14 @@ export const register: Register = (on, options) => {
               onPress={() => setDismissed($, pr.url, !isHidden)}
             />
             {pr.state === 'OPEN' && drawPolish({ key: `polish-${pr.url}`, pr })}
+            {isReadyToMerge(pr) && (
+              <Button
+                key={`merge-${pr.url}`}
+                plain
+                label={isConfirming({ confirming, url: pr.url, now }) ? '⏎ Confirm merge' : '⇪ Merge'}
+                onPress={() => pressMerge($, { config, pr })}
+              />
+            )}
             <Text wrap="truncate-end">
               <Link href={pr.url} label={prLabel(pr)} />
               {pr.state === 'MERGED' && pr.deployedAt !== null && (
@@ -804,7 +883,11 @@ export const register: Register = (on, options) => {
                 </Text>
               )}
               {pr.state === 'MERGED' && pr.deployedAt === null && (
-                <Text color="merged"> merged{pr.mergedAt === null ? '' : ` ${age(pr.mergedAt, now)}`}, not in prod</Text>
+                <Text color="merged">
+                  {' '}
+                  merged{pr.mergedAt === null ? '' : ` ${age(pr.mergedAt, now)}`}
+                  {pr.hasDeploys ? ', not in prod' : ''}
+                </Text>
               )}
               {pr.state === 'OPEN' && pr.isDraft && <Text dimColor> draft</Text>}
               {pr.state === 'OPEN' && pr.reviewDecision === 'APPROVED' && <Text color="success"> approved</Text>}
@@ -896,13 +979,19 @@ export const register: Register = (on, options) => {
 
     function drawTicket({ ticket, isOpen, focusId }: { ticket: Ticket; isOpen: boolean; focusId: string | null }) {
       const ticketPrs = openPrs.filter(pr => namesTicket({ pr, ticketId: ticket.id }))
+      const isLeftOpen = isMergedButOpen({ ticket, prs: shownBoard?.prs ?? [] })
+      const canOpenWorkspace = !ticket.isDone && ticket.id !== focusId
       return (
         <Box key={ticket.id} flexDirection="column">
           <Box flexDirection="row" gap={1}>
             <Button key={`ticket-${ticket.id}`} plain label={isOpen ? '▾' : '▸'} onPress={() => toggleTicket(ticket.id)} />
+            {isLeftOpen && (
+              <Button key={`done-${ticket.id}`} plain label="✓ Move to Done" onPress={() => moveToDone($, { config, ticket })} />
+            )}
             <Text wrap="truncate-end">
               {ticket.isDone ? <Text color="success">✓ </Text> : <Text color="warning">● </Text>}
               <Link href={ticket.url} label={ticket.id} /> <Text dimColor>{ticket.status}</Text>
+              {isLeftOpen && <Text color="warning"> ⚑ PR merged</Text>}
               {ticket.id === focusId && <Text color="claude"> ◆ here</Text>}
               {ticketPrs.length > 0 && <Text color="suggestion"> · {ticketPrs.length} PR{ticketPrs.length === 1 ? '' : 's'}</Text>}{' '}
               {ticket.isDone ? <Text dimColor>{ticket.title}</Text> : ticket.title}
@@ -910,6 +999,16 @@ export const register: Register = (on, options) => {
           </Box>
           {isOpen && (
             <Box flexDirection="column" paddingLeft={4}>
+              {canOpenWorkspace && (
+                <Box flexDirection="row">
+                  <Button
+                    key={`workspace-${ticket.id}`}
+                    plain
+                    label="⧉ Open a workspace for it"
+                    onPress={() => runSlash($, `${WORKSPACE_SKILL} ${ticket.id}`)}
+                  />
+                </Box>
+              )}
               {ticketPrs.length === 0 && <Text dimColor>No open PRs, none merged in the last day.</Text>}
               {ticketPrs.map(pr => drawTicketPr({ ticketId: ticket.id, pr }))}
             </Box>
