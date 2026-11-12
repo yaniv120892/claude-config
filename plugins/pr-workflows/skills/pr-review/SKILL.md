@@ -2,7 +2,7 @@
 name: pr-review
 argument-hint: <PR numbers or URLs, or a Slack thread link> (one or more, required)
 allowed-tools: Bash(gh:*), Bash(git:*), Bash(python3:*), Read, Grep, Glob, Agent, Skill, ToolSearch, mcp__notion__notion-search, mcp__notion__notion-fetch, mcp__claude_ai_Slack__slack_read_thread, mcp__claude_ai_Slack__slack_add_reaction, mcp__claude_ai_Slack__slack_send_message
-description: Use when reviewing one or more pull requests named by number or URL — or by a Slack thread link that lists them — or when asked whether a PR is safe to merge. Fans out a code-review, a built-in /code-review, an observability and a reuse-and-alignment subagent per PR in parallel, plus an instruction-file subagent when a PR touches CLAUDE.md, rules, skills, agents or commands and a UI-render subagent when it touches rendered UI, merges every finding into a single severity-sorted report that opens with what each PR does and how it serves its ticket, with a documentation-drift check, and posts inline comments after one approval. Requires explicit PR targets — it never reviews the current branch. For re-checking comments an author says they already fixed, use pr-second-review instead.
+description: Use when reviewing one or more pull requests named by number or URL — or by a Slack thread link that lists them — or when asked whether a PR is safe to merge. Requires explicit PR targets — it never reviews the current branch. For re-checking comments an author says they already fixed, use pr-second-review instead.
 ---
 
 # Pull Request Review

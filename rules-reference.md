@@ -73,6 +73,12 @@ line and PRs tab. The README's *Mods* and *Cockpit* sections have the rest.
 > Pattern: Drive each scenario, query the events back from the store (HogQL, the events API, the MCP), and paste the recorded property values in a table with one row per scenario and one column per event (`Scenario | event A properties | event B properties`), plus one line for what must be absent (old events, raw values).
 > Avoid: A prose summary of which events fired and with what; a link to the PostHog project, an insight, or a dashboard standing in for the values; screenshots of the events list.
 
+## GitHub Quota
+
+**Poll GitHub at 30 Seconds or Slower** — GitHub allows 5,000 REST requests and 5,000 GraphQL points an hour per account, shared by every Claude session, subagent, mod and script on the machine. `gh run watch` refreshes every 3 s by default (1,200+ requests an hour for one watcher) and `gh pr checks --watch` every 10 s, so a few parallel sessions each waiting on CI or a deploy exhaust the quota, and then every session's `gh` calls fail until the hourly reset.
+> Pattern: `gh run watch <id> --interval 30 --compact --exit-status` (`--compact` also keeps the step list out of context); `gh pr checks <n> --watch --interval 30`; a hand-written loop sleeps 30 s or more. On a rate-limit error, read the reset time from `gh api rate_limit`, which costs no quota, and wait for it once.
+> Avoid: A bare `--watch`; retrying a rate-limited call; one watcher per subagent for the same PR.
+
 ## Commits and Merging
 
 **Always Squash on Merge** — The base branch should read as a list of shipped changes, one line per PR, not as a transcript of how each change was arrived at. An agent-driven PR is especially noisy: it accumulates a test-first commit, an implementation commit, a `/simplify` commit, a review-fixes commit, and a docs commit, none of which mean anything to someone reading `git log` six months later. Squashing also makes `git revert <sha>` undo an entire feature rather than one arbitrary slice of it, and makes `git bisect` land on shippable states instead of half-built ones.
