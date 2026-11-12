@@ -171,7 +171,7 @@ With no fix commit, the description stays as it is.
 
 ## Step 5 — CI
 
-Run `gh pr checks <n> --watch` in the background, for at most twice the repo's usual CI time (a shell
+Run `gh pr checks <n> --watch --interval 30` in the background, for at most twice the repo's usual CI time (a shell
 loop with a deadline; macOS has no `timeout`). Past that, report the check that is still running.
 On red, follow the `steward` skill: root-cause, fix, push, watch again. Green counts only on the pushed head: compare `gh pr view <n> --json headRefOid`
 with the local `HEAD` before reporting it.

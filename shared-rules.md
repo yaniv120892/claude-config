@@ -68,6 +68,15 @@ every committed test still passes
 > Avoid: A PoW script written, run, pasted into the change request, and deleted; a test that only
 > covers the shared default the override deviates from.
 
+## GitHub Quota
+
+**Poll GitHub at 30 Seconds or Slower** — the 5,000/hr quota is shared by every session, agent
+and mod on the machine, and `gh run watch` defaults to a 3 s refresh, so two watchers drain it
+> Pattern: `gh run watch <id> --interval 30 --compact --exit-status`; `gh pr checks <n> --watch
+> --interval 30`; a hand-written loop sleeps 30 s or more. On a rate-limit error, read the reset
+> time from `gh api rate_limit` (free) and wait for it once.
+> Avoid: A bare `--watch`; retrying a rate-limited call; one watcher per subagent for the same PR.
+
 ## Commits
 
 **Conventional Commits** — commit type drives release pipelines
