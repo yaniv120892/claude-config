@@ -102,6 +102,11 @@ already known. An explicit instruction from the user ("post this only to #prs-an
 Keep it short and scannable — emoji, title link, project, reviewers. Nothing else by
 default.
 
+**A direct message drops the reviewers.** When the destination is a DM (the channel is a
+user ID, or the user said "DM X"), leave out the `**Reviewers:**` line and the mention:
+the DM already names the recipient. Keep them for channel posts, where the tag is what
+notifies the person.
+
 **Formatting note:** `slack_send_message` parses **standard markdown**, not Slack mrkdwn,
 so bold is `**double asterisk**` (single `*…*` renders as _italic_). Slack-native link
 `<url|title>` and mention `<@USER_ID>` syntax pass through and do render.
