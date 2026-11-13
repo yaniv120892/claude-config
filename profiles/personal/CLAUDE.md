@@ -5,6 +5,10 @@
 - Personal projects are on GitHub and track work in Linear, team `YAN`. No Jira, no GitLab
   pipelines.
 - `gh` is the CLI here; see the `pr-workflows` plugin.
+- **My suite architecture** (Expenses, Investments, Shopping, Parking and the `my-ui`, `app-kit`,
+  `observability`, `dev-config` packages): load `/Users/yanivdaye/Develop/platform/CLAUDE.md`
+  before designing a feature or adding an app, store, cron, external API or alert in any of
+  them, and before changing a shared package. Update it in the same change when a fact there moves.
 
 **Every PR Names Its Linear Ticket** — the ID in the title links the PR to Linear, and the
 squash merge carries it onto `main`, so every shipped change traces back to its ticket
