@@ -44,6 +44,19 @@ which PRs? — and you read no code until it is answered:
 - When the ask was about local changes, add that `/code-review` reviews a diff
   without a PR.
 
+**Name the session** once the targets are resolved, so the session list (often
+read on a phone, where long names truncate) says whose review this is and what
+it's about: `<TICKET> - review - <author> - <PRs> - <2-3 words>`, e.g.
+`RDBAZ-1526 - review - dana - dal#412 - contact images`. Ticket key from the
+title or branch (none → drop it), author is the PR author's login, PRs are
+`<short repo>#<n>` (more than two → `+N`), the words say what the change is
+about. Keep it under ~50 characters. Only inside cmux (`$CMUX_SURFACE_ID` set);
+otherwise skip silently:
+
+```bash
+cmux send --surface "$CMUX_SURFACE_ID" "/rename <name>" && cmux send-key --surface "$CMUX_SURFACE_ID" Enter
+```
+
 ## Step 2 — Dispatch one subagent per PR, in parallel
 
 Send all `Agent` calls in a **single message** so they run concurrently.
