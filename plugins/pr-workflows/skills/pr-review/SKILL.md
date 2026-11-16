@@ -46,10 +46,11 @@ which PRs? — and you read no code until it is answered:
 
 **Name the session** once the targets are resolved, so the session list (often
 read on a phone, where long names truncate) says whose review this is and what
-it's about: `<TICKET> - review - <author> - <PRs> - <2-3 words>`, e.g.
-`RDBAZ-1526 - review - dana - dal#412 - contact images`. Ticket key from the
-title or branch (none → drop it), author is the PR author's login, PRs are
-`<short repo>#<n>` (more than two → `+N`), the words say what the change is
+it's about. One kebab-case token, no spaces, so it copies cleanly:
+`<TICKET>-review-<author>-<PRs>-<2-3-words>`, e.g.
+`RDBAZ-1526-review-dana-dal412-contact-images`. Ticket key from the title or
+branch (none → drop it), author is the PR author's login, PRs are
+`<short repo><n>` (more than two → `plus<N>`), the words say what the change is
 about. Keep it under ~50 characters. Only inside cmux (`$CMUX_SURFACE_ID` set);
 otherwise skip silently:
 
