@@ -152,6 +152,27 @@ the replaced mechanism cover that the new one does not?
 A revert-and-fail proof removes the guard's logic. A spec that reads the same constant as the code
 still passes when only the constant changes.
 
+## Step 3d — Pre-push sweeps
+
+Reviewers keep flagging these four even where a written rule already covers them, so check them
+mechanically on the diff before pushing. Fix each hit; a hit you keep gets one line in the report.
+
+- **Stale references.** For every identifier, value, flag, env var or ticket key the diff removes or
+  renames (`git diff origin/<base>...HEAD | grep '^-'`), `rg` the old string across the repo —
+  `docs/`, `*.md`, docblocks, TODOs, skill files, env tables. Fix every hit the change made false.
+  A TODO must not point at a ticket this PR closes.
+- **Guards that don't bite.** For each new branch, filter, assertion or guard, delete or invert it
+  locally, run the specs, and confirm a named one fails; restore. Add the missing spec, negative
+  and empty-state cases included, when none fails.
+- **Anonymous callbacks.** In the added lines, find inline callbacks with a block body that holds a
+  branch or more than one statement (`=> {` passed as an argument or JSX prop). Where the repo's
+  rules or the global `typescript.md` prefer named functions, extract them. Also check added
+  functions for missing explicit return types where the repo's rules require them.
+- **Final-head proof.** Run the repo `CLAUDE.md`'s "before ready" steps (evals, smoke runs) on
+  `git rev-parse HEAD`, after the last fix, and name that SHA in the Proof of Work. A prompt,
+  skill-description or tool-description change gets a before/after model run on the host-visible
+  text, not only a fixture.
+
 ## Step 4 — Commit and push
 
 - PR with several commits that are reviewed one by one: `git commit --fixup=<owning commit>`, then
