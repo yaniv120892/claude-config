@@ -46,6 +46,12 @@ a config row), not a new abstraction layer. Ask for this only at the second
 real copy; one use is not a pattern, and a speculative base class is its own
 finding.
 
+**Values that must match** count from the second copy: a constant, key-name builder, format or
+derivation written in two files or languages (`overlapSeconds` in a `.hog` and
+`PREVIOUS_KEY_OVERLAP_MS` in a `.ts`). Ask for one to be generated from the other, or, when the
+languages make that impossible, a test asserting they are equal. A "must match" comment is not a
+fix.
+
 ### 3. Align — does it follow the sibling flows?
 
 Find the two or three closest existing flows — another domain, tenant, endpoint,

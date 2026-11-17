@@ -61,12 +61,21 @@ so a large rule set is paid for on every prompt whether or not it's relevant
 **Proof of Work Is Not Regression Coverage** — a throwaway script proves the change worked once,
 on the branch that shipped it; the next person to touch the call site reverts the behaviour and
 every committed test still passes
-> Pattern: Any behaviour a reviewer could silently undo — a per-call override, a non-default
-> argument, a guard at one call site — ships with a committed spec that exercises the real code
-> path and asserts that behaviour. Verify it bites: revert the change locally, watch the spec
-> fail, restore.
+> Pattern: Any behaviour a reviewer could silently undo — a new branch, filter, assertion or
+> guard, a per-call override, a non-default argument — ships with a committed spec that exercises
+> the real code path and asserts that behaviour, including the negative and empty-state case.
+> Verify it bites: delete or invert the line locally, watch a named spec fail, restore.
 > Avoid: A PoW script written, run, pasted into the change request, and deleted; a test that only
-> covers the shared default the override deviates from.
+> covers the shared default the override deviates from; assertions on values no fixture contains.
+
+**Proof of Work Runs on the Final Head, and Matches the Change's Kind** — every later commit
+voids earlier runs, and a fixture the validator accepts says nothing about what the model does
+> Pattern: Before marking ready, re-run the repo's required verification (its `CLAUDE.md`
+> "before ready" steps, evals) on `git rev-parse HEAD` and name that SHA in the Proof of Work.
+> A prompt, skill-description or tool-description change gets a before/after model run on the
+> text the host actually sees.
+> Avoid: Proof of Work naming an earlier SHA; a mocked `generateText` spec offered as evidence
+> that the model follows a new instruction.
 
 ## GitHub Quota
 

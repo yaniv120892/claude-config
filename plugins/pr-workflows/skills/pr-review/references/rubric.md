@@ -116,6 +116,20 @@ sides of the call, not just this PR's.
 - **"No behaviour change"** holds only if a test feeds an input the moved config actually decides; a refactor proven on inputs where old and new agree proves nothing.
 - **Code that starts reading data not yet saved** — config moved from code into a DB or store — needs the deploy order (write the data, then ship the reader) stated in the description. Missing, it is **HIGH**.
 
+### Rollout and blast radius (do this explicitly)
+
+For every change that runs outside the PR's own service — a migration, a cross-repo contract, an
+infra or schedule change, a key or cookie rotation, a change to data production already holds —
+check the description answers all three. Each missing answer is **MEDIUM**, **HIGH** when prod data
+or a live user session is at stake:
+
+- **Order:** which other service, env or PR must deploy first, checked against what is deployed
+  now, not against `main`.
+- **Existing data:** what the change does to rows, keys, metrics or numbers already in production
+  (US and EU prod alike), with a before/after count where one query gets it.
+- **Cutover:** how secrets, keys, cookies or sessions carry over at the switch, and what a user
+  mid-session sees. A rotation or schedule change needs its schedule walked through, not asserted.
+
 ### Test gap (do this explicitly)
 
 Does a test exercise the behaviour this diff *changes*, or only assert what was
@@ -163,6 +177,11 @@ real severity.
 ## 6. Documentation drift
 
 Run the check in `docs-alignment.md` and carry its output into section C below.
+
+Also sweep the repo itself: `rg` each identifier, value, flag or ticket key the diff removes or
+renames across `docs/`, `*.md`, docblocks, TODOs and skill files. Every hit the change made false
+is a finding in section A at LOW, pinned to the stale line. So is a TODO pointing at a ticket this
+PR closes.
 
 ## 7. CI is the authority
 
