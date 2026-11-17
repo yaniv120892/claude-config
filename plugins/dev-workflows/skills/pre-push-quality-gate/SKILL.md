@@ -68,6 +68,22 @@ A step's own summary can print reassuring totals while the process exits non-zer
 
 `npm run format` is usually `prettier --write`: it rewrites files and exits 0 no matter what. A step that cannot fail is not a gate. Use `--check` here and `--write` to fix.
 
+## Unpublished `@bazak/*` version
+
+The one failure that does not block the push: install/build fails because a `@bazak/*` version the branch depends on is not in the Artifact Registry yet (`ERR_PNPM_NO_MATCHING_VERSION` / 404 for `@bazak/<pkg>@<version>`, not a 401 — that is `installing-bazak-packages`). Confirm with `npm view @bazak/<pkg>@<version> version --registry=https://me-west1-npm.pkg.dev/bazak-1fa17/bazak-npm/` returning nothing. Any other failure still blocks.
+
+1. Find the source: `~/bazak/bazak-packages/packages/<pkg>`, or a worktree of it, whose `package.json` `version` equals the wanted one. None matches: the gate blocks.
+2. Run the whole gate through the helper, which builds the package, overrides it to `link:<src>` in `pnpm-workspace.yaml`, installs, runs the command, and restores `package.json`, `pnpm-workspace.yaml` and `pnpm-lock.yaml` byte-for-byte on exit:
+
+```bash
+S=${CLAUDE_SKILL_DIR:-<this skill dir>}
+$S/with-local-package.sh . @bazak/<pkg> ~/bazak/bazak-packages/packages/<pkg> -- \
+  sh -c 'pnpm lint && pnpm typecheck && pnpm build && pnpm test'
+```
+
+3. Run `git status --short` / `git diff` afterwards: no manifest or lockfile change beyond what the branch intended. A leftover `link:` means stop.
+4. Push, and put a line in the PR description: "Waits on publishing `@bazak/<pkg>@<version>`; re-push after publish so CI runs against the registry build." Tell the user the same. Do not merge before it is published (`release-packages`).
+
 ## Match the gate to the repo's CI
 
 The five above are the default. Before trusting them, read the CI workflow and make the gate a **superset** of what CI runs:
