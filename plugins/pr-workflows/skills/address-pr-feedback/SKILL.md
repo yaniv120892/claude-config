@@ -207,14 +207,17 @@ of these hold on a fresh fetch of the PR:
 - CI on the final head is green
 - the PR description still matches the change, since a reviewer reads it as part of the review
 
-The message is the literal text `replied` plus the PR link. `replied` tells the reviewer every item
-is answered, so it is false if one is not: when a check fails, fix that first, then send.
+The message is a thread reply whose body is exactly `replied`. `replied` tells the reviewer every
+item is answered, so it is false if one is not: when a check fails, fix that first, then send. Send
+one per review round: an earlier `replied` older than the reviewer's latest review or comment
+answered an earlier round, so this round still gets its own.
 
 - **Request came from a Slack thread (Step 0):** post `replied` in that thread with
   `slack_send_message`, `thread_ts` set to the parent message's timestamp.
-- **Otherwise:** use the `ask-pr-review-slack` skill when it is installed — it finds the existing
-  review-request thread with that reviewer and re-requests their review on GitHub. Without it, say
-  in the report that the reviewer was not notified.
+- **Otherwise:** use the `ask-pr-review-slack` skill when it is installed — its §4 finds the PR's
+  review-request message in the reviewer's DM, replies in its thread, runs the per-round duplicate
+  check, and re-requests their review on GitHub. Without it, say in the report that the reviewer
+  was not notified.
 
 ## Gate outward-facing actions
 

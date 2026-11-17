@@ -150,30 +150,56 @@ stack itself.
 ## 4. Follow-up on an earlier request
 
 Before composing a new message, check whether this reviewer was already asked about the
-PR. Search the DM for the PR URL with `slack_search_public_and_private`, query
-`<pr-url> in:<@{slack-id}> after:{date two days ago, YYYY-MM-DD}`. Only look back that
-far: an older request is stale, so a fresh message is fine. A hit means the conversation already exists: reply in that
-message's thread (`slack_send_message` with `thread_ts`) instead of starting a new
-message.
+PR. Every follow-up ("tell Dana I replied", "ping him again", an ack from
+`address-pr-feedback`) goes through these steps.
 
-Pick the reply from the reviewer's own reviews on the PR:
+**a. Find the request thread.** Read the DM with `slack_read_channel` (`channel_id` = the
+reviewer's Slack user ID, `response_format: detailed` so each message shows its
+`Message TS`). The **request message** is the top-level message from the user
+whose first line holds the PR URL and whose text contains `please review the PR`. The
+newest such message is the thread; its `Message TS` is the `thread_ts`. A top-level
+`replied - {url}` or `please approve again - {url}` is an earlier ack, never the thread.
+Page back with `cursor` until you find it or reach messages older than the PR's
+`createdAt`. Search (`slack_search_public_and_private`) can miss or return the wrong hit,
+so the channel read decides.
+
+**b. Pick the reply** from the reviewer's activity on the PR:
 
 ```bash
-gh pr view <number> --repo <owner>/<repo> --json reviews,commits \
-  --jq '{reviews: [.reviews[]|select(.author.login=="<github-login>")|{state,submittedAt}],
-         lastCommit: .commits[-1].committedDate}'
+gh pr view <number> --repo <owner>/<repo> --json reviews,comments,commits \
+  | jq --arg l <github-login> '{
+      reviews: [.reviews[]|select(.author.login==$l)|{state,submittedAt}],
+      lastRound: ([(.reviews[]|select(.author.login==$l and .state!="APPROVED")|.submittedAt),
+                   (.comments[]|select(.author.login==$l)|.createdAt)]|max),
+      lastCommit: .commits[-1].committedDate}'
 ```
 
-| Reviewer's state | Reply |
+| Reviewer's state | Reply in the thread |
 |---|---|
-| Left comments / requested changes, and every one of their threads is fixed and replied to | `replied - {url}` |
-| Approved, and commits landed after the approval (a main merge or fixes unrelated to their comments) | `please approve again - {url}` |
+| Left comments / requested changes, and every one of their threads is fixed and replied to | `replied` |
+| Approved, and commits landed after the approval (a main merge or fixes unrelated to their comments) | `please approve again` |
 
-Send exactly that line, nothing else: no fix summary, no SHA, no "can you take another look" - the GitHub replies already say it.
-For a stack, one line per PR in the same reply. The gate in §1 still applies, except that an
-`APPROVED` decision is expected on the re-approve row. If neither row fits (e.g. their
-comments are not all replied to yet, or the approval is still current), stop and tell
-the user instead of sending.
+**c. Duplicate check, per review round.** Read the thread (`slack_read_thread`) and look for
+an earlier `replied` for this PR, in the thread or as a top-level `replied - {url}`. It
+covers this round only when its time is **after `lastRound`** (Slack's `Message TS` is
+epoch seconds; compare against `lastRound` converted the same way). An older `replied`
+answered an earlier round: send a new one. Apply the same test to `please approve again`
+against the latest `APPROVED` review.
+
+**d. Send.** `slack_send_message` with `channel_id` = the reviewer's Slack ID and
+`thread_ts` = the request message's ts. The body is exactly the table's text, nothing
+else: the thread's parent already carries the link, and the GitHub replies carry the fix
+summary. For a stack, reply once in the stack's thread, one line per PR as
+`replied - {url}`.
+
+Only when step a finds no request message for the PR, send a new top-level message
+`replied - {url}` (or `please approve again - {url}`) and tell the user no review-request
+thread was found.
+
+The gate in §1 still applies, except that an `APPROVED` decision is expected on the
+re-approve row. If neither row fits (e.g. their comments are not all replied to yet, or the
+approval is still current) or step c finds a current ack, stop and tell the user instead
+of sending.
 
 ## 5. Sending and reporting
 
