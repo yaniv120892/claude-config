@@ -206,7 +206,9 @@ of these hold on a fresh fetch of the PR:
 
 Send it right after the push and the replies. Don't wait for CI or Qodo: the reviewer can read the
 replies while they run, and a fast back-and-forth is the point. Keep watching both afterwards
-(`steward`). If either finds something, fix it and push. If that push dismisses an approval,
+(`steward`). If either finds something, fix it and push. A red CI that the fixes did not cause (it
+also fails on the base branch or the previous head, or it fails in code the fixes did not touch)
+does not hold `replied` back either. A red CI the fixes caused does: fix it first. If that push dismisses an approval,
 `ask-pr-review-slack` §4 sends `please approve again`.
 
 The message is a thread reply whose body is exactly `replied`. `replied` tells the reviewer every
