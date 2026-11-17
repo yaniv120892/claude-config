@@ -15,10 +15,13 @@ One Linear ticket → one cmux workspace with a Claude session named after it. R
 2. **Name it** `<KEY> - <2-3 words>`, e.g. `ABC-560 - trip PDF export`. Pick the words that
    tell this ticket apart from its siblings, not a truncated title. Check `cmux list-workspaces`
    first; if a workspace already starts with the key, report it and stop.
-3. **Create the workspace** in the background. `DIR` is the directory the user names, else the
-   repos directory `~/.claude/work-context.local.md` names, else `$HOME`:
+3. **Create the workspace** in the background, inside the sidebar group named `Tickets`. `DIR` is
+   the directory the user names, else the repos directory `~/.claude/work-context.local.md` names,
+   else `$HOME`. Group refs change between sessions, so look the group up by name; no such group
+   → create the workspace ungrouped and say so in the report:
    ```bash
-   cmux new-workspace --name "$NAME" --description "$URL" --cwd "$DIR" --command claude --focus false
+   G=$(cmux workspace-group list | grep -E '^workspace_group:[0-9]+ +Tickets +\(' | grep -oE '^workspace_group:[0-9]+')
+   cmux new-workspace --name "$NAME" --description "$URL" --cwd "$DIR" --command claude --focus false ${G:+--group "$G"}
    WS=<workspace ref from the output>
    cmux list-pane-surfaces --workspace $WS
    ```
