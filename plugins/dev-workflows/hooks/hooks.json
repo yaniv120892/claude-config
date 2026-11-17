@@ -11,6 +11,17 @@
             "statusMessage": "Checking the edit lands in a worktree, not the main checkout..."
           }
         ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/block-attribution.sh\"",
+            "timeout": 10,
+            "statusMessage": "Checking for Claude attribution..."
+          }
+        ]
       }
     ],
     "PostToolUse": [
