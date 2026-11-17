@@ -202,10 +202,12 @@ of these hold on a fresh fetch of the PR:
 - each item a reply calls fixed is in a pushed commit (the PR head contains its SHA)
 - every inline thread, every review body, and every general reviewer comment has a reply of yours
   posted after it, on GitHub, where the reviewer looks for it
-- Qodo (or the repo's review bot) has reviewed the final head, and each of its findings is fixed or
-  answered
-- CI on the final head is green
 - the PR description still matches the change, since a reviewer reads it as part of the review
+
+Send it right after the push and the replies. Don't wait for CI or Qodo: the reviewer can read the
+replies while they run, and a fast back-and-forth is the point. Keep watching both afterwards
+(`steward`). If either finds something, fix it and push. If that push dismisses an approval,
+`ask-pr-review-slack` §4 sends `please approve again`.
 
 The message is a thread reply whose body is exactly `replied`. `replied` tells the reviewer every
 item is answered, so it is false if one is not: when a check fails, fix that first, then send. Send
@@ -244,6 +246,7 @@ answered an earlier round, so this round still gets its own.
 | Asking to codify something already in `CLAUDE.md`/`.claude/rules/`          | Grep first (Step 4a) — only ask about genuinely new preferences                         |
 | Asking the user whether to tell the reviewer                                | Step 8 is pre-approved: send once its checks hold                                       |
 | Missing a question asked in a review body                                   | Read `reviews` as well as threads and comments (Step 2); answer with an @-mention       |
-| Sending `replied` on Slack before every item is answered on GitHub          | Re-fetch the PR and run the Step 8 checks first, Qodo and CI included                   |
+| Sending `replied` on Slack before every item is answered on GitHub          | Re-fetch the PR and run the Step 8 checks first                                         |
+| Holding `replied` until CI is green or Qodo has finished                    | Send once the fixes are pushed and replied to; CI and Qodo run behind it                |
 | Leaving the PR description describing the pre-fix change                    | Re-read it against the pushed diff and update it before replying (Step 5a)              |
 | Fixing comments on a branch that is behind its base                         | Merge `origin/<base>` in first and push (Step 1b) — never rebase and force-push         |

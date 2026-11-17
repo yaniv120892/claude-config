@@ -196,9 +196,11 @@ Only when step a finds no request message for the PR, send a new top-level messa
 `replied - {url}` (or `please approve again - {url}`) and tell the user no review-request
 thread was found.
 
-The gate in §1 still applies, except that an `APPROVED` decision is expected on the
-re-approve row. If neither row fits (e.g. their comments are not all replied to yet, or the
-approval is still current) or step c finds a current ack, stop and tell the user instead
+The gate in §1 still applies, with two exceptions: an `APPROVED` decision is expected on the
+re-approve row, and `PENDING` checks (CI or Qodo still running on the fix push) do not hold a
+follow-up back, so the reviewer can start reading the replies. A `FAILURE` still stops it.
+If neither row fits (e.g. their comments are not all replied to yet, or the approval is
+still current) or step c finds a current ack, stop and tell the user instead
 of sending.
 
 ## 5. Sending and reporting
