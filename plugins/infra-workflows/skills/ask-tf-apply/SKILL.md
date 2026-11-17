@@ -67,17 +67,16 @@ The third line says what lands in the cloud (a new alert policy, a scheduler job
 binding), in plain words. Add one more sentence only when the PR body names something that
 must already be live (a deployed service, a secret) and it is.
 
-## 4. Where to send
+## 4. Send as a new DM
 
-Read the DM (`slack_read_channel`, `channel_id` = `slackId`, `response_format: detailed`),
-paging back to the PR's `createdAt`. A message refers to the PR when it holds `pull/<n>` or
-`<repo>#<n>`.
+First check for an earlier request: read the DM (`slack_read_channel`, `channel_id` =
+`slackId`, `response_format: detailed`), paging back to the PR's `createdAt`. A message
+refers to the PR when it holds `pull/<n>` or `<repo>#<n>`. If one already asks for an apply
+of this PR, stop and report it with the roots it named; when it named none or fewer than
+step 2 found, say which are missing, so the user can follow up.
 
-1. If one of those messages already asks for an apply of this PR, stop and report it with
-   the roots it named. When it named none or fewer than step 2 found, say which are
-   missing, so the user can follow up.
-2. Otherwise, if a top-level message refers to the PR (a review request), reply in its
-   thread with `thread_ts` = its `Message TS`.
-3. Otherwise send a new DM.
+Otherwise send the request as a new top-level DM (`slack_send_message`, `channel_id` =
+`slackId`, no `thread_ts`), even when a review-request thread for the PR exists: an apply
+request is a new ask, and a thread reply is easy to miss.
 
 Report the returned `message_link`. If the send fails or returns no link, say so.
