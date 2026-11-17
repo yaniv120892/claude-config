@@ -41,5 +41,10 @@
         "kmsKey": "alias/your-prod-key"
       }
     }
+  },
+
+  "tfApply": {
+    "applier": { "name": "Dana Cohen", "slackId": "U00000000" },
+    "repos": { "acme/infra": "~/work/infra" }
   }
 }
