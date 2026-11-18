@@ -40,7 +40,9 @@ Scale the review to the diff size:
 - **Dependency-only:** no review agents. Check the advisory or outdated report before and after, read
   the changelog of every major bump against the call sites, and rely on the caller's gate. Skip Steps
   3a and 3b.
-- **Small:** `/pr-workflows:pr-review` alone; apply the `/simplify` angles yourself while fixing.
+- **Small:** `/pr-workflows:pr-review` alone; apply the `/simplify` angles yourself while fixing. In
+  delta mode, run `/code-review` over the range in its place: a few changed lines do not need the
+  full PR battery, and Step 3a still audits them against the rules.
 - **Full:** `/pr-workflows:pr-review` for the PR, then `/simplify` for the diff. A skill loads one per
   turn, so they run in that order. Give `/simplify` the range explicitly: its default,
   the diff against upstream, is empty after a push.
