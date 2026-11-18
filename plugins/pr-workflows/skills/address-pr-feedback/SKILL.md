@@ -101,11 +101,12 @@ rather than taking either the reviewer's premise or your own first instinct at f
 
 ## Step 4 — Implement the valid fixes
 
-One change at a time. Add or update a test that covers each fix (these are usually edge cases the
-reviewer found — a test documents the fix and prevents regression). Then run the repo's OWN quality
-gate before pushing — **REQUIRED:** `pre-push-quality-gate` — every step it lists, from this
-repo's `package.json`; never another repo's. Confirm only your changed files are clean — pre-existing
-lint warnings in untouched files are not yours to fix here.
+Record the head SHA first: it is `<from>` for Step 4b. One change at a time. Add or update a test that
+covers each fix (these are usually edge cases the reviewer found — a test documents the fix and
+prevents regression). Then run the repo's OWN quality gate — **REQUIRED:** `pre-push-quality-gate` —
+every step it lists, from this repo's `package.json`; never another repo's. Confirm only your changed
+files are clean — pre-existing lint warnings in untouched files are not yours to fix here. Commit the
+fixes locally (message format in Step 5); do not push yet.
 
 ## Step 4a — Flag generic fixes for rule codification
 
@@ -118,6 +119,13 @@ and this repo's `.claude/rules/` first — skip anything an existing rule alread
 If a fix is generic and not yet covered, follow the **Memory Management Protocol** in the global
 CLAUDE.md: ask "Should I codify this into a new or existing rule?" once per fix, before Step 5's
 push — not batched into the Step 7 report, where it's easy to skip past.
+
+## Step 4b — Review and audit the fix commits
+
+Read `${CLAUDE_PLUGIN_ROOT}/references/review-and-fix.md` and run it in **delta** mode on
+`<from>..HEAD`, with the Step 4 gate result. Reviewer-driven fixes skip no check a first pass gets:
+the rules audit (its Step 3a) catches the house-rule violations a fix adds. Commit what it fixes, and
+rerun the quality gate when it changed code.
 
 ## Step 5 — Commit and push to the PR's source branch
 
@@ -244,6 +252,7 @@ answered an earlier round, so this round still gets its own.
 | Resolving threads to "tidy up"                                              | Resolving is outward-facing and the reviewer's signal — leave open by default           |
 | Running another repo's build/lint in a worktree                             | Run THIS repo's `package.json` scripts (pre-push-quality-gate)                          |
 | Treating a release-bot note as feedback                                     | Ignore non-actionable general notes; act on reviewer comments                           |
+| Pushing fix commits that only passed the quality gate                       | Run the shared review and fix pass on them first (Step 4b) — it holds the rules audit   |
 | Silently fixing a generic/recurring pattern with no follow-up               | Ask the codify-rule question (Step 4a) before push — don't bury it in the Step 7 report |
 | Asking to codify something already in `CLAUDE.md`/`.claude/rules/`          | Grep first (Step 4a) — only ask about genuinely new preferences                         |
 | Asking the user whether to tell the reviewer                                | Step 8 is pre-approved: send once its checks hold                                       |
