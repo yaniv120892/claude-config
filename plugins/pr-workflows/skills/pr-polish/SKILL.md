@@ -50,8 +50,10 @@ Before any review agent starts, check what would stall the run later and report 
   - *Dependency-only:* manifests and lockfiles, plus call sites a bump forced.
   - *Small:* under about 50 changed lines outside generated files.
   - *Full:* everything else.
-  - *Delta:* the PR already had a full pass and has new commits since. Classify the new commits'
-    diff alone, and review that range in Step 2.
+  - *Delta:* the PR description's Proof of Work names a SHA (Step 3d writes it) that
+    `git merge-base --is-ancestor <sha> HEAD` confirms, and HEAD has commits since. That SHA is
+    `<from>`: classify `<from>..HEAD` alone, and review that range in Step 2. With no such SHA, or
+    one a rebase orphaned, the PR is not Delta.
 - **Lockfile churn:** a lockfile diff with no manifest change behind it is regenerated noise or a
   silent upgrade. Restore it from the base, or name the manifest line that explains it.
 
