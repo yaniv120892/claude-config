@@ -80,7 +80,10 @@ mechanically on the diff before pushing. Fix each hit; a hit you keep gets one l
   and empty-state cases included, when none fails.
 - **Anonymous callbacks.** In the added lines, find inline callbacks with a block body that holds a
   branch or more than one statement (`=> {` passed as an argument or JSX prop). Where the repo's
-  rules or the global `typescript.md` prefer named functions, extract them. Also check added
+  rules or the global `typescript.md` prefer named functions, extract them. When the repo's
+  `CLAUDE.md`, rules or lint config require named callbacks, also extract `map`/`flatMap`/`filter`
+  callbacks that hold more than one expression: the global `map`/`filter` exemption yields to the
+  repo's stricter rule. Also check added
   functions for missing explicit return types where the repo's rules require them.
 - **Final-head proof.** Run the repo `CLAUDE.md`'s "before ready" steps (evals, smoke runs) on
   `git rev-parse HEAD`, after the last fix, and name that SHA in the Proof of Work. A prompt,
