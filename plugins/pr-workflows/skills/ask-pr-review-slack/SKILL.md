@@ -17,8 +17,9 @@ them.
 
 ## Inputs
 
-Take `<owner>` and `<repo>` from each PR URL.
-
+Take `<owner>` and `<repo>` from each PR URL, and normalize it to
+`https://github.com/<owner>/<repo>/pull/<n>` — drop any `/changes`, `/files` or `#…` tail —
+before matching, searching or sending it.
 
 - **One or more PR URLs** (or `#475`-style numbers plus a repo).
 - **One person** — the reviewer.
@@ -94,6 +95,16 @@ On a miss for either, resolve it (`slack_search_users` for a person, ask the use
 emoji), send the message, then **append the new row to the local file** so the next run
 needs no questions.
 
+**Then route: new request or follow-up.** Before composing anything, run §4 a and b for
+this reviewer and PR. It is a follow-up when either holds:
+
+- they have a `CHANGES_REQUESTED` or `COMMENTED` review on the PR, or
+- a request thread for this PR already exists in your DM with them.
+
+A follow-up goes through §4 and replies in that thread, without asking the user. §3's fresh
+top-level request goes out only when neither holds. Naming the reviewer in the invocation
+does not skip this check.
+
 ## 3. Message format
 
 `slack_send_message` parses **standard markdown**, not Slack mrkdwn — bold is
@@ -153,15 +164,18 @@ Before composing a new message, check whether this reviewer was already asked ab
 PR. Every follow-up ("tell Dana I replied", "ping him again", an ack from
 `address-pr-feedback`) goes through these steps.
 
-**a. Find the request thread.** Read the DM with `slack_read_channel` (`channel_id` = the
+**a. Find the request thread.** Search the DM for the PR URL first:
+`slack_search_public_and_private` with query `<normalized url> in:<@{slack-id}>`. A hit on
+the request message gives its ts; a hit inside a thread gives the thread's parent ts. When
+search finds nothing, read the DM with `slack_read_channel` (`channel_id` = the
 reviewer's Slack user ID, `response_format: detailed` so each message shows its
 `Message TS`). The **request message** is the top-level message from the user
 whose first line holds the PR URL and whose text contains `please review the PR`. The
 newest such message is the thread; its `Message TS` is the `thread_ts`. A top-level
 `replied - {url}` or `please approve again - {url}` is an earlier ack, never the thread.
 Page back with `cursor` until you find it or reach messages older than the PR's
-`createdAt`. Search (`slack_search_public_and_private`) can miss or return the wrong hit,
-so the channel read decides.
+`createdAt`. Search can miss or return the wrong hit, so check a search hit against this
+definition before using it.
 
 **b. Pick the reply** from the reviewer's activity on the PR:
 
