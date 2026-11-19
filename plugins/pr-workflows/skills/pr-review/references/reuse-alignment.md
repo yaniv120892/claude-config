@@ -42,7 +42,9 @@ call site as-is or with a small change. Look in:
 Flag when the diff duplicates logic that differs from an existing block only by
 a value, a type, or one branch — including duplication *within* the diff. The
 fix is to extend the existing one (a parameter, a generic, a strategy entry,
-a config row), not a new abstraction layer. Ask for this only at the second
+a config row), not a new abstraction layer. A shell or YAML block that repeats an earlier block of the
+same file counts as a copy too — a workflow step re-reading the same files with the same filter as a
+step above it — and the fix is one shell function or step both read from. Ask for this only at the second
 real copy; one use is not a pattern, and a speculative base class is its own
 finding.
 
