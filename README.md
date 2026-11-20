@@ -77,10 +77,10 @@ enforce, but nothing on Codex enforces them.
 | `pr-workflows` | 15 | GitHub pull request workflow: create, review (house rules plus a Fowler smell baseline, batched across PRs with a Notion docs-drift check), inline comments, CI verification, thread resolution, conflict fixing, the `steward` drive-to-green posture, feedback harvesting, posting a PR to Slack. Ships `/pr-review` and `lib/github.py` |
 | `dev-workflows` | 14 | Docker-based service runs, drip-feed recurring maintenance, domain modeling (`CONTEXT.md` + ADRs), the `/flows` router, `investigate-alert` (is an alert new, which deploy it follows, is it my latest PR), and the `wizard`/`research`/`retro`/`wait-what` helpers. Ships the pre-push quality-gate, post-merge cleanup and require-worktree hooks |
 | `issue-tracker` | 3 | Jira ticket creation and status transitions, with a cached per-project transition map. Also files Linear issues against a fixed Why/Repro/Fix/Done-when/Signals template |
-| `infra-workflows` | 3 | Helm env vars across GitOps registries, AWS SSM SecureString provisioning with an account guard, and `ask-tf-apply` (DM whoever holds apply rights to run `terraform apply` for a merged infra PR, naming the roots it touches). Ships `provision_ssm.sh` |
+| `infra-workflows` | 2 | Helm env vars across GitOps registries and AWS SSM SecureString provisioning with an account guard. Ships `provision_ssm.sh` |
 | `mods` | 0 | Function-hook mods for the harness itself: the default-branch guard, the status band, usage-limit toasts, the secret guard, the reply-style rule and `/skill-tally` — see *Mods* below |
 | `cockpit` | 0 | A `/cockpit` pane for the work around the code: the Slack PR inbox, your PRs and Linear tickets, deploy alerts, skill buttons, a Compact button and a usage line — see *Cockpit* below |
-| `cmux` | 5 | cmux terminal multiplexer control: topology, workspaces, browser surface, notifications |
+| `cmux` | 5 | cmux terminal multiplexer control: topology, workspaces, browser surface, notifications. A hook opens each new PR as a browser tab beside the session |
 
 Plugins that touch an employer's systems read their site-specific values — accounts,
 project keys, Slack channels, repo paths — from a machine-local

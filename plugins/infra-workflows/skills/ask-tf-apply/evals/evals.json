@@ -1,8 +1,0 @@
-{
-  "cases": [
-    {"id": "ask-applier", "kind": "trigger", "prompt": "bazakai/bazak-infra#403 is merged, ask Shlomo to run terraform apply for it", "expect_trigger": true},
-    {"id": "need-apply", "kind": "trigger", "prompt": "My infra PR got merged but I can't run terraform apply on dev or prod. Get it applied.", "expect_trigger": true},
-    {"id": "review-not-apply", "kind": "trigger", "prompt": "Ask Shlomo to review bazakai/bazak-infra#410 on Slack", "expect_trigger": false},
-    {"id": "write-terraform", "kind": "trigger", "prompt": "Add a Cloud Scheduler job to the me-west1-dev Terraform root", "expect_trigger": false}
-  ]
-}
