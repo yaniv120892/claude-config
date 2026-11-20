@@ -56,6 +56,14 @@ so a large rule set is paid for on every prompt whether or not it's relevant
 > Pattern: Always give the absolute path from the filesystem root when referencing a file.
 > Avoid: `./docs/foo.md`, bare `foo.md`, or anything relative to an assumed cwd.
 
+**Slack Messages: the Ask First, at Most Three Lines** — teammates read DMs on a phone between tasks; a long message buries what you need from them
+> Pattern: Line 1 is the ask (what you need them to do), then one line of why, then links. A PR review ack is the single word "replied" in the request thread. Detail stays in chat with the user; draft first and wait for approval unless a skill says otherwise.
+> Avoid: Context before the ask, investigation narrative, "tell me when it's done and I'll check it", a fresh top-level DM where a thread already holds the context.
+
+**Use the cmux Browser** — the user's cmux browser is already logged in to GitHub, Linear, PostHog, the back office and ChatGPT
+> Pattern: Inside cmux (`$CMUX_WORKSPACE_ID` set), open every PR, ticket or page you point the user to as a browser tab in the current workspace (`cmux new-surface --type browser --url <url>`), and check UI, consoles and dashboards there yourself. A new PR opens automatically (cmux plugin hook).
+> Avoid: Playwright, Chrome automation, or asking the user for a screenshot when the cmux browser can reach the page; reporting a screen "unverified, no credentials" before trying the cmux browser and asking the user to log in there.
+
 ## Verification
 
 **Proof of Work Is Not Regression Coverage** — a throwaway script proves the change worked once,
