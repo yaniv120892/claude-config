@@ -75,6 +75,9 @@ every committed test still passes
 > Verify it bites: delete or invert the line locally, watch a named spec fail, restore.
 > Avoid: A PoW script written, run, pasted into the change request, and deleted; a test that only
 > covers the shared default the override deviates from; assertions on values no fixture contains.
+> Not behaviour: CSS/Tailwind classes, layout and copy text get a screenshot or GIF in the Proof
+> of Work, not a committed test. A capability is tested once with one representative config; a
+> per-tenant case only when that tenant's config takes a different code path.
 
 **Proof of Work Runs on the Final Head, and Matches the Change's Kind** — every later commit
 voids earlier runs, and a fixture the validator accepts says nothing about what the model does
