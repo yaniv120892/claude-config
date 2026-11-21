@@ -137,8 +137,12 @@ already true? A change that could be reverted with every test still green is a
 **HIGH** finding.
 
 When the PR adds another instance of an existing pattern — a settings section,
-a route, a tenant — diff its tests against the sibling's and flag each case the
-new one lacks, read-side and access cases first.
+a route — diff its tests against the sibling's and flag each case the
+new one lacks, read-side and access cases first. A new tenant needs its own case
+only where its config takes a code path no existing test covers.
+
+Don't ask for tests on CSS/Tailwind classes, layout or copy text; at most ask for
+a screenshot in the Proof of Work.
 
 ### Stored data that never expires (do this explicitly)
 
