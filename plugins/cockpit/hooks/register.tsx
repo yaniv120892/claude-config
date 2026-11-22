@@ -96,7 +96,8 @@ const askingReviewFor = atom({ plugin: 'cockpit', key: 'askingReviewFor' } as co
 const reviewerDraft = atom({ plugin: 'cockpit', key: 'reviewerDraft' } as const, '')
 // Ticks each minute, so the band's reset countdowns move while the session is idle.
 const clockNow = atom({ plugin: 'cockpit', key: 'clockNow' } as const, 0)
-const prMode = atom({ plugin: 'cockpit', key: 'prMode' } as const, false)
+const prMode = atom({ plugin: 'cockpit', key: 'prMode' } as const, true)
+const hasReviewedPr = atom({ plugin: 'cockpit', key: 'hasReviewedPr' } as const, false)
 const setupFacts = atom({ plugin: 'cockpit', key: 'setupFacts' } as const, { scopes: {}, lastEventAt: null }, { shape: 'setup-2' })
 
 const PANE = 'cockpit'
@@ -108,16 +109,21 @@ const COMMAND: CommandSpec = {
 }
 const PR_MODE_COMMAND: CommandSpec = {
   name: 'pr-mode',
-  description: 'Show or hide the PR skill buttons above the prompt; each runs its skill on what is typed in the prompt',
+  description: 'Show or hide the PR skill buttons above the prompt; each puts its skill in front of what is typed in the prompt',
   argumentHint: '[on|off]',
 }
+const PR_REVIEW_SKILL = 'pr-workflows:pr-review'
+const PR_SECOND_REVIEW_SKILL = 'pr-workflows:pr-second-review'
 // Digits, as a focused band arms only a bare digit's hotkey.
 const PR_SKILLS = [
-  { skill: 'pr-workflows:ask-pr-review-slack', label: '📣 Ask review', hotkey: '1' },
-  { skill: 'pr-workflows:pr-review', label: '🔍 Review', hotkey: '2' },
-  { skill: 'pr-workflows:pr-second-review', label: '🔁 2nd review', hotkey: '3' },
-  { skill: 'pr-workflows:address-pr-feedback', label: '🛠 Address feedback', hotkey: '4' },
+  { skill: PR_REVIEW_SKILL, label: '🔍 Review PR', hotkey: '1' },
+  { skill: PR_SECOND_REVIEW_SKILL, label: '🔁 2nd review', hotkey: '2' },
+  { skill: 'pr-workflows:address-pr-feedback', label: '🛠 Address feedback', hotkey: '3' },
+  { skill: 'pr-workflows:pr-polish', label: '✦ Polish', hotkey: '4' },
+  { skill: 'pr-workflows:ask-pr-review-slack', label: '📣 Ask review', hotkey: '5' },
 ] as const
+// A slash command a PR button put at the front of the draft, so the next press swaps it instead of stacking.
+const LEADING_SLASH_COMMAND = /^\/pr-workflows:\S+\s*/
 const SETUP_TAB = 'alerts' satisfies Tab
 const TABS = [
   { id: 'inbox', label: 'Inbox', hotkey: '1' },
@@ -782,11 +788,11 @@ function runSlash($: Engine, line: string): void {
   inBackground($, $.command.run({ command, args: args.join(' ') }))
 }
 
-/** Runs the skill with the prompt's draft as its arguments, and empties the prompt. */
-async function runSkillOnDraft($: Engine, skill: string): Promise<void> {
+/** Puts the skill's slash command in front of the draft, for the person to finish and send. */
+async function putSkillInPrompt($: Engine, skill: string): Promise<void> {
   const { text } = await $.prompt.read()
-  runSlash($, `/${skill} ${text.trim()}`)
-  await $.prompt.fill({ text: '', mode: 'replace' })
+  const rest = text.trim().replace(LEADING_SLASH_COMMAND, '')
+  await $.prompt.fill({ text: `/${skill} ${rest}`, mode: 'replace' })
 }
 
 async function setPrMode($: Engine, isOn: boolean): Promise<void> {
@@ -934,7 +940,7 @@ export const register: Register = (on, options) => {
       inBackground($, refreshBoard($, config, { isForced: false }))
       inBackground($, refreshUsage($))
       inBackground($, loadSkills($, config))
-      inBackground($, $.store.get(PR_MODE_KEY).then(stored => update($, prMode, () => stored === true)))
+      inBackground($, $.store.get(PR_MODE_KEY).then(stored => update($, prMode, () => stored !== false)))
     })
     $.clock.every(SHARED_POLL_MS, () => inBackground($, syncShared($)))
     $.clock.every(MINUTE_MS, () => inBackground($, $.clock.now().then(now => update($, clockNow, () => now))))
@@ -962,7 +968,7 @@ export const register: Register = (on, options) => {
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     if (e.props.hasSurvey) return next(e)
-    const [shown, isPrMode, , now] = await Promise.all([read($, usage), read($, prMode), read($, clockNow), $.clock.now()])
+    const [shown, isPrMode, hasReviewed, , now] = await Promise.all([read($, usage), read($, prMode), read($, hasReviewedPr), read($, clockNow), $.clock.now()])
     const gauges = shown === null ? [] : usageGauges(shown, now)
     if (gauges.length === 0 && !isPrMode) return next(e)
     const { Box, Text, Button } = $.ui.resolve(e)
@@ -987,8 +993,8 @@ export const register: Register = (on, options) => {
         {isPrMode && (
           <Box flexDirection="row" gap={1} flexWrap="wrap">
             <Text dimColor>PR ›</Text>
-            {PR_SKILLS.map(entry => (
-              <Button key={`pr-${entry.skill}`} hotkey={entry.hotkey} label={entry.label} onPress={() => runSkillOnDraft($, entry.skill)} />
+            {PR_SKILLS.filter(entry => entry.skill !== PR_SECOND_REVIEW_SKILL || hasReviewed).map(entry => (
+              <Button key={`pr-${entry.skill}`} hotkey={entry.hotkey} label={entry.label} onPress={() => putSkillInPrompt($, entry.skill)} />
             ))}
           </Box>
         )}
@@ -1014,7 +1020,14 @@ export const register: Register = (on, options) => {
   on('skill.prompt', async ($, e, next) => {
     const prompted = await next(e)
     inBackground($, countSkill($, config, e.skill))
+    if (e.skill === PR_REVIEW_SKILL) await update($, hasReviewedPr, () => true)
     return prompted
+  })
+
+  on('session.end', async ($, e, next) => {
+    // The process goes on under a fresh conversation after /clear, which has run no review yet.
+    if (e.reason === 'clear') await update($, hasReviewedPr, () => false)
+    return next(e)
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
