@@ -554,8 +554,18 @@ describe('the band above the prompt', () => {
     await start($, clock)
     const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
     const shown = await shownText(band)
-    for (const expected of ['5h', '42%', '↻1h', 'Ctx', '50%']) expect(shown).toContain(expected)
+    for (const expected of ['5h', '42%', '↻1h20m', 'Ctx', '▰▰▰▰▱▱▱▱', '50%']) expect(shown).toContain(expected)
     expect(await band.find({ type: 'Button' })).toBeUndefined()
+    await band.unmount()
+  })
+
+  test('the reset countdown moves each minute while the session is idle', async ($, on) => {
+    const { clock } = fakeWorld(on)
+    await start($, clock)
+    const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
+    expect(await shownText(band)).toContain('↻1h20m')
+    await clock.advance(60_000)
+    expect(await shownText(band)).toContain('↻1h19m')
     await band.unmount()
   })
 

@@ -62,6 +62,21 @@ export function stripBarWidth({ columns, gauges }: { columns: number; gauges: nu
   return Math.max(0, Math.min(MAX_BAR, Math.floor(spare / gauges)))
 }
 
+/** `45m`, `2h05m` or `5d3h` until a reset still ahead. */
+export function resetIn(resetsAt: number, now: number): string {
+  const minutes = Math.ceil((resetsAt - now) / 60_000)
+  if (minutes < 60) return `${minutes}m`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours}h${String(minutes % 60).padStart(2, '0')}m`
+  return `${Math.floor(hours / 24)}d${hours % 24}h`
+}
+
+/** The band's bars: full on a wide terminal, short on a middling one, none on a narrow one. */
+export function bandBarWidth(columns: number): number {
+  if (columns >= 100) return 8
+  return columns >= 80 ? 4 : 0
+}
+
 export function usageColor(percent: number): 'success' | 'warning' | 'error' {
   if (percent >= 75) return 'error'
   return percent >= 50 ? 'warning' : 'success'
