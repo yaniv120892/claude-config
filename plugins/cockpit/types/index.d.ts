@@ -196,6 +196,8 @@ declare module 'claude-code' {
       setupFacts: Shaped<SetupFacts>
       /** The PR skill buttons show above the prompt; kept in the store, so a new session starts with it. */
       prMode: boolean
+      /** Epoch milliseconds, set each minute: the band reads it so its countdowns redraw. */
+      clockNow: number
     }
   }
 }

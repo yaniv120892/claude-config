@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { bar, contextGauge, kiloTokens, parsePinned, skillButtons, stripBarWidth, usageLimits } from '../hooks/usage'
+import { bandBarWidth, bar, contextGauge, kiloTokens, parsePinned, skillButtons, resetIn, stripBarWidth, usageLimits } from '../hooks/usage'
 
 describe('the usage strip', () => {
   test('labels each limit briefly', async () => {
@@ -24,6 +24,21 @@ describe('the usage strip', () => {
     expect(stripBarWidth({ columns: 80, gauges: 3 })).toBe(4)
     expect(stripBarWidth({ columns: 80, gauges: 4 })).toBe(0)
     expect(stripBarWidth({ columns: 200, gauges: 3 })).toBe(8)
+  })
+})
+
+describe('the band', () => {
+  test('counts down to a reset in minutes, hours and minutes, or days and hours', async () => {
+    const now = Date.parse('2026-11-01T10:00:00Z')
+    expect(resetIn(now + 45 * 60_000, now)).toBe('45m')
+    expect(resetIn(now + 125 * 60_000, now)).toBe('2h05m')
+    expect(resetIn(now + (5 * 24 + 3) * 3_600_000, now)).toBe('5d3h')
+  })
+
+  test('drops the bars on a narrow terminal and shortens them on a middling one', async () => {
+    expect(bandBarWidth(120)).toBe(8)
+    expect(bandBarWidth(90)).toBe(4)
+    expect(bandBarWidth(60)).toBe(0)
   })
 })
 

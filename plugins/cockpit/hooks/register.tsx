@@ -68,7 +68,7 @@ import {
   waiting,
 } from './slack'
 import type { SlackMessage } from './slack'
-import { asCounts, bar, contextGauge, kiloTokens, parsePinned, skillButtons, stripBarWidth, usageColor, usageLimits } from './usage'
+import { asCounts, bandBarWidth, bar, contextGauge, kiloTokens, parsePinned, skillButtons, stripBarWidth, usageColor, usageLimits, resetIn } from './usage'
 
 // Every hook lives in this file: the engine follows `$` only into functions
 // declared beside the hook that passes it. The pure logic sits in the files
@@ -94,6 +94,8 @@ const openTicket = atom({ plugin: 'cockpit', key: 'openTicket' } as const, null)
 const confirmingMerge = atom({ plugin: 'cockpit', key: 'confirmingMerge' } as const, null)
 const askingReviewFor = atom({ plugin: 'cockpit', key: 'askingReviewFor' } as const, null)
 const reviewerDraft = atom({ plugin: 'cockpit', key: 'reviewerDraft' } as const, '')
+// Ticks each minute, so the band's reset countdowns move while the session is idle.
+const clockNow = atom({ plugin: 'cockpit', key: 'clockNow' } as const, 0)
 const prMode = atom({ plugin: 'cockpit', key: 'prMode' } as const, false)
 const setupFacts = atom({ plugin: 'cockpit', key: 'setupFacts' } as const, { scopes: {}, lastEventAt: null }, { shape: 'setup-2' })
 
@@ -900,7 +902,7 @@ async function investigate($: Engine, alert: Alert): Promise<void> {
 }
 
 function resetNote({ resetsAt, now }: { resetsAt: number | null; now: number }): string | null {
-  return resetsAt === null || resetsAt <= now ? null : `↻${age(now, resetsAt)}`
+  return resetsAt === null || resetsAt <= now ? null : `↻${resetIn(resetsAt, now)}`
 }
 
 /** Each limit with its reset, then the context window. */
@@ -935,6 +937,7 @@ export const register: Register = (on, options) => {
       inBackground($, $.store.get(PR_MODE_KEY).then(stored => update($, prMode, () => stored === true)))
     })
     $.clock.every(SHARED_POLL_MS, () => inBackground($, syncShared($)))
+    $.clock.every(MINUTE_MS, () => inBackground($, $.clock.now().then(now => update($, clockNow, () => now))))
     $.clock.every(BOARD_TICK_MS, () => inBackground($, refreshBoard($, config, { isForced: false })))
     if (hasSlack) inBackground($, runSidecar($, config))
     return started
@@ -959,19 +962,23 @@ export const register: Register = (on, options) => {
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     if (e.props.hasSurvey) return next(e)
-    const [shown, isPrMode, now] = await Promise.all([read($, usage), read($, prMode), $.clock.now()])
+    const [shown, isPrMode, , now] = await Promise.all([read($, usage), read($, prMode), read($, clockNow), $.clock.now()])
     const gauges = shown === null ? [] : usageGauges(shown, now)
     if (gauges.length === 0 && !isPrMode) return next(e)
     const { Box, Text, Button } = $.ui.resolve(e)
+    const width = bandBarWidth(e.props.bodyColumns)
     return (
       <Box flexDirection="column">
         {gauges.length > 0 && (
           <Text wrap="truncate-end">
             {gauges.map((gauge, index) => (
               <Text key={gauge.label}>
-                {index > 0 && <Text dimColor> · </Text>}
-                <Text dimColor>{gauge.label} </Text>
-                <Text color={usageColor(gauge.percent)}>{gauge.percent}%</Text>
+                {index > 0 && <Text color="subtle"> │ </Text>}
+                <Text bold>{gauge.label} </Text>
+                {width > 0 && <Text color={usageColor(gauge.percent)}>{bar(gauge.percent, width)} </Text>}
+                <Text bold color={usageColor(gauge.percent)}>
+                  {gauge.percent}%
+                </Text>
                 {gauge.note !== null && <Text dimColor> {gauge.note}</Text>}
               </Text>
             ))}
@@ -979,6 +986,7 @@ export const register: Register = (on, options) => {
         )}
         {isPrMode && (
           <Box flexDirection="row" gap={1} flexWrap="wrap">
+            <Text dimColor>PR ›</Text>
             {PR_SKILLS.map(entry => (
               <Button key={`pr-${entry.skill}`} hotkey={entry.hotkey} label={entry.label} onPress={() => runSkillOnDraft($, entry.skill)} />
             ))}
