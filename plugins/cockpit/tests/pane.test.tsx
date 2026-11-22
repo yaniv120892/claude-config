@@ -549,17 +549,29 @@ const BAND = {
 } as const
 
 describe('the band above the prompt', () => {
-  test('shows each limit with its reset and the context, and no PR buttons until PR mode is on', async ($, on) => {
+  test('shows each limit with its reset and the context, and the PR buttons unless PR mode is off', async ($, on) => {
     const { clock } = fakeWorld(on)
     await start($, clock)
     const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
     const shown = await shownText(band)
     for (const expected of ['5h', '42%', '↻1h', 'Ctx', '50%']) expect(shown).toContain(expected)
-    expect(await band.find({ type: 'Button' })).toBeUndefined()
+    expect(await band.find({ key: 'pr-pr-workflows:pr-review' })).toBeDefined()
+    expect(await band.find({ key: 'pr-pr-workflows:pr-polish' })).toBeDefined()
+    expect(await band.find({ key: 'pr-pr-workflows:pr-second-review' })).toBeUndefined()
     await band.unmount()
   })
 
-  test('in PR mode a button runs its skill on the draft and empties the prompt; the mode outlives the session', async ($, on) => {
+  test('2nd review shows once this session has run pr-review', async ($, on) => {
+    const { clock } = fakeWorld(on)
+    on('skill.prompt', ($, e) => ({ text: e.text }))
+    await start($, clock)
+    await $.skill.prompt({ skill: 'pr-workflows:pr-review', text: 'Review it.' })
+    const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
+    expect(await band.find({ key: 'pr-pr-workflows:pr-second-review' })).toBeDefined()
+    await band.unmount()
+  })
+
+  test('a button puts its skill before the draft without sending it; turning PR mode off outlives the session', async ($, on) => {
     const { clock, prompts } = fakeWorld(on)
     const fills: string[] = []
     on('prompt.fill', ($, e) => {
@@ -569,30 +581,25 @@ describe('the band above the prompt', () => {
     on('prompt.read', () => ({ value: { text: ' https://github.com/acme/app/pull/1 ', cursor: 0 } }))
 
     await start($, clock)
-    await $.command.run(slash('pr-mode'))
     const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
-    await band.press({ key: 'pr-pr-workflows:pr-second-review' })
+    await band.press({ key: 'pr-pr-workflows:pr-polish' })
     await clock.settle()
-    expect(prompts).toContain('/pr-workflows:pr-second-review https://github.com/acme/app/pull/1')
-    expect(fills).toEqual([''])
+    expect(fills).toEqual(['/pr-workflows:pr-polish https://github.com/acme/app/pull/1 '])
+    expect(prompts).not.toContain('/pr-workflows:pr-polish https://github.com/acme/app/pull/1')
     await band.unmount()
 
-    await start($, clock)
-    const restarted = await $.ui.mount({ ...BAND, surface: 'terminal' })
-    expect(await restarted.find({ type: 'Button' })).toBeDefined()
-    await restarted.unmount()
-
     await $.command.run(slash('pr-mode', 'off'))
+    await start($, clock)
     const after = await $.ui.mount({ ...BAND, surface: 'terminal' })
     expect(await after.find({ type: 'Button' })).toBeUndefined()
     await after.unmount()
   })
 
   test('a session starts in the PR mode the store holds', async ($, on) => {
-    const { clock } = fakeWorld(on, { stored: { prMode: true } })
+    const { clock } = fakeWorld(on, { stored: { prMode: false } })
     await start($, clock)
     const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
-    expect(await band.find({ type: 'Button' })).toBeDefined()
+    expect(await band.find({ type: 'Button' })).toBeUndefined()
     await band.unmount()
   })
 })

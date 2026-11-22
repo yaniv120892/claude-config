@@ -196,6 +196,7 @@ declare module 'claude-code' {
       setupFacts: Shaped<SetupFacts>
       /** The PR skill buttons show above the prompt; kept in the store, so a new session starts with it. */
       prMode: boolean
+      hasReviewed: boolean
     }
   }
 }
