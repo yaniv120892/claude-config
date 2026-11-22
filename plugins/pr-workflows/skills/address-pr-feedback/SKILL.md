@@ -150,8 +150,9 @@ conventions. Do this before Step 6, so a reply can point to the description.
 ## Step 6 — Ask the one gate question, then reply
 
 **Ask the user how to post replies: via API into each thread, or draft-only for them to paste.**
-Defaults (no need to ask): replies are **attributed to Claude** and threads are **left unresolved**
-for the reviewer to close. Only deviate if the user says otherwise.
+Defaults (no need to ask): replies are **attributed to Claude**; a human reviewer's thread is
+**left unresolved** for them to close, and a Qodo thread is **resolved by you** once it is fixed or
+answered with a decision. Only deviate if the user says otherwise.
 
 Reply per thread with `pr_feedback.py`:
 
@@ -168,6 +169,18 @@ python3 pr_feedback.py reply --pr <NUMBER> --thread <THREAD_ID> --body-file /tmp
 - **Kept on purpose:** state it as a decision with the reason — `Keeping <x>: <reason>.` — so it is on
   record. Reviewers ask for this explicitly.
 - Write the body to a file and use `--body-file` — multi-line markdown and backticks break shell `-f`/`--field` escaping.
+
+**Qodo threads: resolve them yourself.** Reviewers expect a Qodo thread closed, not just answered.
+After the fix is pushed or the decision (push-back, kept on purpose) is in your reply, resolve it:
+
+```bash
+python3 pr_feedback.py resolve --pr <NUMBER> --thread <THREAD_ID> --node-id <NODE_ID> [--repo ...]
+```
+
+Only resolve a Qodo thread you genuinely fixed or answered with a decision, never one you have not
+addressed. Qodo's summary comment may show a finding as "Resolved" or "Dismissed", and that thread
+may already be resolved on GitHub; a finding Qodo dropped from its summary can still have an open
+inline thread. Trust `list --all`, not the summary.
 
 ### Keep each reply short — 2–4 sentences
 
@@ -211,6 +224,8 @@ of these hold on a fresh fetch of the PR:
 - every inline thread, every review body, and every general reviewer comment has a reply of yours
   posted after it, on GitHub, where the reviewer looks for it
 - the PR description still matches the change, since a reviewer reads it as part of the review
+- no Qodo thread is left open: `pr_feedback.py list --pr <NUMBER> --all` shows `resolved: true` on
+  every Qodo thread (human reviewers' threads stay open for them)
 
 Send it right after the push and the replies. Don't wait for CI or Qodo: the reviewer can read the
 replies while they run, and a fast back-and-forth is the point. Keep watching both afterwards
@@ -233,8 +248,9 @@ answered an earlier round, so this round still gets its own.
 
 ## Gate outward-facing actions
 
-- **Resolving is the reviewer's call by default — leave threads open** unless the user asks you to
-  resolve fixed ones. Only ever resolve a thread you genuinely fixed, never a push-back.
+- **Resolving a human reviewer's thread is their call — leave it open** unless the user asks you to
+  resolve fixed ones. **Resolve Qodo threads yourself** once fixed or answered with a decision
+  (Step 6). Never resolve a thread you have not addressed.
 - **Confirm the target branch is the PR's source branch before pushing**; never force-push.
 - Posting replies publishes to the reviewer — honor the Step 6 method choice; don't post when the
   user asked for draft-only.
@@ -249,7 +265,8 @@ answered an earlier round, so this round still gets its own.
 | A multi-paragraph reply narrating the whole investigation                   | ~60 words, verdict first. The detail belongs in the PR description (Step 6)             |
 | The same root-cause write-up pasted into several threads                    | Put it once in the description; each reply points there in one line                     |
 | Posting multi-line replies with an inline `--body`                          | Backticks/newlines break shell escaping — write to a file, use `--body-file`            |
-| Resolving threads to "tidy up"                                              | Resolving is outward-facing and the reviewer's signal — leave open by default           |
+| Resolving a human reviewer's thread to "tidy up"                             | Resolving is the reviewer's signal — leave human threads open by default                |
+| Replying to a Qodo thread but leaving it open                               | Resolve it after the fix or decision; check `list --all` for `resolved: false` (Step 8) |
 | Running another repo's build/lint in a worktree                             | Run THIS repo's `package.json` scripts (pre-push-quality-gate)                          |
 | Treating a release-bot note as feedback                                     | Ignore non-actionable general notes; act on reviewer comments                           |
 | Pushing fix commits that only passed the quality gate                       | Run the shared review and fix pass on them first (Step 4b) — it holds the rules audit   |

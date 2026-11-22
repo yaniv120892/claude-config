@@ -126,8 +126,8 @@ describes (`/agentic_review`, then its review comment naming the new head SHA) b
 is nothing new. Without one, go straight to the threads. Then:
 
 - Unanswered threads: run `/pr-workflows:address-pr-feedback`, which fixes, runs the shared review and
-  fix pass (comment pruning included) on its fix commits, pushes, and replies in each thread. Return to
-  Step 5 after the last push.
+  fix pass (comment pruning included) on its fix commits, pushes, replies in each thread, and resolves
+  each Qodo thread it fixed or answered. Return to Step 5 after the last push.
 - None: say so.
 
 ## Report
