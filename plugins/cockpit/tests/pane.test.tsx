@@ -542,6 +542,61 @@ describe('skills, usage and compact', () => {
   })
 })
 
+const BAND = {
+  plugin: 'cockpit',
+  component: 'AbovePrompt',
+  props: { hasSurvey: false, isCollapsed: false, isWorking: false, maxRows: 10, bodyColumns: 120, scroll: { offset: 0, bodyRows: 10 }, view: {} },
+} as const
+
+describe('the band above the prompt', () => {
+  test('shows each limit with its reset and the context, and no PR buttons until PR mode is on', async ($, on) => {
+    const { clock } = fakeWorld(on)
+    await start($, clock)
+    const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
+    const shown = await shownText(band)
+    for (const expected of ['5h', '42%', '↻1h', 'Ctx', '50%']) expect(shown).toContain(expected)
+    expect(await band.find({ type: 'Button' })).toBeUndefined()
+    await band.unmount()
+  })
+
+  test('in PR mode a button runs its skill on the draft and empties the prompt; the mode outlives the session', async ($, on) => {
+    const { clock, prompts } = fakeWorld(on)
+    const fills: string[] = []
+    on('prompt.fill', ($, e) => {
+      fills.push(e.text)
+      return { isFilled: true, text: e.text }
+    })
+    on('prompt.read', () => ({ value: { text: ' https://github.com/acme/app/pull/1 ', cursor: 0 } }))
+
+    await start($, clock)
+    await $.command.run(slash('pr-mode'))
+    const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
+    await band.press({ key: 'pr-pr-workflows:pr-second-review' })
+    await clock.settle()
+    expect(prompts).toContain('/pr-workflows:pr-second-review https://github.com/acme/app/pull/1')
+    expect(fills).toEqual([''])
+    await band.unmount()
+
+    await start($, clock)
+    const restarted = await $.ui.mount({ ...BAND, surface: 'terminal' })
+    expect(await restarted.find({ type: 'Button' })).toBeDefined()
+    await restarted.unmount()
+
+    await $.command.run(slash('pr-mode', 'off'))
+    const after = await $.ui.mount({ ...BAND, surface: 'terminal' })
+    expect(await after.find({ type: 'Button' })).toBeUndefined()
+    await after.unmount()
+  })
+
+  test('a session starts in the PR mode the store holds', async ($, on) => {
+    const { clock } = fakeWorld(on, { stored: { prMode: true } })
+    await start($, clock)
+    const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
+    expect(await band.find({ type: 'Button' })).toBeDefined()
+    await band.unmount()
+  })
+})
+
 describe('one board reader per machine', () => {
   const storedBoard = {
     prs: parseBoard(boardAnswer([row({ number: 8, title: 'feat(YAN-1): read by another session' })]), 'production'),

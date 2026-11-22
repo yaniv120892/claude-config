@@ -194,6 +194,8 @@ declare module 'claude-code' {
       askingReviewFor: string | null
       reviewerDraft: string
       setupFacts: Shaped<SetupFacts>
+      /** The PR skill buttons show above the prompt; kept in the store, so a new session starts with it. */
+      prMode: boolean
     }
   }
 }
