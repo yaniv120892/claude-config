@@ -21,6 +21,7 @@ import type {
   SlackLink,
   Tab,
   Ticket,
+  UsageView,
 } from '../types'
 import { addAlert, asAlerts, investigateArgs, isRelated, parseVerdict, verdictPrompt, watchedDeploys } from './alerts'
 import type { Verdict } from './alerts'
@@ -93,6 +94,7 @@ const openTicket = atom({ plugin: 'cockpit', key: 'openTicket' } as const, null)
 const confirmingMerge = atom({ plugin: 'cockpit', key: 'confirmingMerge' } as const, null)
 const askingReviewFor = atom({ plugin: 'cockpit', key: 'askingReviewFor' } as const, null)
 const reviewerDraft = atom({ plugin: 'cockpit', key: 'reviewerDraft' } as const, '')
+const prMode = atom({ plugin: 'cockpit', key: 'prMode' } as const, false)
 const setupFacts = atom({ plugin: 'cockpit', key: 'setupFacts' } as const, { scopes: {}, lastEventAt: null }, { shape: 'setup-2' })
 
 const PANE = 'cockpit'
@@ -102,6 +104,18 @@ const COMMAND: CommandSpec = {
   description: 'Open the cockpit: the Slack PR inbox, your PRs and tickets, deploy alerts, skill buttons and usage',
   argumentHint: '[inbox|prs|alerts|skills]',
 }
+const PR_MODE_COMMAND: CommandSpec = {
+  name: 'pr-mode',
+  description: 'Show or hide the PR skill buttons above the prompt; each runs its skill on what is typed in the prompt',
+  argumentHint: '[on|off]',
+}
+// Digits, as a focused band arms only a bare digit's hotkey.
+const PR_SKILLS = [
+  { skill: 'pr-workflows:ask-pr-review-slack', label: '📣 Ask review', hotkey: '1' },
+  { skill: 'pr-workflows:pr-review', label: '🔍 Review', hotkey: '2' },
+  { skill: 'pr-workflows:pr-second-review', label: '🔁 2nd review', hotkey: '3' },
+  { skill: 'pr-workflows:address-pr-feedback', label: '🛠 Address feedback', hotkey: '4' },
+] as const
 const SETUP_TAB = 'alerts' satisfies Tab
 const TABS = [
   { id: 'inbox', label: 'Inbox', hotkey: '1' },
@@ -120,6 +134,7 @@ const SKILL_COUNTS_KEY = 'skillCounts'
 const BOARD_KEY = BOARD_SHAPE
 const LEASE_KEY = 'boardLease'
 const SETUP_KEY = 'setup'
+const PR_MODE_KEY = 'prMode'
 
 const SHARED_POLL_MS = 15_000
 // How often a session looks at the stored board: a store read, not a GitHub one.
@@ -765,6 +780,18 @@ function runSlash($: Engine, line: string): void {
   inBackground($, $.command.run({ command, args: args.join(' ') }))
 }
 
+/** Runs the skill with the prompt's draft as its arguments, and empties the prompt. */
+async function runSkillOnDraft($: Engine, skill: string): Promise<void> {
+  const { text } = await $.prompt.read()
+  runSlash($, `/${skill} ${text.trim()}`)
+  await $.prompt.fill({ text: '', mode: 'replace' })
+}
+
+async function setPrMode($: Engine, isOn: boolean): Promise<void> {
+  await update($, prMode, () => isOn)
+  await $.store.set(PR_MODE_KEY, isOn)
+}
+
 async function compact($: Engine): Promise<void> {
   try {
     const result = await $.session.compact()
@@ -876,6 +903,14 @@ function resetNote({ resetsAt, now }: { resetsAt: number | null; now: number }):
   return resetsAt === null || resetsAt <= now ? null : `↻${age(now, resetsAt)}`
 }
 
+/** Each limit with its reset, then the context window. */
+function usageGauges(shown: UsageView, now: number): { label: string; percent: number; note: string | null }[] {
+  return [
+    ...shown.limits.map(limit => ({ label: limit.label, percent: limit.percent, note: resetNote({ resetsAt: limit.resetsAt, now }) })),
+    ...(shown.context === null ? [] : [{ label: 'Ctx', percent: shown.context.percent, note: compactNote(shown.context) }]),
+  ]
+}
+
 /** Tokens left before auto-compact, so its coming is plain; or that it is off. */
 function compactNote(context: ContextGauge): string | null {
   if (context.tokensToCompact !== null) return `⇣${kiloTokens(context.tokensToCompact)} to compact`
@@ -889,6 +924,7 @@ export const register: Register = (on, options) => {
 
   on('session.start', async ($, e, next) => {
     await $.command.register(COMMAND)
+    await $.command.register(PR_MODE_COMMAND)
     const started = await next(e)
     // On timers, not in this dispatch, so the first prompt does not wait on gh, Linear or the store.
     $.clock.after(0, () => {
@@ -896,6 +932,7 @@ export const register: Register = (on, options) => {
       inBackground($, refreshBoard($, config, { isForced: false }))
       inBackground($, refreshUsage($))
       inBackground($, loadSkills($, config))
+      inBackground($, $.store.get(PR_MODE_KEY).then(stored => update($, prMode, () => stored === true)))
     })
     $.clock.every(SHARED_POLL_MS, () => inBackground($, syncShared($)))
     $.clock.every(BOARD_TICK_MS, () => inBackground($, refreshBoard($, config, { isForced: false })))
@@ -911,6 +948,44 @@ export const register: Register = (on, options) => {
     const shown = await read($, board)
     inBackground($, refreshFocus($, shown?.tickets ?? []))
     return { text: 'The cockpit is in the pane.' }
+  })
+
+  on('command.run', { command: 'pr-mode' }, async ($, e) => {
+    const asked = e.args.trim().toLowerCase()
+    const isOn = asked === 'on' || (asked !== 'off' && !(await read($, prMode)))
+    await setPrMode($, isOn)
+    return { text: isOn ? 'PR mode on: the PR skill buttons are above the prompt.' : 'PR mode off.' }
+  })
+
+  on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
+    if (e.props.hasSurvey) return next(e)
+    const [shown, isPrMode, now] = await Promise.all([read($, usage), read($, prMode), $.clock.now()])
+    const gauges = shown === null ? [] : usageGauges(shown, now)
+    if (gauges.length === 0 && !isPrMode) return next(e)
+    const { Box, Text, Button } = $.ui.resolve(e)
+    return (
+      <Box flexDirection="column">
+        {gauges.length > 0 && (
+          <Text wrap="truncate-end">
+            {gauges.map((gauge, index) => (
+              <Text key={gauge.label}>
+                {index > 0 && <Text dimColor> · </Text>}
+                <Text dimColor>{gauge.label} </Text>
+                <Text color={usageColor(gauge.percent)}>{gauge.percent}%</Text>
+                {gauge.note !== null && <Text dimColor> {gauge.note}</Text>}
+              </Text>
+            ))}
+          </Text>
+        )}
+        {isPrMode && (
+          <Box flexDirection="row" gap={1} flexWrap="wrap">
+            {PR_SKILLS.map(entry => (
+              <Button key={`pr-${entry.skill}`} hotkey={entry.hotkey} label={entry.label} onPress={() => runSkillOnDraft($, entry.skill)} />
+            ))}
+          </Box>
+        )}
+      </Box>
+    )
   })
 
   on('turn.complete', async ($, e, next) => {
@@ -1472,10 +1547,7 @@ export const register: Register = (on, options) => {
     async function drawUsageStrip() {
       const shown = await read($, usage)
       if (shown === null) return <Text dimColor>Reading the usage…</Text>
-      const gauges = [
-        ...shown.limits.map(limit => ({ label: limit.label, percent: limit.percent, note: resetNote({ resetsAt: limit.resetsAt, now }) })),
-        ...(shown.context === null ? [] : [{ label: 'Ctx', percent: shown.context.percent, note: compactNote(shown.context) }]),
-      ]
+      const gauges = usageGauges(shown, now)
       const isEmpty = gauges.length === 0 && shown.costUsd === null
       if (isEmpty) return null
       const width = stripBarWidth({ columns: e.props.bodyColumns, gauges: gauges.length })
