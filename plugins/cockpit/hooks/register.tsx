@@ -109,21 +109,23 @@ const COMMAND: CommandSpec = {
 }
 const PR_MODE_COMMAND: CommandSpec = {
   name: 'pr-mode',
-  description: 'Show or hide the PR skill buttons above the prompt; each puts its skill in front of what is typed in the prompt',
+  description: 'Show or hide the skill buttons (PR skills and Investigate alert) above the prompt; each puts its skill in front of what is typed in the prompt',
   argumentHint: '[on|off]',
 }
+const INVESTIGATE_SKILL = 'dev-workflows:investigate-alert'
 const PR_REVIEW_SKILL = 'pr-workflows:pr-review'
 const PR_SECOND_REVIEW_SKILL = 'pr-workflows:pr-second-review'
 // Digits, as a focused band arms only a bare digit's hotkey.
 const PR_SKILLS = [
-  { skill: PR_REVIEW_SKILL, label: '🔍 Review PR', hotkey: '1' },
-  { skill: PR_SECOND_REVIEW_SKILL, label: '🔁 2nd review', hotkey: '2' },
-  { skill: 'pr-workflows:address-pr-feedback', label: '🛠 Address feedback', hotkey: '3' },
-  { skill: 'pr-workflows:pr-polish', label: '✦ Polish', hotkey: '4' },
-  { skill: 'pr-workflows:ask-pr-review-slack', label: '📣 Ask review', hotkey: '5' },
-] as const
+  { skill: PR_REVIEW_SKILL, label: '🔍 Review PR', hotkey: '1', color: 'suggestion' },
+  { skill: PR_SECOND_REVIEW_SKILL, label: '🔁 2nd review', hotkey: '2', color: 'permission' },
+  { skill: 'pr-workflows:address-pr-feedback', label: '🛠 Address feedback', hotkey: '3', color: 'warning' },
+  { skill: 'pr-workflows:pr-polish', label: '✦ Polish', hotkey: '4', color: 'merged' },
+  { skill: 'pr-workflows:ask-pr-review-slack', label: '📣 Ask review', hotkey: '5', color: 'claude' },
+  { skill: INVESTIGATE_SKILL, label: '🔎 Investigate alert', hotkey: '6', color: 'error' },
+] as const satisfies readonly { skill: string; label: string; hotkey: string; color: ThemeKey }[]
 // A slash command a PR button put at the front of the draft, so the next press swaps it instead of stacking.
-const LEADING_SLASH_COMMAND = /^\/pr-workflows:\S+\s*/
+const LEADING_SLASH_COMMAND = /^\/(?:pr|dev)-workflows:\S+\s*/
 const SETUP_TAB = 'alerts' satisfies Tab
 const TABS = [
   { id: 'inbox', label: 'Inbox', hotkey: '1' },
@@ -166,7 +168,6 @@ const ASK_REVIEW_SKILL = '/pr-workflows:ask-pr-review-slack'
 const WORKSPACE_SKILL = '/cmux:ticket-workspace'
 const DONE_STATE = 'Done'
 const MERGE_CONFIRM_MS = 10_000
-const INVESTIGATE_SKILL = 'dev-workflows:investigate-alert'
 const MINUTE_MS = 60_000
 
 const FOCUS_SOURCE = {
@@ -992,9 +993,13 @@ export const register: Register = (on, options) => {
         )}
         {isPrMode && (
           <Box flexDirection="row" gap={1} flexWrap="wrap">
-            <Text dimColor>PR ›</Text>
+            <Text dimColor>Skills ›</Text>
             {PR_SKILLS.filter(entry => entry.skill !== PR_SECOND_REVIEW_SKILL || hasReviewed).map(entry => (
-              <Button key={`pr-${entry.skill}`} hotkey={entry.hotkey} label={entry.label} onPress={() => putSkillInPrompt($, entry.skill)} />
+              <Button key={`pr-${entry.skill}`} hotkey={entry.hotkey} label={entry.label} onPress={() => putSkillInPrompt($, entry.skill)}>
+                <Text bold color={entry.color}>
+                  {entry.label}
+                </Text>
+              </Button>
             ))}
           </Box>
         )}
