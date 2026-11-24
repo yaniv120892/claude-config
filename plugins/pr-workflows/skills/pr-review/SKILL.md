@@ -280,7 +280,18 @@ to the report rather than smoothing it over.
 
 ## Step 4 — One approval for the batch
 
-End with: `Post <N> comments across <M> PRs? (y/n)`
+Before asking, send the review-ready ping (below), then end with:
+`Post <N> comments across <M> PRs? (y/n)`
+
+**Review-ready ping** — the user often starts a review and comes back hours later, so tell them it is waiting. Post once with `slack_send_message` to channel `C0CLK8TE9BK`, three lines, ask first:
+
+```
+Review ready, decide: comment / approve / drop
+<PR url(s)> — <N> findings
+<one line: the finding that matters most>
+```
+
+Skip it only when there is nothing to decide (no findings and the user already said to approve).
 
 Wait. Nothing posts before an explicit yes.
 
