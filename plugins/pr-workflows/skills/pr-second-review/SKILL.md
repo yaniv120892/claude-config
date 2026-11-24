@@ -134,6 +134,14 @@ gh pr review <NUMBER> --approve --repo <slug>
 A PR with an unfixed comment or a new finding waits: report it and approve only
 when the user says so.
 
+When a PR waits, send the review-ready ping before ending the turn: once, `slack_send_message` to channel `C0CLK8TE9BK` (load it through `ToolSearch`), three lines, ask first:
+
+```
+Second review waiting, decide: comment / approve / drop
+<PR url> — <k> comments still unfixed, <m> new findings
+<one line: the unfixed comment that matters most>
+```
+
 From a Slack target, reply once in the thread (`slack_send_message` with
 `channel_id` and `thread_ts` = `ts`) with exactly one of:
 
