@@ -59,7 +59,12 @@ Run the independent reads at the same time.
    - Compare the diff with the signature: the same service, the endpoint or module, the error's cause (a new query, a changed contract, a removed guard).
    - Say **likely** only when the diff touches the failing path. Say **unlikely** when it cannot reach it. Otherwise say **unclear**.
 
-6. **Locate the bug.** When the alert names a stack frame, an endpoint or a log message, find it in the repo (`rg`). Name the file and line that throws, and the likely cause, in one sentence.
+6. **Read the evidence at the time it fired.** A count says how often; the events and logs around the alert say what happened. Do this before naming a cause.
+   - **Events.** In PostHog (`execute-sql`), take a window of about two minutes around `at:` for the alert's host. Find the `$exception`, take its `$session_id`, and read that session's events in order: what the user did, the gap between the last user action and the failure, and whether the next attempt worked. A failure milliseconds after the send is client-side (network, aborted request); one seconds later is a server or upstream error. Count how many other sessions failed in the same window.
+   - **Logs.** In Cloud Logging (`gcloud logging read --project=<project>`), read the same window for the alert's service only: filter by namespace and container, severity `>=WARNING`, and the route or message. Exclude node and platform noise (`cilium-agent`, `fluentbit`, `cloudflared`, `external-dns`, health checks). Confirm the project and namespace are production before reading them as the alert's logs.
+   - Say what you could not read. Events with no matching log line are still a finding.
+
+7. **Locate the bug.** When the alert names a stack frame, an endpoint or a log message, find it in the repo (`rg`). Name the file and line that throws, and the likely cause, in one sentence.
 
 ## Report
 
@@ -69,6 +74,7 @@ Keep it to about ten lines:
 **<service>: <error, short>** — <new | recurring since <date>, <n> times | could not tell>
 Ticket: <KEY (status) — covers this | covers another cause | related | none found | could not check>
 Where: <file:line or endpoint> — <one-sentence cause>
+Evidence: <what the session's events and the service's logs show at that minute | could not read>
 Deploy: <repo#PR live <n>m before the alert | no deploy in the hour before>
 My latest PR: <repo#PR> — <likely | unlikely | unclear>: <one reason>
 Next: <one step: revert, a fix to make, a log to read, or "ignore, it is noise">
