@@ -36,3 +36,14 @@ target and read unconditionally in code fails only in the environment nobody che
 > loudly at the point of use when it is missing.
 > Avoid: Adding it to dev only and discovering prod at deploy time; a silent `?? ''` default that
 > turns a missing var into a confusing downstream error.
+
+**Each Config Key Has One Owner: App Repo or Deploy Config** — a deploy value silently overrides
+the app's `.env.<env>`, so a key set in both shows one value in the app repo while the cluster runs
+another
+> Pattern: The app's `.env.<env>` holds what changes only with the code: secret *names*, third-party
+> hosts, project ids. Deploy config (Helm values, Terraform) holds what describes the deployment or
+> changes without a release: other services' addresses, the mode one image runs in, kill switches and
+> rollout flags. Secret values live in the secret manager. When the code reads a missing value as
+> the safe default, leave the key out of `.env.<env>` and set it only in deploy config.
+> Avoid: The same key in both places (`.env.production` says `false`, the values file says `true`);
+> a rollout flag that needs an app release to flip back.

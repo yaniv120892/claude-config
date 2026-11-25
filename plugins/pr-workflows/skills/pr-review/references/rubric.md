@@ -167,6 +167,7 @@ pipeline hides most of these:
 - **Wait/readiness loops must fail fast** — a loop that `break`s on success but falls through on timeout runs the job against a dead dependency. Require an explicit non-zero `exit` when it exhausts.
 - **Health gates must assert ready, not merely reachable** — a 200 from `/health` can precede the service actually serving.
 - **`.dockerignore` vs `COPY . .`** — verify `.git`, `.env*`, `coverage`, test assets, and build caches are excluded. A newly added `.env*` silently ships into the image; flag it on the file that introduces it, since the diff won't touch `.dockerignore`.
+- **One owner per config key** — when the diff adds or changes an env var in an app `.env.<env>` or in deploy config (Helm values, Terraform), grep the other side for the same key. A key in both is a finding: the deploy value wins silently, so the app repo shows a value production does not run. Rollout flags, stop switches and other services' URLs belong in deploy config; secret names and third-party hosts in the app's `.env.<env>`. See "Each Config Key Has One Owner" in `~/.claude/rules/config.md`.
 - **No copy-pasted CI setup** — duplicated `before_script` blocks drift; prefer anchors or a shared job.
 
 ## 5. Simplification
