@@ -45,13 +45,13 @@ async function confirm(text) {
   }
 }
 
-async function openReview({ name, url, repo }) {
+async function openReview({ name, url, repo, target }) {
   const dir = `${homedir()}/bazak/${repo}`
   const out = await sh('cmux', [
     'workspace', 'create', '--name', name,
     '--cwd', existsSync(dir) ? dir : `${homedir()}/bazak`,
     '--group', await ensureGroup(),
-    '--command', `claude -n ${name} "/pr-workflows:pr-review ${url}"`,
+    '--command', `claude -n ${name} "/pr-workflows:pr-review ${target}"`,
   ])
   const workspace = out.match(/workspace:\d+/)[0]
   await sh('cmux', ['new-surface', '--type', 'browser', '--url', url, '--workspace', workspace, '--focus', 'false'])
@@ -74,7 +74,9 @@ async function onEvent({ event_id, event, authorizations }, userToken) {
   const developer = user.profile.first_name || user.real_name || pr.author.login
   const name = sessionName({ developer, title: pr.title, branch: pr.headRefName, repo, number })
   if (await confirm(`${user.real_name} sent ${slug}#${number}\n${pr.title}\n\nRun /pr-review?`)) {
-    await openReview({ name, url, repo })
+    // The skill reacts and replies in the thread only when it is handed the Slack message, not the bare PR URL
+    const { permalink } = await slack('chat.getPermalink', userToken, { channel: event.channel, message_ts: event.ts }).catch((e) => (log(e), {}))
+    await openReview({ name, url, repo, target: permalink ?? url })
   }
 }
 
