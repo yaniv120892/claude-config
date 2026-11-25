@@ -380,6 +380,27 @@ line and PRs tab. The README's *Mods* and *Cockpit* sections have the rest.
 > Keep lodash `memoize` for sync functions and for promises that cannot reject.
 > Example: bazak-mastra#666 — the explicit-cache client and then the resumable-stream runtime each cached a failed Secret Manager read, breaking that feature on the pod until restart.
 
+## Configuration Files
+
+**Each Config Key Has One Owner: App Repo or Deploy Config** — deploy values are real environment
+variables by the time the app starts, and `dotenv`/`dotenv-flow` fill in only keys not already set,
+so a key in both the app's `.env.<env>` and the Helm values resolves to the deploy value with no
+trace of the override in the app repo
+> Pattern: Split by who changes it and when.
+> - App `.env.<env>` (ships in the image, changes with a code PR): Secret Manager *names*,
+>   third-party API hosts, project ids, anything the code change itself needs.
+> - Deploy config (Helm values / Terraform, changes with a redeploy of the same image): other
+>   services' URLs, `APP_MODE`-style switches for one image run as several deployments, kill
+>   switches and rollout flags, names of resources Terraform creates.
+> - Secret manager: secret values, never either file.
+> A flag whose code fails closed on a missing value lives only in deploy config; drop it from
+> `.env.<env>` rather than committing a `false` the deploy overrides.
+> Avoid: One key set in both places; a rollout or stop switch that needs an app release (carrying
+> everything else merged to `main`) to turn off during an incident.
+> Example: bazak-infra#433 set `INTEGRATIONS_DELIVERY_ENABLED: "true"` in the prod DAL values while
+> the DAL's `.env.production` kept `false` — the gate in `delivery-gate.ts` already reads a missing
+> value as off, so the `.env.production` line only misled readers.
+
 ## Database Migrations
 
 The compressed form lives in `rules/migrations.md`, loaded when a migration or schema file is read.
