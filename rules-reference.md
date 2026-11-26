@@ -91,6 +91,12 @@ line and PRs tab. The README's *Mods* and *Cockpit* sections have the rest.
 > Pattern: `gh run watch <id> --interval 30 --compact --exit-status` (`--compact` also keeps the step list out of context); `gh pr checks <n> --watch --interval 30`; a hand-written loop sleeps 30 s or more. On a rate-limit error, read the reset time from `gh api rate_limit`, which costs no quota, and wait for it once.
 > Avoid: A bare `--watch`; retrying a rate-limited call; one watcher per subagent for the same PR.
 
+## Killing Processes
+
+**Options Before the Pattern in `pkill`/`pgrep`** — on macOS, `pkill` and `pgrep` parse options with BSD `getopt`, which stops at the first non-option argument. Every later argument, including one that looks like a flag, is read as another pattern, and a process matching *any* pattern is signalled. On 2026-11-26 a session ran `pkill -f "gh run watch 45874098417" -n 2>/dev/null`. The `-n` became a pattern, matched `/usr/bin/login -flp … /bin/bash --noprofile --norc …`, the parent of every cmux terminal, and killed every pane and Claude session on the machine except the one that ran it. The `2>/dev/null` hid it.
+> Pattern: Put every flag before the pattern: `pkill -n -f "<specific pattern>"`. Run the same match as `pgrep -fl` first and check it lists only what you mean to kill. Prefer killing a known PID (`$!` saved at launch, `lsof -t -iTCP:<port> -sTCP:LISTEN`) over a pattern.
+> Avoid: Any argument after the pattern; silencing `pkill` with `2>/dev/null`; a pattern broad enough to match a shell, `claude`, `node` or `login`.
+
 ## Commits and Merging
 
 **Always Squash on Merge** — The base branch should read as a list of shipped changes, one line per PR, not as a transcript of how each change was arrived at. An agent-driven PR is especially noisy: it accumulates a test-first commit, an implementation commit, a `/simplify` commit, a review-fixes commit, and a docs commit, none of which mean anything to someone reading `git log` six months later. Squashing also makes `git revert <sha>` undo an entire feature rather than one arbitrary slice of it, and makes `git bisect` land on shippable states instead of half-built ones.
