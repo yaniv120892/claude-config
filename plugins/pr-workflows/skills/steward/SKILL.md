@@ -46,9 +46,16 @@ one thread never excuses skipping the nits in the same review:
    marked Dismissed — a refutation goes as a reply on its inline comment.
    Resolve a Qodo thread once it is fixed or answered with a decision; a
    finding dropped from the summary can still have an open inline thread.
-   Qodo reviews the PR when it opens, not each later push: after every push,
-   comment `/agentic_review` on the PR, and treat the review as pending until
-   that comment names the new head SHA.
+   Qodo reviews the PR when it opens, not each later push, and every
+   `/agentic_review` costs money. After a push, comment it only when the
+   source changed since the last Qodo-reviewed head (the SHA its PR comment
+   names, or the head at open) reaches 30 lines:
+   `git diff --shortstat <reviewed-sha>..HEAD -- . ':!*.md' ':!*.test.*' ':!*.spec.*' ':!*lock*'`
+   (insertions plus deletions). Below 30, or for docs, comment, test, lockfile,
+   format or merge-from-main pushes, skip it. Small pushes add up, so before
+   reporting the PR clean or ready, run the same check against the last reviewed
+   head and trigger once if it reaches 30. Once triggered, treat the review as
+   pending until Qodo's comment names the new head SHA.
 
 ## Red CI
 

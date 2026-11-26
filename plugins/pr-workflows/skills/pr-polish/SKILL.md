@@ -121,9 +121,11 @@ local build alone.
 
 ## Step 6 — Bot comments
 
-After the last push, when Step 1a found a bot reviewer, trigger Qodo and wait for it as `steward`
-describes (`/agentic_review`, then its review comment naming the new head SHA) before deciding there
-is nothing new. Without one, go straight to the threads. Then:
+After the last push, when Step 1a found a bot reviewer, apply `steward`'s Qodo gate against the last
+reviewed head: it triggers `/agentic_review` only past its changed-lines threshold, and this is where the
+accumulated delta gets checked. When it triggers, wait for Qodo's review comment naming the new head SHA
+before deciding there is nothing new; otherwise read the existing review. Without a bot reviewer, go
+straight to the threads. Then:
 
 - Unanswered threads: run `/pr-workflows:address-pr-feedback`, which fixes, runs the shared review and
   fix pass (comment pruning included) on its fix commits, pushes, replies in each thread, and resolves
