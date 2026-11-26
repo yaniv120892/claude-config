@@ -97,6 +97,16 @@ and mod on the machine, and `gh run watch` defaults to a 3 s refresh, so two wat
 > time from `gh api rate_limit` (free) and wait for it once.
 > Avoid: A bare `--watch`; retrying a rate-limited call; one watcher per subagent for the same PR.
 
+## Killing Processes
+
+**Options Before the Pattern in `pkill`/`pgrep`** — macOS's BSD `pkill` stops reading options at
+the first pattern, so a trailing `-n` becomes a second pattern that matches every cmux pane's
+`login … --noprofile` and kills all sessions at once (2026-11-26)
+> Pattern: `pkill -n -f "<specific pattern>"`, all flags first; preview with the same `pgrep -fl`
+> first; prefer `kill <pid>` from `$!` or `lsof -t -i :<port>`.
+> Avoid: Any argument after the pattern; `2>/dev/null` on a `pkill`, which hides the mistake;
+> a pattern as broad as `claude`, `node` or `zsh`.
+
 ## Commits
 
 **Conventional Commits** — commit type drives release pipelines
