@@ -173,7 +173,7 @@ into that repo, so an edit is live on this machine and absent everywhere else un
 
 ## Subagents
 
-**Run Subagents From the Repo They Modify** — each repo's AGENTS.md, rules, and scripts must be
+**Run Subagents From the Repo They Modify** — each repo's instructions file, rules, and scripts must be
 in the agent's context
 > Pattern: State the target repo's absolute path at the top of the prompt, tell it to read that
 > repo's AGENTS.md (or CLAUDE.md) and rules first, and to use that repo's own build/test/lint scripts.

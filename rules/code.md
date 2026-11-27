@@ -52,7 +52,7 @@ code it describes stays right
 > identically on any other provider.
 > Exception: a workaround for one named product's own bug — there the vendor *is* the mechanism,
 > and the name is what lets a reader retest it.
-> The deployment fact still belongs somewhere: one maintained place (`AGENTS.md`, README), not
+> The deployment fact still belongs somewhere: one maintained place (`AGENTS.md` or `CLAUDE.md`, README), not
 > restated in each file that reacts to it.
 
 **Always Use Braces for Control Flow** — including single-statement guards and early returns
