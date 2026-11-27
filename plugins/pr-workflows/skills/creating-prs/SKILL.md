@@ -47,7 +47,7 @@ Some projects require every pull request to reference a tracked issue; others
 have no tracker at all. **Follow the project's own convention — do not invent
 one, and do not block on a ticket in a project that does not use tickets.**
 
-- **Project uses a tracker** (a `CLAUDE.md` rule, or existing titles carry keys
+- **Project uses a tracker** (an `AGENTS.md` rule, or existing titles carry keys
   like `ABC-123`): extract the key from the branch name, case-insensitively and
   uppercased (`feature/ABC-123-desc` → `ABC-123`; Linear's `user/yan-137-desc` →
   `YAN-137`), verify it exists via whatever tracker

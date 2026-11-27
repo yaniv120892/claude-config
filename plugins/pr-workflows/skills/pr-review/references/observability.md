@@ -4,7 +4,7 @@ After this diff ships, can someone tell from production telemetry whether it
 works, and does every existing dashboard, insight, and alert still measure what
 it claims? Read-only — never create or edit events, insights, or alerts.
 
-Read the target repo's CLAUDE.md first; its logging and analytics rules (which
+Read the target repo's AGENTS.md (or CLAUDE.md) first; its logging and analytics rules (which
 logger, which event helper, naming) override anything generic here.
 
 ## Where telemetry lives

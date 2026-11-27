@@ -71,7 +71,7 @@ one line of reasoning, not an argument.
 Reviewers overlap and sometimes disagree. A duplicate takes the highest severity given. A factual
 claim two reviewers contradict is settled by reading the source — the package's files, the code —
 before acting on either. When two findings pull in opposite directions, correctness beats
-simplification and the repo's own `CLAUDE.md` beats a global rule. After applying a suggested fix,
+simplification and the repo's own `AGENTS.md` beats a global rule. After applying a suggested fix,
 rerun the check the finding was about: a fix that leaves it red is replaced, not shipped.
 
 A finding whose fix would change intended behaviour is the user's call, not a skip: whether the

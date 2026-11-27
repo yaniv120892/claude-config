@@ -57,7 +57,7 @@ each changed file's directory, the repo's `.claude/rules/*`, and the global
 recursively — `shared-rules.md`, `work-context.local.md`, …) and
 `~/.claude/rules/*`. Apply them all. Cite `file:line`.
 
-A monorepo keeps its per-app rules in `apps/<app>/CLAUDE.md`; reading only the
+A monorepo keeps its per-app rules in `apps/<app>/AGENTS.md`; reading only the
 root file misses exactly the rules for the code under review.
 Keep these in a section **separate** from correctness findings.
 
@@ -65,7 +65,7 @@ Read those files rather than working from memory of them — a list cached here
 goes stale the week a rule is added, and under-reports exactly the newest rules.
 Cite each finding by the rule's bold name plus `file:line`.
 
-Where `CLAUDE.md`, rules and skill files themselves belong, and whether they
+Where `AGENTS.md`, rules and skill files themselves belong, and whether they
 load, is a separate agent's job (`instruction-files.md`). Do not check it here.
 
 The names that recur most, as a recall prompt only: Always Use Braces, Avoid

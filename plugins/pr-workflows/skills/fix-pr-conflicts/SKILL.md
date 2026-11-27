@@ -29,7 +29,7 @@ Agent({
   run_in_background: false,
   prompt: "You are the fix-pr-conflicts subagent. Repo: <absolute path>. PR: <url or number>.
     Invoke the fix-pr-conflicts skill yourself and follow it end-to-end — you are the
-    dispatched subagent, so do not delegate further. Read the repo's CLAUDE.md and
+    dispatched subagent, so do not delegate further. Read the repo's AGENTS.md (or CLAUDE.md) and
     .claude/rules/ (if present) before resolving anything; those files are the tiebreaker
     when two sides disagree. Report back: each conflicted file and how you resolved it with
     the reason, what verification you ran and its result, which failures were pre-existing
@@ -109,7 +109,7 @@ Rules for choosing:
 - **Keep both intents whenever they are compatible.** Most conflicts are two edits near each
   other, not a genuine contradiction.
 - **When they genuinely contradict, the repo's own written conventions decide** — its
-  `CLAUDE.md` and `.claude/rules/`. Cite the rule in your report. A convention the target
+  `AGENTS.md` and `.claude/rules/`. Cite the rule in your report. A convention the target
   branch itself has already adopted outranks the PR's older local variant.
 - **Preserve the PR's functional change.** The PR exists for a reason; a resolution that
   quietly drops the behaviour it was opened to deliver is a failed resolution, even when it
