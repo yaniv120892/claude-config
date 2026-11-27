@@ -77,7 +77,7 @@ For each cluster: count occurrences, collect permalinks, name the root cause, pi
 | **Skill** | a repeatable procedure is needed | extend `writing-pr-description`, `creating-prs`, `pre-push-quality-gate` |
 | **Hook** | mechanically enforceable (regex/validation) | PreToolUse Bash guard, commit-msg check |
 
-Split findings into **General** (cross-repo / agent behavior) vs **Repo-specific**. Recurring themes seen in this codebase (seed taxonomy — extend over time): agent/worktree artifacts in diffs (`.claude/`, worktree `.eslintrc.js`), missing "why" rationale for removals, CLAUDE.md prefs not applied up front, commit-type pipeline effects, int-vs-float at API boundaries, Temporal error unwrapping, log-level discipline, MUI visual regressions.
+Split findings into **General** (cross-repo / agent behavior) vs **Repo-specific**. Recurring themes seen in this codebase (seed taxonomy — extend over time): agent/worktree artifacts in diffs (`.claude/`, worktree `.eslintrc.js`), missing "why" rationale for removals, `AGENTS.md`/`CLAUDE.md` prefs not applied up front, commit-type pipeline effects, int-vs-float at API boundaries, Temporal error unwrapping, log-level discipline, MUI visual regressions.
 
 ## Step 4 — Diff against last run (the loop)
 

@@ -109,7 +109,7 @@ Rules for choosing:
 - **Keep both intents whenever they are compatible.** Most conflicts are two edits near each
   other, not a genuine contradiction.
 - **When they genuinely contradict, the repo's own written conventions decide** — its
-  `AGENTS.md` and `.claude/rules/`. Cite the rule in your report. A convention the target
+  `AGENTS.md` (or `CLAUDE.md`) and `.claude/rules/`. Cite the rule in your report. A convention the target
   branch itself has already adopted outranks the PR's older local variant.
 - **Preserve the PR's functional change.** The PR exists for a reason; a resolution that
   quietly drops the behaviour it was opened to deliver is a failed resolution, even when it

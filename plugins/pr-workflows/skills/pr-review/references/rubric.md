@@ -51,7 +51,7 @@ concurrency problems that matter most.
 
 ## 3. Rules (highest priority, reported separately)
 
-Read every `CLAUDE.md` and `AGENTS.md` on the path from the repo root down to
+Read every `AGENTS.md` and `CLAUDE.md` on the path from the repo root down to
 each changed file's directory, the repo's `.claude/rules/*`, and the global
 `~/.claude/CLAUDE.md` with every file it imports (`@path` lines, followed
 recursively — `shared-rules.md`, `work-context.local.md`, …) and

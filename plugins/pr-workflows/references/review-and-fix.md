@@ -71,7 +71,7 @@ one line of reasoning, not an argument.
 Reviewers overlap and sometimes disagree. A duplicate takes the highest severity given. A factual
 claim two reviewers contradict is settled by reading the source — the package's files, the code —
 before acting on either. When two findings pull in opposite directions, correctness beats
-simplification and the repo's own `AGENTS.md` beats a global rule. After applying a suggested fix,
+simplification and the repo's own `AGENTS.md` (or `CLAUDE.md`) beats a global rule. After applying a suggested fix,
 rerun the check the finding was about: a fix that leaves it red is replaced, not shipped.
 
 A finding whose fix would change intended behaviour is the user's call, not a skip: whether the
@@ -88,7 +88,7 @@ fixes introduced. Pass it paths, never file contents:
 
 - the worktree path and `git diff <the range>` as the diff to audit;
 - the rule sources: section 3 of `<PLUGIN_ROOT>/skills/pr-review/references/rubric.md` lists them —
-  the repo's `CLAUDE.md`/`AGENTS.md` chain and `.claude/rules/*`, plus `~/.claude/CLAUDE.md` with its
+  the repo's `AGENTS.md`/`CLAUDE.md` chain and `.claude/rules/*`, plus `~/.claude/CLAUDE.md` with its
   `@` imports followed recursively and `~/.claude/rules/*`. It reads each file itself, not from memory;
 - only lines the range's own commits add or change are in scope, never lines a base merge brought in;
 - where two rules contradict, the repo's own rule wins, then the more specific one;

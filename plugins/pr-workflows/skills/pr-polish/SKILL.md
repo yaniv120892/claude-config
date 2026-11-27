@@ -85,7 +85,7 @@ mechanically on the diff before pushing. Fix each hit; a hit you keep gets one l
   callbacks that hold more than one expression: the global `map`/`filter` exemption yields to the
   repo's stricter rule. Also check added
   functions for missing explicit return types where the repo's rules require them.
-- **Final-head proof.** Run the repo `AGENTS.md`'s "before ready" steps (evals, smoke runs) on
+- **Final-head proof.** Run the "before ready" steps in the repo's `AGENTS.md` (or `CLAUDE.md`) (evals, smoke runs) on
   `git rev-parse HEAD`, after the last fix, and name that SHA in the Proof of Work. A prompt,
   skill-description or tool-description change gets a before/after model run on the host-visible
   text, not only a fixture.

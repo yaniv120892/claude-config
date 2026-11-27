@@ -68,7 +68,7 @@ carries every branch's detail inline.
 - **Rule files are passed by path, not inlined** into a subagent prompt or args
   (shared-rules.md: "Pass Rule-File Paths to Subagents, Never Inlined Contents").
 - **A subagent prompt names the repo it works in** and tells the agent to read
-  that repo's `AGENTS.md` first (shared-rules.md: "Run Subagents From the Repo
+  that repo's `AGENTS.md` (or `CLAUDE.md`) first (shared-rules.md: "Run Subagents From the Repo
   They Modify").
 
 ## Output
