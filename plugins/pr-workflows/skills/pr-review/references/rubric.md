@@ -57,7 +57,7 @@ each changed file's directory, the repo's `.claude/rules/*`, and the global
 recursively — `shared-rules.md`, `work-context.local.md`, …) and
 `~/.claude/rules/*`. Apply them all. Cite `file:line`.
 
-A monorepo keeps its per-app rules in `apps/<app>/AGENTS.md`; reading only the
+A monorepo keeps its per-app rules in `apps/<app>/AGENTS.md` (or `CLAUDE.md`); reading only the
 root file misses exactly the rules for the code under review.
 Keep these in a section **separate** from correctness findings.
 

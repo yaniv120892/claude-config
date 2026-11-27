@@ -272,7 +272,7 @@ answered an earlier round, so this round still gets its own.
 | Treating a release-bot note as feedback                                     | Ignore non-actionable general notes; act on reviewer comments                           |
 | Pushing fix commits that only passed the quality gate                       | Run the shared review and fix pass on them first (Step 4b) — it holds the rules audit   |
 | Silently fixing a generic/recurring pattern with no follow-up               | Ask the codify-rule question (Step 4a) before push — don't bury it in the Step 7 report |
-| Asking to codify something already in `AGENTS.md`/`.claude/rules/`          | Grep first (Step 4a) — only ask about genuinely new preferences                         |
+| Asking to codify something already in `AGENTS.md`/`CLAUDE.md`/`.claude/rules/` | Grep first (Step 4a) — only ask about genuinely new preferences                         |
 | Asking the user whether to tell the reviewer                                | Step 8 is pre-approved: send once its checks hold                                       |
 | Missing a question asked in a review body                                   | Read `reviews` as well as threads and comments (Step 2); answer with an @-mention       |
 | Sending `replied` on Slack before every item is answered on GitHub          | Re-fetch the PR and run the Step 8 checks first                                         |

@@ -41,8 +41,9 @@ Rule format:
 ```
 
 **Scope a repo's rule files with `paths:` frontmatter** — every `.md` under `.claude/rules/`
-without one is loaded into every session in that repo at the same priority as `AGENTS.md`,
-so a large rule set is paid for on every prompt whether or not it's relevant
+without one is loaded into every session in that repo at the same priority as its
+`AGENTS.md`/`CLAUDE.md`, so a large rule set is paid for on every prompt whether or not it's
+relevant
 > Pattern: Give each rule file a `paths:` list matching the files it governs; it then loads only
 > when the agent reads one. For a body of instructions that should load on invocation rather than
 > on a file read, use a skill instead — its body costs nothing until used.
@@ -81,8 +82,9 @@ every committed test still passes
 
 **Proof of Work Runs on the Final Head, and Matches the Change's Kind** — every later commit
 voids earlier runs, and a fixture the validator accepts says nothing about what the model does
-> Pattern: Before marking ready, re-run the repo's required verification (its `AGENTS.md`
-> "before ready" steps, evals) on `git rev-parse HEAD` and name that SHA in the Proof of Work.
+> Pattern: Before marking ready, re-run the repo's required verification (the "before ready"
+> steps in its `AGENTS.md` or `CLAUDE.md`, evals) on `git rev-parse HEAD` and name that SHA in
+> the Proof of Work.
 > A prompt, skill-description or tool-description change gets a before/after model run on the
 > text the host actually sees.
 > Avoid: Proof of Work naming an earlier SHA; a mocked `generateText` spec offered as evidence
@@ -173,10 +175,11 @@ into that repo, so an edit is live on this machine and absent everywhere else un
 
 ## Subagents
 
-**Run Subagents From the Repo They Modify** — each repo's AGENTS.md, rules, and scripts must be
-in the agent's context
+**Run Subagents From the Repo They Modify** — each repo's instructions file, rules, and scripts
+must be in the agent's context
 > Pattern: State the target repo's absolute path at the top of the prompt, tell it to read that
-> repo's AGENTS.md (or CLAUDE.md) and rules first, and to use that repo's own build/test/lint scripts.
+> repo's AGENTS.md (or CLAUDE.md) and rules first, and to use that repo's own build/test/lint
+> scripts.
 > Avoid: Editing sibling-repo files by absolute path while assuming the current repo's conventions.
 
 **Pass Rule-File Paths to Subagents, Never Inlined Contents** — an agent can read a file itself;
