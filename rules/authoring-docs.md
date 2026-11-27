@@ -54,7 +54,7 @@ variance bug: some runs reach it, some don't
 spec is paid for whole or skipped whole
 > Pattern: Root `DECISIONS.md`, one row per hard-to-reverse decision with its why and a link to the
 > topic doc. One short `.md` per feature, named for the topic (`docs/households.md`), opening with
-> when to load it. `AGENTS.md` lists every doc with its load trigger; every link
+> when to load it. `AGENTS.md` (or `CLAUDE.md`) lists every doc with its load trigger; every link
 > between docs carries that sentence too.
 > Avoid: `docs/specs/`, design or plan files kept after the work ships; one long doc where several
 > small ones would each load alone.

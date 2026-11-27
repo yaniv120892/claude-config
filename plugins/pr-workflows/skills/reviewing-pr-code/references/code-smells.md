@@ -2,7 +2,7 @@
 
 A generic review layer from Fowler's *Refactoring*, chapter 3. It applies to every diff, in any repo, on top of whatever the repo documents. Three rules bind it:
 
-1. **The repo overrides.** A documented repo standard (rules files, `AGENTS.md`, the review checklists) always wins; where it endorses something the baseline would flag, suppress the smell.
+1. **The repo overrides.** A documented repo standard (rules files, `AGENTS.md` or `CLAUDE.md`, the review checklists) always wins; where it endorses something the baseline would flag, suppress the smell.
 2. **Always a judgement call.** Each smell is a labelled heuristic ("possible Feature Envy"), never a hard violation. Report it as a suggestion and quote the hunk that triggered it.
 3. **Skip anything tooling already enforces** (lint, typecheck, formatter).
 

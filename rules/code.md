@@ -23,7 +23,7 @@ Language-agnostic. TypeScript specifics are in `typescript.md`, Python in `pytho
 
 **A Repo's Established Style Wins Over These Rules** — a diff that follows a global rule against
 the code around it leaves the repo with two styles, and every reviewer has to ask which is right
-> Pattern: Where the repo's own rules (`AGENTS.md`, `.claude/rules/`) or the consistent style of
+> Pattern: Where the repo's own rules (`AGENTS.md` or `CLAUDE.md`, `.claude/rules/`) or the consistent style of
 > the surrounding code differ from a rule here, follow the repo, and say so where the rule would
 > otherwise be reported (a rules audit, a review).
 > Avoid: Adding braces, removing casts or changing mock style in a diff whose neighbours do it the
