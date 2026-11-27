@@ -88,6 +88,15 @@ voids earlier runs, and a fixture the validator accepts says nothing about what 
 > Avoid: Proof of Work naming an earlier SHA; a mocked `generateText` spec offered as evidence
 > that the model follows a new instruction.
 
+**A Ticket Reaches Done on Production Evidence, Posted as a Comment** — merged and deployed
+says the code shipped, not that the problem is gone; the ticket is where the next reader checks
+> Pattern: Before moving a ticket to Done, post a comment on it with production evidence that the
+> problem is solved: the log lines, product events or live check, with times. Prefer the app's own
+> telemetry (Better Stack, PostHog) over a person reporting back. When the evidence needs time (a
+> nightly job, a rare event), keep the ticket In Progress with a comment naming the evidence that
+> will close it, and schedule the check.
+> Avoid: Done on merge or on a green deploy; evidence only in the PR or the chat.
+
 ## GitHub Quota
 
 **Poll GitHub at 30 Seconds or Slower** — the 5,000/hr quota is shared by every session, agent
