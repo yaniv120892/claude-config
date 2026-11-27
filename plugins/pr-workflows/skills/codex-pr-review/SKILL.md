@@ -42,7 +42,7 @@ the completion notifications rather than polling.
 ## Step 3 — Triage, one subagent per PR
 
 Dispatch one subagent per PR in a single message, with: the worktree path, the Codex output file, the
-PR's ticket key, and these instructions — read the repo's `CLAUDE.md` first, then for each finding open
+PR's ticket key, and these instructions — read the repo's `AGENTS.md` (or `CLAUDE.md`) first, then for each finding open
 the code at its anchor and decide:
 
 - **fix** — the concern is real here. Make the smallest change, add or adjust a test that would fail

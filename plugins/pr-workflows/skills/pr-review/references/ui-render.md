@@ -4,7 +4,7 @@ Does every changed screen still lay out correctly in a real browser? Typecheck,
 lint, and jsdom tests cannot answer this — jsdom has no layout engine, so a card
 clipped to half its content passes all of them. Read-only — never push fixes.
 
-Read the target repo's CLAUDE.md first; its UI conventions (design system,
+Read the target repo's AGENTS.md (or CLAUDE.md) first; its UI conventions (design system,
 breakpoints, locales, how to run the app) override anything generic here.
 
 ## 1. Code read — always

@@ -23,7 +23,7 @@ Language-agnostic. TypeScript specifics are in `typescript.md`, Python in `pytho
 
 **A Repo's Established Style Wins Over These Rules** — a diff that follows a global rule against
 the code around it leaves the repo with two styles, and every reviewer has to ask which is right
-> Pattern: Where the repo's own rules (`CLAUDE.md`, `.claude/rules/`) or the consistent style of
+> Pattern: Where the repo's own rules (`AGENTS.md`, `.claude/rules/`) or the consistent style of
 > the surrounding code differ from a rule here, follow the repo, and say so where the rule would
 > otherwise be reported (a rules audit, a review).
 > Avoid: Adding braces, removing casts or changing mock style in a diff whose neighbours do it the
@@ -52,7 +52,7 @@ code it describes stays right
 > identically on any other provider.
 > Exception: a workaround for one named product's own bug — there the vendor *is* the mechanism,
 > and the name is what lets a reader retest it.
-> The deployment fact still belongs somewhere: one maintained place (`CLAUDE.md`, README), not
+> The deployment fact still belongs somewhere: one maintained place (`AGENTS.md`, README), not
 > restated in each file that reacts to it.
 
 **Always Use Braces for Control Flow** — including single-statement guards and early returns

@@ -9,7 +9,7 @@ needed, and only then. Files in scope:
 - `.claude/agents/*.md`
 - `.claude/commands/*.md`
 
-Each of these has a loading cost. `CLAUDE.md` and unscoped rules load into every
+Each of these has a loading cost. `AGENTS.md` (or `CLAUDE.md`) and unscoped rules load into every
 session. A rule loads when a file its `paths:` matches is read. A skill's
 `description` is in every session, but its body loads only when the skill is
 invoked, and a `references/` file only when the body tells the agent to read it.
@@ -32,8 +32,8 @@ For each added or grown block, name the task or file that makes a reader need it
 | editing files matching a path or glob (`package.json`, `src/tracing/**`) | `.claude/rules/<name>.md` with a `paths:` list |
 | invoking a workflow ("add a tenant", "deploy") | a skill — its body costs nothing until used |
 | a skill is running, but only for one branch of it | that skill's `references/<topic>.md`, named from the body at the point it applies |
-| looking something up (long reference, history, a runbook) | a doc under `docs/`, with a one-line pointer in `CLAUDE.md` |
-| nearly every task (build/test commands, repo map, conventions, behavior contract) | stays in `CLAUDE.md` |
+| looking something up (long reference, history, a runbook) | a doc under `docs/`, with a one-line pointer in `AGENTS.md` |
+| nearly every task (build/test commands, repo map, conventions, behavior contract) | stays in `AGENTS.md` |
 
 If you cannot name the task or file, leave it. A guess is noise.
 
@@ -49,7 +49,7 @@ carries every branch's detail inline.
 - **A glob is not wider than the rule's content.** A rule about migrations
   scoped to `src/**` loads on every source read.
 - **A new `.claude/rules/*.md` has `paths:` frontmatter.** Without it, it loads
-  into every session at the same priority as `CLAUDE.md` (shared-rules.md:
+  into every session at the same priority as `AGENTS.md` (shared-rules.md:
   "Scope a repo's rule files with `paths:` frontmatter").
 - **Every pointer resolves.** A path, file name or `→ Section` heading named in
   added text exists at the head SHA. Content moved by the diff leaves no pointer
@@ -68,7 +68,7 @@ carries every branch's detail inline.
 - **Rule files are passed by path, not inlined** into a subagent prompt or args
   (shared-rules.md: "Pass Rule-File Paths to Subagents, Never Inlined Contents").
 - **A subagent prompt names the repo it works in** and tells the agent to read
-  that repo's `CLAUDE.md` first (shared-rules.md: "Run Subagents From the Repo
+  that repo's `AGENTS.md` (or `CLAUDE.md`) first (shared-rules.md: "Run Subagents From the Repo
   They Modify").
 
 ## Output
@@ -78,7 +78,7 @@ One row per finding, nothing else. Write `None` when there are none.
 ````markdown
 ### Instruction files — <owner/repo>#<n>
 | severity | check | file:line | comment |
-| LOW | Placement | CLAUDE.md:477 | 17-line pinned-dependency table is needed only when editing `package.json`. Move it to `.claude/rules/pinned-dependencies.md` with `paths: ['package.json']` and leave a one-line pointer. |
+| LOW | Placement | AGENTS.md:477 | 17-line pinned-dependency table is needed only when editing `package.json`. Move it to `.claude/rules/pinned-dependencies.md` with `paths: ['package.json']` and leave a one-line pointer. |
 | MEDIUM | Glob matches nothing | .claude/rules/queries.md:3 | `src/domain/**` matches no file (the directory is `src/domains/`), so this rule never loads. Fix the glob. |
 ````
 

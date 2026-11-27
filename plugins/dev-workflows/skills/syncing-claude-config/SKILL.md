@@ -72,7 +72,7 @@ the parent session's context):
 ```
 Agent({
   description: "Ship claude-config change",
-  prompt: "Repo: /Users/<user>/Develop/claude-config. Read its CLAUDE.md and
+  prompt: "Repo: /Users/<user>/Develop/claude-config. Read its README.md and
     shared-rules.md first. Move <items> to <destination>, update the plugin manifest and
     .claude-plugin/marketplace.json, then branch, commit, push, open a PR, squash-merge
     it, and fast-forward local main. Commit ONLY the paths for this change."

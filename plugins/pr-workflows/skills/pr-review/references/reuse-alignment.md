@@ -3,7 +3,7 @@
 Does the diff build something the codebase already has, or solve a problem a
 different way than the flows next to it already solve it? Read-only.
 
-Read the target repo's CLAUDE.md first; the layers, helpers and patterns it
+Read the target repo's AGENTS.md (or CLAUDE.md) first; the layers, helpers and patterns it
 names are the baseline every new flow is measured against.
 
 ## Searching the head, not the checkout
